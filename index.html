@@ -1083,24 +1083,41 @@ async function doLogin(){
   ME=p;saveLocal();celebrate("LET'S GO!");VIEW="picks";render();
 }
 
+function loadError(msg){
+  $("#app").innerHTML=`<div class="app"><div class="hero"><div class="herophoto"><img src="gyok.jpg" alt=""/></div>
+    <div class="big"><b>${DB.settings.app_title||"THE MASK"}</b></div></div>
+    <div class="banner warn"><b>Couldn't start live mode.</b><br>${msg}</div>
+    <button class="btn primary block" onclick="location.reload()">Try again 🔄</button></div>`;
+}
 async function boot(){
   WANT_ADMIN = isAdminRoute();
-  if(SUPABASE_URL && SUPABASE_ANON && window.supabase){
+  const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
+  if(haveKeys){
     MODE="live";
-    supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-    const {data}=await supa.auth.getSession();
-    if(data&&data.session){ await liveLoad(data.session.user); render(); }
-    else { Object.assign(DB,{settings:{...DEFAULTS}}); loginScreen(); }
-    supa.auth.onAuthStateChange(async (_e,session)=>{
-      if(session&&session.user){ await liveLoad(session.user); render(); }
-    });
+    // the Supabase library loads from a CDN — wait briefly in case it's slow
+    let tries=0; while(!window.supabase && tries<60){ await new Promise(r=>setTimeout(r,50)); tries++; }
+    if(!window.supabase){
+      loadError("The Supabase login library didn't load. Check your internet connection or any ad/script blocker, then reload. (If you opened the file directly, deploy it / serve it over http instead.)");
+      return;
+    }
+    try{
+      supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+      const {data}=await supa.auth.getSession();
+      if(data&&data.session){ await liveLoad(data.session.user); render(); }
+      else { Object.assign(DB,{settings:{...DEFAULTS}}); loginScreen(); }
+      supa.auth.onAuthStateChange(async (_e,session)=>{
+        if(session&&session.user){ await liveLoad(session.user); render(); }
+      });
+    }catch(e){
+      console.error(e);
+      loadError("Couldn't reach your Supabase project. Double-check the URL/key and that the project is running, then reload.");
+    }
     return;
   }
-  // DEMO
+  // No keys configured → DEMO
   MODE="demo";
   if(!loadLocal()) seedDemo();
   if(!ME) ME=DB.profiles.find(p=>p.id==="me")||DB.profiles[0];
-  // show a quick login the first time? Jump straight in for demo polish.
   render();
 }
 
