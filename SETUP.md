@@ -99,7 +99,13 @@ Inside Admin:
   going at a time; it frees up once that match finishes.
 - **Group survivors:** +4 for each team you correctly tip to escape a group (auto-scored when
   the group finishes).
+- **🏆 Knockout run:** in the Groups tab, pick the teams you think reach the Quarter-finals (+3
+  each), Semi-finals (+5) and Final (+8). The commissioner marks who actually reached each stage
+  in **Admin → Knockouts** and everyone scores instantly.
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
+- **💸 Buy-in:** it's **50 GEL to play** — paid to the commissioner; the top 3 split the pot.
+  Change the amount/currency in **Admin → Settings**.
+- **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
 - **🔥 Streaks & badges:** consecutive correct results light a streak flame, and you earn badges
   (Sniper, Giant Slayer, On Fire, High Roller, Banker Boss) shown on the leaderboard + podium.
 - **Coins** 🪙: everyone starts with 1,000. On matches and some props you can stake coins at
