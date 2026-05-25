@@ -217,6 +217,14 @@
   .emojipick{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
   .emojipick .ep{width:38px;height:38px;border-radius:11px;background:var(--bg);border:1px solid var(--line);font-size:19px;line-height:1;transition:transform .08s}
   .emojipick .ep.on{border-color:var(--gold);background:rgba(255,208,46,.16);transform:scale(1.1)}
+  /* ---- login readability: bump the small text on the welcome screen ---- */
+  .login .hero .muted{font-size:16.5px;line-height:1.55;max-width:430px;margin-left:auto;margin-right:auto}
+  .login .hero .big{font-size:36px}
+  .login .card h3{font-size:19px}
+  .login label.fld{font-size:13px}
+  .login .card .small{font-size:14.5px;line-height:1.5}
+  .login .card .tiny{font-size:12.5px}
+  .login .card input{font-size:16px}
   /* ---------- reveal / banker / podium / streak / countdown ---------- */
   .reveal{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
   .revhead{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:4px}
@@ -842,7 +850,7 @@ function viewPicks(){
   const openAll=DB.matches.filter(m=>m.status!=="finished"&&!isLocked(m));
   const pickedOpen=openAll.filter(m=>hasPicked(m.id)).length;
   html+=`<div class="card"><h3>⚽ Make your picks</h3>
-    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Add a 🪙 side bet or make it your ⭐ <b>Banker</b> for double points. <b>One shot — no edits</b>, and locking reveals everyone else's picks 👀.</div>
+    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Make it your ⭐ <b>Banker</b> for double points. <b>One shot — no edits</b> (unless you spend a 🔁 half-time re-pick), and locking reveals everyone else's picks 👀.</div>
     ${openAll.length?`<div class="small" style="margin-top:8px">🔒 You've locked <b>${pickedOpen}</b> / ${openAll.length} open games</div>`:''}</div>
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
@@ -1062,7 +1070,7 @@ function viewAdmin(){
     <button class="btn ghost" data-dolock style="margin-top:8px;border-color:var(--line);font-size:12px;padding:6px 10px">🔒 Lock admin</button></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
-    html+=`<div class="small muted" style="margin:0 4px">Type a score and hit ✓ to finalize. Everyone's points & coins recompute instantly.</div>`;
+    html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
     upcoming.forEach(m=>{
       const h=teamById(m.home),a=teamById(m.away);
       const done=m.status==="finished";
@@ -1311,7 +1319,7 @@ function openProfile(){
 /* ---------- rules / how-it-works ---------- */
 function rulesHTML(){
   const s=DB.settings, buyin=money(s.buy_in||50);
-  return `<div class="small" style="line-height:1.55">
+  return `<div style="font-size:14px;line-height:1.55">
     <p style="margin:0 0 8px"><b>THE MASK</b> is a friendly World Cup '26 prediction game — just for our crew. Call the scores, talk trash, top the table, win the pot.</p>
     <b>How to play</b>
     <ul style="margin:4px 0 8px;padding-left:18px">
@@ -1369,7 +1377,7 @@ const EMOJIS=["🦇","🦁","🐉","🐙","🦄","🐺","🌶️","👽","🤡",
 let pendingEmoji=null, pendingTeam=null;
 function loginScreen(extra=""){
   if(!pendingEmoji) pendingEmoji=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
-  $("#app").innerHTML=`<div class="app"><div class="hero">
+  $("#app").innerHTML=`<div class="app login"><div class="hero">
     <div class="herophoto"><img src="gyok.jpg" alt="Do the Gyökeres"/></div>
     <div class="big">Welcome to <b>${DB.settings.app_title||"THE MASK"}</b></div>
     <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot. Do the Gyökeres! 🦇⚽</div>
@@ -1438,7 +1446,7 @@ async function boot(){
       supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
       const {data}=await supa.auth.getSession();
       if(data&&data.session){ await liveLoad(data.session.user); render(); }
-      else { Object.assign(DB,{settings:{...DEFAULTS}}); loginScreen(); }
+      else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
       supa.auth.onAuthStateChange(async (_e,session)=>{
         if(session&&session.user){ await liveLoad(session.user); render(); }
       });
