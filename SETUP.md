@@ -19,7 +19,7 @@ There are two ways to use it.
 ## 1. Try it right now (Demo mode — zero setup)
 
 Open `index.html` in any browser and it boots straight into a fully playable game with
-sample friends, results, and a live leaderboard. Make picks, hit the 🃏 Props tab, watch
+sample friends, results, and a live leaderboard. Make picks, hit the 🃏 Extras tab, watch
 the 📊 board move. Nothing here is shared — it's a private sandbox in your browser.
 
 > Your live Supabase keys are already in the file, so opening it will show the **live login**.
@@ -112,7 +112,7 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
   commissioner marks who actually reached each stage in **Admin → Knockouts** and it scores instantly.
 - **⚽ Your team:** when you join you pick the nation you personally support (locked in for good).
   You earn **+1 point every time they win a match**.
-- **Prop bets:** each is worth its own points (the champion pick is a big 30).
+- **Extras (tournament calls):** the 🃏 Extras tab holds whole-tournament predictions — champion (a big 30), top scorer, plus fun side questions — each worth its own points.
 - **💸 Buy-in:** **50 USD to play** — paid to the commissioner; the top 3 split the pot. (Change the amount/currency anytime in **Admin → Settings**.)
 - **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
 - **🔥 Streaks & badges:** correct-result streaks light a flame; badges (Sniper, Giant Slayer,

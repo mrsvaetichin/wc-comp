@@ -264,12 +264,21 @@
   .hwrap{max-width:540px;margin:0 auto}
   .cardgrid{display:grid;gap:12px;align-items:start;margin-top:12px}
   .cardgrid > .match, .cardgrid > .card{margin:0}
+  .topnav{display:none}  /* desktop top-nav; on mobile the bottom bar is used instead */
   @media (min-width:880px){
     .hwrap{max-width:1080px}
-    nav.tabs .inner{max-width:600px}
     .app.view-picks, .app.view-props{max-width:1080px;padding-left:22px;padding-right:22px}
     .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin{max-width:720px}
     .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr}
+    /* swap the phone-style fixed bottom bar for a proper top nav */
+    nav.tabs{display:none}
+    .app{padding-bottom:40px}
+    .topnav{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+    .topnav button{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:9px 16px;font-weight:600;font-size:15px;transition:filter .12s}
+    .topnav button .ic{font-size:18px}
+    .topnav button:hover{color:var(--ink);filter:brightness(1.15)}
+    .topnav button.on{color:var(--ink);background:var(--card2);border-color:var(--gold)}
+    .topnav button.on .ic{filter:drop-shadow(0 0 8px rgba(255,208,46,.7))}
   }
   @media (min-width:1340px){
     .hwrap{max-width:1260px}
@@ -927,15 +936,18 @@ function header(){
       <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
       <div class="pill coins"><div class="k">Re-picks</div><div class="v">${repicksLeft(ME.id)}</div></div>
     </div>
+    <div class="topnav">${navTabs()}</div>
     </div>
   </header>`;
 }
 
-function nav(){
-  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Props"],["board","📊","Board"],["pool","💰","Pool"]];
+function navTabs(){
+  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Extras"],["board","📊","Board"],["pool","💰","Pool"]];
   if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
-  return `<nav class="tabs"><div class="inner">${tabs.map(t=>
-    `<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
+  return tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("");
+}
+function nav(){
+  return `<nav class="tabs"><div class="inner">${navTabs()}</div></nav>`;
 }
 
 /* ---------- PICKS ---------- */
@@ -1030,7 +1042,7 @@ function matchCard(m){
 let grpSel="A";
 function viewBracket(){
   let html=`<div class="card"><h3>🏆 Group predictions</h3>
-    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. <b>Picks lock the instant you choose 🔒.</b> Pick your tournament winner in the 🃏 Props tab for big points.</div></div>
+    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. <b>Picks lock the instant you choose 🔒.</b> Pick your tournament winner in the 🃏 Extras tab for big points.</div></div>
     <div class="seg">${Object.keys(GROUPS).map(g=>`<button class="${grpSel===g?'on':''}" data-grp="${g}">Group ${g}</button>`).join("")}</div>`;
   const g=grpSel;
   const st=groupStandings(g);
@@ -1058,7 +1070,7 @@ function viewBracket(){
   }
   html+=`</div>`;
   // 🏆 Knockout run predictions
-  html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">This is how you bet on the games after the groups: tip which teams reach each stage. ${KO_PTS.r16} pts per correct Round-of-16 team, ${KO_PTS.qf} per Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Props tab.)</div>`;
+  html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">This is how you bet on the games after the groups: tip which teams reach each stage. ${KO_PTS.r16} pts per correct Round-of-16 team, ${KO_PTS.qf} per Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Extras tab.)</div>`;
   KO_STAGES.forEach(stage=>{
     const mine=myKO(stage), settled=(koActual()[stage]||[]).length>0, reached=koReached(stage);
     html+=`<div class="kostage"><h4>${KO_LABEL[stage]} <span class="muted tiny">(${mine.length}/${KO_LIM[stage]})</span></h4><div class="kochips">`;
@@ -1082,7 +1094,7 @@ function revealPropBlock(pr){
 }
 function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}"><span class="rd"></span><span>${label}</span></div>`; }
 function viewProps(){
-  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀.</div></div>`;
+  let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (worth a big <b>30 pts</b>), the top scorer, plus fun side questions. Answer to <b>lock in</b> (one shot!) — then you'll see what everyone else guessed 👀.</div></div>`;
   let cards="";
   // keep the fun GOAT prop pinned first regardless of DB insertion order
   const props=[...DB.props].sort((a,b)=>(b.id==="p-goat")-(a.id==="p-goat"));
@@ -1463,7 +1475,7 @@ function rulesHTML(){
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
       <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}), then which teams reach the Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
-      <li><b>🃏 Props</b> — fun side bets, including who wins it all.</li>
+      <li><b>🃏 Extras</b> — tournament-wide predictions: who wins it all (worth 30!), top scorer & fun calls.</li>
       <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
     </ul>
     <b>The money</b>
