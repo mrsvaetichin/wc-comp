@@ -153,6 +153,18 @@
   .lbrow .sc{font-family:'Fredoka';font-size:18px}
   .lbrow .mv{font-size:12px;width:24px;text-align:center}
   .medal{font-size:20px}
+  /* hero leaderboard on the dashboard */
+  .herogrid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:4px}
+  @media(min-width:760px){ .herogrid{grid-template-columns:1fr 1fr} }
+  .herolb h3{margin:0}
+  .herolb .hlb-rows{margin-top:8px}
+  .hlb-row{display:flex;align-items:center;gap:9px;padding:6px 2px}
+  .hlb-row+.hlb-row{border-top:1px solid var(--line)}
+  .hlb-row.me{background:linear-gradient(90deg, rgba(92,200,255,.14), transparent);border-radius:8px}
+  .hlb-pos{width:24px;text-align:center;font-family:'Fredoka';font-weight:700;font-size:15px}
+  .hlb-nm{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .hlb-pts{font-family:'Fredoka';font-weight:700;color:var(--lime);white-space:nowrap}
+  .hlb-link{background:transparent;border:none;color:var(--cyan);font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -1094,6 +1106,27 @@ function nav(){
 
 /* ---------- PICKS ---------- */
 let pickFilter="upcoming";
+function heroLeaderboard(){
+  const lg=curLeague(); if(!lg) return '';
+  const lb=leaderboard(); if(!lb.length) return '';
+  const me=lb.find(x=>x.id===ME.id);
+  // ── Points standings ──
+  let rows=lb.slice(0,3).map(r=>{const medal=r.rank===1?'🥇':r.rank===2?'🥈':'🥉';
+    return `<div class="hlb-row ${r.id===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}</span><span class="hlb-pts">${r.pts} pts</span></div>`;}).join("");
+  if(me && me.rank>3) rows+=`<div class="hlb-row me you"><span class="hlb-pos">${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
+  const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings</h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
+  // ── Banter leaderboard ──
+  const tb=topBanter().filter(x=>x.likes>0||x.posts>0).slice(0,3);
+  let banter;
+  if(tb.length){
+    const brows=tb.map((r,i)=>{const p=profileById(r.user); if(!p)return''; const medal=i===0?'🥇':i===1?'🥈':'🥉';
+      return `<div class="hlb-row ${r.user===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">❤️ ${r.likes}</span></div>`;}).join("");
+    banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
+  } else {
+    banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-tab="banter">Start →</button></div><div class="small muted" style="padding:8px 2px">No banter yet — fire the first shot in the 💬 Banter tab.</div></div>`;
+  }
+  return `<div class="herogrid">${standings}${banter}</div>`;
+}
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
   let list=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
@@ -1103,7 +1136,7 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html="";
+  let html=heroLeaderboard();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
@@ -1499,6 +1532,8 @@ function render(){
 function wire(){
   // nav
   $$("[data-tab]").forEach(b=>b.onclick=()=>{VIEW=b.dataset.tab;render();window.scrollTo(0,0);});
+  // hero leaderboard → jump to the right Board sub-tab
+  $$("[data-goboard]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.goboard; VIEW="board"; render(); window.scrollTo(0,0); });
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Admin locked 🔒"); VIEW="picks"; render(); };
