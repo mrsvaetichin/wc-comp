@@ -1318,14 +1318,53 @@ function viewBanter(){
 }
 
 /* ---------- LEADERBOARD ---------- */
-let boardBasis="points";
+let boardTab="points";
+function boardToggle(){ return `<div class="toggle" style="margin-top:8px"><button class="${boardTab==='points'?'on':''}" data-boardtab="points">🏅 Points</button><button class="${boardTab==='banter'?'on':''}" data-boardtab="banter">💬 Banter</button></div>`; }
+function banterBoard(){
+  return leagueMembers(LG).map(p=>{ const posts=DB.comments.filter(c=>c.user===p.id);
+    const uc=userCards(p.id);
+    return {user:p.id, posts:posts.length, likes:posts.reduce((s,c)=>s+likeCount(c.id),0), yellow:uc.yellow, red:uc.red, sentOff:uc.sentOff};
+  }).sort((a,b)=> b.likes-a.likes || b.posts-a.posts || a.user.localeCompare(b.user));
+}
+function viewBanterBoard(){
+  const rows=banterBoard();
+  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts — funniest in the league wins the bragging rights.</div>${boardToggle()}</div>`;
+  if(!rows.length || rows.every(r=>r.likes===0&&r.posts===0)){
+    html+=`<div class="empty"><div class="e">💬</div>No banter yet — open the 💬 Banter tab and get the trash talk going!</div>`;
+    return html;
+  }
+  if(rows[0] && rows[0].likes>0){
+    const king=profileById(rows[0].user);
+    if(rows.length>=3 && rows[2].likes>0){
+      const order=[1,0,2];
+      html+=`<div class="card"><div class="podium">`+order.map(i=>{const r=rows[i];const u=profileById(r.user);const place=i+1;const hgt=place===1?98:place===2?74:60;
+        return `<div class="pod p${place}"><div class="podav">${u.emoji}</div><div class="podname">${u.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">❤️${r.likes}</div></div></div>`;}).join("")+`</div>
+        <div class="trash center">🎤 ${king.emoji} <b>${escapeHtml(king.name)}</b> is the league's Banter King 👑</div></div>`;
+    } else {
+      html+=`<div class="card center"><div style="font-size:32px">👑</div><div style="font-family:'Fredoka';font-size:18px">${escapeHtml(king.name)} — Banter King 🎤</div><div class="small muted">❤️ ${rows[0].likes} like${rows[0].likes===1?'':'s'} · top of the banter league</div></div>`;
+    }
+  }
+  rows.forEach((r,i)=>{ const u=profileById(r.user); const me=r.user===ME.id?'me':'';
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
+    const cards=`${r.yellow?'🟨'+r.yellow:''}${r.red?' 🟥'+r.red:''}`;
+    html+=`<div class="lbrow ${me}">
+      <div class="pos medal">${medal}</div>
+      <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(u)}</div>
+      <div class="nm">${escapeHtml(u.name)}${r.sentOff?' <span class="advtag miss">🟥 off</span>':''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} <small class="badges">${r.posts} post${r.posts===1?'':'s'}${cards?' · '+cards:''}</small></div>
+      <div class="sc">❤️ ${r.likes}</div>
+    </div>`;
+  });
+  return html;
+}
 function viewBoard(){
+  if(boardTab==='banter') return viewBanterBoard();
   const lb=leaderboard();
   lb.forEach(r=>{ r.st=statsFor(r.id); r.badges=badgesFor(r.id); });
   const top=lb[0], last=lb[lb.length-1];
   const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them! 🏃`][top.rank%3];
   const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
   let html=`<div class="card center"><h3>📊 ${curLeague()?curLeague().name+" · ":""}The Table</h3><div class="small muted">${curLeague()?leagueMembers(LG).length+" players · ":""}most points takes the pot.</div>
+      ${boardToggle()}
       <button class="btn block" data-sync style="margin-top:8px">🔄 Sync live results</button></div>`;
   // 🏆 podium of the top 3
   if(lb.length>=3){
@@ -1526,6 +1565,7 @@ function wire(){
   const bp=$("#banterpost"); if(bp) bp.onclick=async()=>{ const box=$("#banterbox"); if(await postComment(box?box.value:"")) render(); };
   $$("[data-card]").forEach(b=>b.onclick=()=>giveCard(b.dataset.cm,b.dataset.card).then(render));
   $$("[data-like]").forEach(b=>b.onclick=()=>toggleLike(b.dataset.like).then(render));
+  $$("[data-boardtab]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.boardtab; render(); });
   $$("[data-copycode]").forEach(b=>b.onclick=()=>copyText(b.dataset.copycode));
   $$("[data-copylink]").forEach(b=>b.onclick=()=>copyText(inviteLink(b.dataset.copylink)));
   // pool
