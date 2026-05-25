@@ -41,6 +41,18 @@ create table if not exists memberships (
   user_id uuid references auth.users(id) on delete cascade,
   paid boolean default false, joined_at timestamptz default now(),
   primary key (league_id, user_id));
+-- 💬 banter feed + 🟨🟥 cards
+create table if not exists comments (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  body text, created_at timestamptz default now());
+create table if not exists cards (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  comment_id text, from_id uuid references auth.users(id) on delete cascade,
+  target_id uuid, kind text, created_at timestamptz default now());
+create table if not exists likes (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  comment_id text, user_id uuid references auth.users(id) on delete cascade, created_at timestamptz default now());
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
@@ -70,6 +82,9 @@ alter table ko_picks enable row level security;
 alter table repicks enable row level security;
 alter table leagues enable row level security;
 alter table memberships enable row level security;
+alter table comments enable row level security;
+alter table cards enable row level security;
+alter table likes enable row level security;
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
@@ -135,6 +150,14 @@ drop policy if exists lg_upd on leagues;    create policy lg_upd on leagues for 
 drop policy if exists mb_read on memberships; create policy mb_read on memberships for select to authenticated using (user_id = auth.uid() or is_member(league_id));
 drop policy if exists mb_ins on memberships;  create policy mb_ins on memberships for insert to authenticated with check (user_id = auth.uid());
 drop policy if exists mb_upd on memberships;  create policy mb_upd on memberships for update to authenticated using (user_id = auth.uid() or exists(select 1 from leagues l where l.id = league_id and l.created_by = auth.uid())) with check (true);
+-- banter + cards: read/write only inside leagues you belong to
+drop policy if exists cm_read on comments;  create policy cm_read on comments for select to authenticated using (is_member(league_id));
+drop policy if exists cm_ins on comments;   create policy cm_ins on comments for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists cd_read on cards;      create policy cd_read on cards for select to authenticated using (is_member(league_id));
+drop policy if exists cd_ins on cards;       create policy cd_ins on cards for insert to authenticated with check (from_id = auth.uid() and is_member(league_id));
+drop policy if exists lk_read on likes;      create policy lk_read on likes for select to authenticated using (is_member(league_id));
+drop policy if exists lk_ins on likes;       create policy lk_ins on likes for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists lk_del on likes;       create policy lk_del on likes for delete to authenticated using (user_id = auth.uid());
 
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw, official matchday dates, props)

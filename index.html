@@ -181,6 +181,32 @@
   .advpick .tg{flex:1;min-width:46%;display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:8px;font-size:13px}
   .advpick .tg.q1{border-color:var(--gold);background:rgba(255,210,63,.1)}
   .advpick .tg.q2{border-color:var(--cyan);background:rgba(54,224,255,.1)}
+  /* tap-to-send-through group board */
+  .advrow{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px;margin:7px 0;color:var(--ink);font-size:15px;transition:transform .09s ease,border-color .12s,background .12s}
+  .advrow.can{border-style:dashed;border-color:var(--cyan)}
+  .advrow.can:hover{border-color:var(--gold);transform:translateY(-1px)}
+  .advrow.can:active{transform:scale(.99)}
+  .advrow.on{border-color:var(--gold);background:rgba(255,208,46,.13)}
+  .advrow[disabled]{cursor:default}
+  .advrow .tname{font-weight:600}
+  .advtag{font-family:'Fredoka';font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+  .advtag.on{background:var(--gold);color:#06325e}
+  .advtag.hit{background:rgba(61,220,132,.2);color:var(--green)}
+  .advtag.miss{background:rgba(226,75,74,.18);color:#ffb3b3}
+  .advhint{font-size:12px;color:var(--cyan);font-weight:600;white-space:nowrap}
+  /* 💬 banter feed */
+  .bmsg{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px;margin:8px 0}
+  .bmsg .bmain{flex:1;min-width:0}
+  .bhead{display:flex;align-items:center;gap:4px;font-size:14px}
+  .btime{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+  .bbody{font-size:15px;margin:3px 0 0;overflow-wrap:anywhere;white-space:pre-wrap}
+  .bactions{display:flex;align-items:center;gap:7px;margin-top:8px;flex-wrap:wrap}
+  .likecount{font-size:13px;color:var(--muted);font-weight:600}
+  .likebtn{font-size:12px;font-weight:700;border-radius:8px;padding:5px 11px;border:1px solid var(--line);background:var(--bg);color:var(--muted)}
+  .likebtn.on{border-color:var(--pink);background:rgba(255,107,157,.15);color:#ffd0e0}
+  .cardbtn{font-size:13px;font-weight:700;border-radius:8px;padding:5px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  .cardbtn.yel{color:#3a2e00;background:#ffd02e;border-color:#caa314}
+  .cardbtn.redc{color:#fff;background:var(--red);border-color:#b03636}
 
   /* ---------- prop ---------- */
   .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:15px}
@@ -291,7 +317,7 @@
   @media (min-width:880px){
     .hwrap{max-width:1080px}
     .app.view-picks, .app.view-props{max-width:1080px;padding-left:22px;padding-right:22px}
-    .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin{max-width:720px}
+    .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin, .app.view-banter{max-width:720px}
     .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr}
     /* one tidy top bar instead of the stacked mobile header + bottom tab bar */
     nav.tabs{display:none}
@@ -432,7 +458,7 @@ function toggleMute(){ MUTED=!MUTED; try{localStorage.setItem("themask_muted",MU
 // deterministic seeded RNG (so the demo looks the same each load)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-const DB = { settings:{}, teams:[], matches:[], props:[], predictions:[], propAnswers:[], profiles:[], repicks:[] };
+const DB = { settings:{}, teams:[], matches:[], props:[], predictions:[], propAnswers:[], profiles:[], repicks:[], comments:[], cards:[], likes:[] };
 let ME = null;        // current profile object
 let MODE = "demo";    // 'demo' | 'live'
 let supa = null;
@@ -447,7 +473,7 @@ let LEAGUES=[];        // leagues ME belongs to: {id,name,code,buy_in,currency,p
 let MEMBERS=[];        // memberships: {league,user,paid}
 let LG=null;           // current league id
 let PENDING_JOIN=null; // invite code from ?join=… waiting to be applied after login
-const ALL={pred:[],pans:[],rep:[]}; // master picks across all leagues (each row has .league)
+const ALL={pred:[],pans:[],rep:[],comments:[],cards:[],likes:[]}; // master per-league data (each row has .league)
 const LG_KEY="themask_league";
 function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
 function curLeague(){ return LEAGUES.find(l=>l.id===LG)||null; }
@@ -461,6 +487,9 @@ function scopeLeague(){
   DB.predictions = ALL.pred.filter(p=>p.league===LG);
   DB.propAnswers = ALL.pans.filter(p=>p.league===LG);
   DB.repicks     = ALL.rep.filter(p=>p.league===LG);
+  DB.comments    = ALL.comments.filter(p=>p.league===LG);
+  DB.cards       = ALL.cards.filter(p=>p.league===LG);
+  DB.likes       = ALL.likes.filter(p=>p.league===LG);
   if(typeof loadAdv==="function") loadAdv();
 }
 
@@ -575,7 +604,7 @@ function seedDemo(){
   DB.props=seedProps();
   DB.profiles=[];
   DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[];
-  ALL.pred=[]; ALL.pans=[]; ALL.rep=[];
+  ALL.pred=[]; ALL.pans=[]; ALL.rep=[]; ALL.comments=[]; ALL.cards=[]; ALL.likes=[];
 
   // a sample private league everyone's already in (you can create/join more)
   const LGID="lg-demo";
@@ -616,6 +645,13 @@ function seedDemo(){
 
   // settle ONE prop for early drama (the USA one — say they made it)
   const usp=DB.props.find(p=>p.id==="p-usa"); usp.status="settled"; usp.correct="yes";
+  // a little banter to set the mood
+  const banter=[["f0","Easy group for my lot 😎 see you in the final"],["f2","Bold of someone to back Brazil to flop 🤡"],["f4","May the best mask win 🦇⚽"],["f1","2–1 South Korea?? questionable taste"]];
+  banter.forEach((b,i)=>{ if(DB.profiles.find(p=>p.id===b[0])) ALL.comments.push({id:`${b[0]}-${LGID}-seed${i}`,league:LGID,user:b[0],body:b[1],created:new Date(Date.now()-(banter.length-i)*3.6e6).toISOString()}); });
+  ALL.cards.push({id:`f4-f2seed-c`,league:LGID,comment:`f2-${LGID}-seed1`,from:"f4",target:"f2",kind:"yellow",created:new Date(Date.now()-1.8e6).toISOString()});
+  // a few likes so the "Top banter" board has life
+  [["me",`f4-${LGID}-seed2`],["f1",`f4-${LGID}-seed2`],["f0",`f4-${LGID}-seed2`],["f2",`f0-${LGID}-seed0`],["me",`f0-${LGID}-seed0`]]
+    .forEach(l=>ALL.likes.push({id:`${l[0]}-${l[1]}-l`,league:LGID,comment:l[1],user:l[0],created:new Date().toISOString()}));
   scopeLeague();
   saveLocal();
 }
@@ -715,6 +751,8 @@ function myRankInLeague(lid){
 
 /* ---------- reveal gating + fun stats ---------- */
 function profileById(id){return DB.profiles.find(p=>p.id===id);}
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function timeAgo(iso){const s=Math.floor((Date.now()-new Date(iso))/1000);if(s<45)return'just now';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);if(h<24)return h+'h';return Math.floor(h/24)+'d';}
 // avatar = uploaded photo if present, else the emoji badge
 function avatarInner(p){ return (p&&p.avatar) ? `<img class="avimg" src="${p.avatar}" alt=""/>` : (p?(p.emoji||"🙂"):"❓"); }
 function myPick(matchId){return DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);}
@@ -872,10 +910,70 @@ async function loadLeagueData(){
   const myIds=new Set((mem.data||[]).filter(m=>m.user_id===ME.id).map(m=>m.league_id));
   LEAGUES=(lg.data||[]).filter(l=>myIds.has(l.id)).map(l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by}));
   MEMBERS=(mem.data||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
-  await reloadPredictions(); await reloadProps(); await reloadRepicks();
+  await reloadPredictions(); await reloadProps(); await reloadRepicks(); await reloadComments();
   if(!LEAGUES.some(l=>l.id===LG)) LG=(LEAGUES[0]&&LEAGUES[0].id)||null;
   persistLG(); scopeLeague();
 }
+/* ---------- 💬 banter feed + 🟨🟥 cards ---------- */
+const CARD_SENDOFF_REDS=3, CARD_SENDOFF_MS=30*60*1000; // 3 reds → sent off 30 min (2 yellows = 1 red)
+function userCards(uid){
+  const mine=DB.cards.filter(c=>c.target===uid);
+  const yellow=mine.filter(c=>c.kind==="yellow").length, red=mine.filter(c=>c.kind==="red").length;
+  // red-equivalent events in time order: every red card, plus every 2nd yellow
+  const evs=mine.filter(c=>c.kind==="red").map(c=>new Date(c.created).getTime());
+  const ys=mine.filter(c=>c.kind==="yellow").sort((a,b)=>new Date(a.created)-new Date(b.created));
+  for(let i=1;i<ys.length;i+=2) evs.push(new Date(ys[i].created).getTime());
+  evs.sort((a,b)=>a-b);
+  let trigger=0; for(let i=CARD_SENDOFF_REDS-1;i<evs.length;i+=CARD_SENDOFF_REDS) trigger=evs[i];
+  const until=trigger?trigger+CARD_SENDOFF_MS:0;
+  return {yellow,red,reds:evs.length,until,sentOff:Date.now()<until};
+}
+function myCardOn(commentId){ return DB.cards.find(c=>c.from===ME.id&&c.comment===commentId); }
+function likeCount(commentId){ return DB.likes.filter(l=>l.comment===commentId).length; }
+function iLiked(commentId){ return DB.likes.some(l=>l.comment===commentId&&l.user===ME.id); }
+// best-banter ranking: total likes received on your posts (separate from the points Board)
+function topBanter(){
+  const authors=[...new Set(DB.comments.map(c=>c.user))].filter(u=>profileById(u));
+  return authors.map(u=>{ const posts=DB.comments.filter(c=>c.user===u);
+    return {user:u, posts:posts.length, likes:posts.reduce((s,c)=>s+likeCount(c.id),0)}; })
+    .sort((a,b)=> b.likes-a.likes || b.posts-a.posts);
+}
+async function toggleLike(commentId){
+  if(!DB.comments.find(x=>x.id===commentId)) return;
+  const ex=DB.likes.find(l=>l.comment===commentId&&l.user===ME.id);
+  if(ex){ ALL.likes=ALL.likes.filter(l=>l.id!==ex.id); scopeLeague(); if(MODE==="live"&&supa){ try{ await supa.from("likes").delete().eq("id",ex.id); }catch(e){console.error(e);} } }
+  else { const l={id:`${ME.id}-${commentId}-l`,league:LG,comment:commentId,user:ME.id,created:new Date().toISOString()}; ALL.likes.push(l); scopeLeague(); if(MODE==="live") await sbInsert("likes",{id:l.id,league_id:LG,comment_id:commentId,user_id:ME.id,created_at:l.created}); }
+  saveLocal();
+}
+async function reloadComments(){ if(MODE!=="live"||!supa)return;
+  const {data:cm}=await supa.from("comments").select("*"); const {data:cd}=await supa.from("cards").select("*"); const {data:lk}=await supa.from("likes").select("*");
+  if(cm) ALL.comments=cm.map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
+  if(cd) ALL.cards=cd.map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
+  if(lk) ALL.likes=lk.map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
+  scopeLeague();
+}
+async function postComment(body){
+  body=(body||"").trim().slice(0,500); if(!body||!LG) return false;
+  if(userCards(ME.id).sentOff){ toast("🟥 You're sent off — no posting right now"); return false; }
+  const c={id:`${ME.id}-${LG}-${Date.now()}`,league:LG,user:ME.id,body,created:new Date().toISOString()};
+  ALL.comments.push(c); scopeLeague();
+  if(MODE==="live") await sbInsert("comments",{id:c.id,league_id:LG,user_id:ME.id,body,created_at:c.created});
+  saveLocal(); return true;
+}
+async function giveCard(commentId, kind){
+  const cm=DB.comments.find(x=>x.id===commentId); if(!cm) return;
+  if(cm.user===ME.id){ toast("You can't card your own message 😅"); return; }
+  if(myCardOn(commentId)){ toast("You already carded that message"); return; }
+  const before=userCards(cm.user).sentOff;
+  const card={id:`${ME.id}-${commentId}-c`,league:LG,comment:commentId,from:ME.id,target:cm.user,kind,created:new Date().toISOString()};
+  ALL.cards.push(card); scopeLeague();
+  if(MODE==="live") await sbInsert("cards",{id:card.id,league_id:LG,comment_id:commentId,from_id:ME.id,target_id:cm.user,kind,created_at:card.created});
+  saveLocal();
+  const after=userCards(cm.user), nm=(profileById(cm.user)||{}).name||"Player";
+  if(after.sentOff && !before) celebrate(`🟥 ${nm} SENT OFF!`);
+  else toast(`${kind==="red"?"🟥 Red":"🟨 Yellow"} card for ${nm}!`);
+}
+
 /* ---------- live results auto-sync (TheSportsDB free API) ---------- */
 const SPORTSDB_KEY="3", SPORTSDB_LEAGUE="4429", SPORTSDB_SEASON="2026"; // 4429 = FIFA World Cup
 const TEAM_ALIASES={"united states":"usa","korea republic":"south korea","czech republic":"czechia","ivory coast":"côte d'ivoire","cote d'ivoire":"côte d'ivoire","turkey":"türkiye","cape verde":"cabo verde","cape verde islands":"cabo verde","congo dr":"dr congo","democratic republic of congo":"dr congo","dr congo":"dr congo","bosnia and herzegovina":"bosnia & herz","bosnia-herzegovina":"bosnia & herz"};
@@ -986,7 +1084,7 @@ function header(){
 }
 
 function navTabs(){
-  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Extras"],["board","📊","Board"],["pool","💰","Pool"]];
+  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
   if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
   return tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("");
 }
@@ -1092,22 +1190,30 @@ function viewBracket(){
   const st=groupStandings(g);
   const complete=groupComplete(g);
   const myAdv=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===g).map(p=>p.team);
+  const picksLeft=2-myAdv.length;
   html+=`<div class="card"><div class="grphead"><span class="grpbadge">Group ${g}</span>${complete?'<span class="chip done">Final</span>':'<span class="chip open">In progress</span>'}</div>`;
-  // standings
+  if(!complete){
+    html+= myAdv.length<2
+      ? `<div class="small" style="margin:2px 0 9px">⬆️ <b>Tap ${picksLeft} team${picksLeft>1?'s':''}</b> to send through to the knockouts <span class="muted">· +${DB.settings.pts_advance} each if right · locks instantly 🔒</span></div>`
+      : `<div class="small earn good" style="margin:2px 0 9px">🔒 Your two survivors are locked in — good luck!</div>`;
+  }
   st.forEach((t,i)=>{
-    const adv=i<2?'<span class="tiny" style="color:var(--gold)">▲ adv</span>':'';
-    html+=`<div class="standrow"><b style="width:16px;color:var(--muted)">${i+1}</b><span class="flag" style="font-size:18px;width:24px">${t.flag}</span><span>${t.name}</span> <span class="gp">${t.Pts}pts · ${t.GF}-${t.GA} ${adv}</span></div>`;
+    const picked=myAdv.includes(t.id);
+    const qualified=complete && i<2;
+    const canPick=!complete && !picked && myAdv.length<2;
+    let right;
+    if(complete){ right = picked ? (qualified?`<span class="advtag hit">✓ THROUGH</span>`:`<span class="advtag miss">✗ OUT</span>`) : (qualified?`<span class="tiny" style="color:var(--gold)">▲ advanced</span>`:''); }
+    else if(picked){ right=`<span class="advtag on">⬆️ THROUGH 🔒</span>`; }
+    else if(canPick){ right=`<span class="advhint">tap to send through ⬆️</span>`; }
+    else { right=`<span class="muted tiny">—</span>`; }
+    html+=`<button class="advrow ${picked?'on':canPick?'can':''}" ${canPick?`data-adv="${t.id}" data-advgrp="${g}"`:'disabled'}>
+      <b style="width:15px;color:var(--muted)">${i+1}</b>
+      <span class="flag" style="font-size:21px;width:27px">${t.flag}</span>
+      <span class="tname">${t.name}</span>
+      ${complete?`<span class="gp">${t.Pts}p · ${t.GF}-${t.GA}</span>`:''}
+      <span style="margin-left:auto">${right}</span>
+    </button>`;
   });
-  // advance picks
-  html+=`<div class="divider"></div><div class="small muted">Your survivors from Group ${g}:</div><div class="advpick">`;
-  [0,1].forEach(slot=>{
-    const cls=slot===0?"q1":"q2";
-    const cur=myAdv[slot];
-    const t=cur?teamById(cur):null;
-    html+=`<button class="tg ${cls}" data-advslot="${slot}" data-advgrp="${g}" ${(complete||cur)?'disabled':''}>
-      <span>${slot===0?'🥇':'🥈'}</span>${t?`${t.flag} ${t.name} 🔒`:`<span class="muted">Pick #${slot+1}…</span>`}</button>`;
-  });
-  html+=`</div>`;
   if(complete){
     const correct=myAdv.filter(id=>[st[0].id,st[1].id].includes(id)).length;
     html+=`<div class="small earn good" style="margin-top:8px">Group done — you nailed ${correct}/2 survivors (+${correct*DB.settings.pts_advance} pts)</div>`;
@@ -1166,6 +1272,49 @@ function viewProps(){
     cards+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
   });
   return html+`<div class="cardgrid">${cards}</div>`;
+}
+
+/* ---------- 💬 BANTER ---------- */
+function viewBanter(){
+  const me=userCards(ME.id);
+  const feed=[...DB.comments].sort((a,b)=>new Date(b.created)-new Date(a.created));
+  let html=`<div class="card"><h3>💬 Banter${curLeague()?` · ${curLeague().name}`:''}</h3>
+    <div class="small muted">Trash-talk your league. See a cheeky post? Book it — 🟨 or 🟥. <b>2 yellows = a red</b>, and <b>${CARD_SENDOFF_REDS} reds = sent off</b> (no posting for 30 min). Behave 😇🦇</div></div>`;
+  if(me.sentOff){
+    const mins=Math.max(1,Math.ceil((me.until-Date.now())/60000));
+    html+=`<div class="card center" style="border-color:var(--red)"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:20px">You're sent off!</div><div class="small muted">Cool it — back in about ${mins} min. No posting till then.</div></div>`;
+  } else {
+    html+=`<div class="card"><textarea id="banterbox" rows="2" maxlength="500" placeholder="Say something… 💬" style="resize:vertical"></textarea>
+      <button class="btn lime block" id="banterpost" style="margin-top:8px">Post 💬</button></div>`;
+  }
+  const tb=topBanter().filter(t=>t.likes>0);
+  if(tb.length){
+    html+=`<div class="card"><h3 style="font-size:15px">🏆 Top banter <span class="muted tiny">— most-liked in ${curLeague()?curLeague().name:'the league'}</span></h3>`+tb.slice(0,5).map((t,i)=>{const u=profileById(t.user);const medal=i===0?'👑':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
+      return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
+  }
+  const naughty=DB.profiles.map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
+  if(naughty.length){
+    html+=`<div class="card"><h3 style="font-size:15px">📋 Ref's book</h3>`+naughty.map(({p,c})=>`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span>${escapeHtml(p.name)}${c.sentOff?' <span class="advtag miss">🟥 SENT OFF</span>':''}</span><span class="gp">${c.yellow?'🟨'.repeat(Math.min(c.yellow,6)):''}${c.red?'🟥'.repeat(Math.min(c.red,6)):''}</span></div>`).join("")+`</div>`;
+  }
+  if(!feed.length){ html+=`<div class="empty"><div class="e">💬</div>No banter yet — break the ice!</div>`; return html; }
+  feed.forEach(c=>{
+    const u=profileById(c.user), mine=c.user===ME.id, myc=myCardOn(c.id), uc=userCards(c.user);
+    const badge = uc.sentOff?'<span class="advtag miss" style="margin-left:6px">🟥 off</span>' : (uc.red||uc.yellow?`<span class="tiny" style="margin-left:6px;color:var(--muted)">${uc.yellow?'🟨'+uc.yellow:''}${uc.red?' 🟥'+uc.red:''}</span>`:'');
+    html+=`<div class="bmsg">
+      <div class="avatar" style="width:34px;height:34px;font-size:16px;flex:none">${avatarInner(u)}</div>
+      <div class="bmain">
+        <div class="bhead"><b>${escapeHtml(u?u.name:'?')}${mine?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</b>${badge}<span class="btime">${timeAgo(c.created)}</span></div>
+        <div class="bbody">${escapeHtml(c.body)}</div>
+        <div class="bactions">
+          ${likeCount(c.id)?`<span class="likecount">❤️ ${likeCount(c.id)}</span>`:''}
+          ${mine?(likeCount(c.id)?'':'<span class="tiny muted">your post</span>')
+            :`<button class="likebtn ${iLiked(c.id)?'on':''}" data-like="${c.id}">${iLiked(c.id)?'❤️ Liked':'🤍 Like'}</button>
+              ${myc?`<span class="tiny muted">you showed ${myc.kind==='red'?'🟥':'🟨'}</span>`:`<button class="cardbtn yel" data-card="yellow" data-cm="${c.id}">🟨</button><button class="cardbtn redc" data-card="red" data-cm="${c.id}">🟥</button>`}`}
+        </div>
+      </div>
+    </div>`;
+  });
+  return html;
 }
 
 /* ---------- LEADERBOARD ---------- */
@@ -1300,7 +1449,7 @@ function render(){
   if(ME && (!LG || !curLeague())){ $("#app").innerHTML = leagueGate(); wireGate(); return; }
   loadAdv();
   if(VIEW==="admin" && !ADMIN_UNLOCKED) VIEW="picks";
-  const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,pool:viewPool,admin:viewAdmin};
+  const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,banter:viewBanter,pool:viewPool,admin:viewAdmin};
   const body=(views[VIEW]||viewPicks)();
   let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
   $("#app").innerHTML = header()+`<div class="app view-${VIEW}">${banner}${body}</div>`+nav();
@@ -1346,7 +1495,13 @@ function wire(){
       async()=>{ await saveRepick(id,hp,ap); celebrate("RE-PICK!"); render(); }, `Change it (−${REPICK_COST} pts)`);
   });
   // advance picks (one-shot)
-  $$("[data-advslot]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveAdvance(b.dataset.advgrp,parseInt(b.dataset.advslot),t.id).then(render);}, b.dataset.advgrp));
+  $$("[data-adv]").forEach(b=>b.onclick=async()=>{
+    const g=b.dataset.advgrp, team=b.dataset.adv;
+    const mine=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===g).map(p=>p.team);
+    if(mine.includes(team)||mine.length>=2) return;
+    await saveAdvance(g, mine.length, team);
+    const t=teamById(team); party(); toast(`${t.flag} ${t.name} — through to the knockouts! ⬆️`); render();
+  });
   $$("[data-grp]").forEach(b=>b.onclick=()=>{grpSel=b.dataset.grp;render();});
   // knockout run picks (one-shot)
   $$("[data-ko]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveKO(b.dataset.ko,t.id).then(render);}));
@@ -1368,6 +1523,9 @@ function wire(){
   $$("[data-sync]").forEach(b=>b.onclick=()=>syncResults(true));
   const rl=$("[data-rules]"); if(rl) rl.onclick=openRules;
   const lgs=$("[data-leagues]"); if(lgs) lgs.onclick=()=>openLeagueMenu(lgs);
+  const bp=$("#banterpost"); if(bp) bp.onclick=async()=>{ const box=$("#banterbox"); if(await postComment(box?box.value:"")) render(); };
+  $$("[data-card]").forEach(b=>b.onclick=()=>giveCard(b.dataset.cm,b.dataset.card).then(render));
+  $$("[data-like]").forEach(b=>b.onclick=()=>toggleLike(b.dataset.like).then(render));
   $$("[data-copycode]").forEach(b=>b.onclick=()=>copyText(b.dataset.copycode));
   $$("[data-copylink]").forEach(b=>b.onclick=()=>copyText(inviteLink(b.dataset.copylink)));
   // pool
@@ -1746,8 +1904,8 @@ async function boot(){
 async function liveLoad(user){
   // pull everything into the same shape the UI expects
   const tbl=async n=>{const {data}=await supa.from(n).select("*");return data||[];};
-  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships]=await Promise.all(
-    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships"].map(tbl));
+  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships","comments","cards","likes"].map(tbl));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
   if(!DB.settings.ko) DB.settings.ko={r16:[],qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
@@ -1764,6 +1922,9 @@ async function liveLoad(user){
     .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,league:k.league_id,ko:true,stage:k.stage,team:k.team})));
   ALL.pans = answers.map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer}));
   ALL.rep  = (reps||[]).map(r=>({id:r.id,user:r.user_id,league:r.league_id,match:r.match_id,hp:r.hp,ap:r.ap}));
+  ALL.comments = (comments||[]).map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
+  ALL.cards    = (cards||[]).map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
+  ALL.likes    = (likes||[]).map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
   if(!mine){
