@@ -975,7 +975,7 @@ async function doLogin(){
   if(!val){toast("Type something first 🙂");return;}
   if(MODE==="live"){
     try{
-      const {error}=await supa.auth.signInWithOtp({email:val,options:{emailRedirectTo:window.location.href}});
+      const {error}=await supa.auth.signInWithOtp({email:val,options:{emailRedirectTo:window.location.origin}});
       if(error)throw error;
       loginScreen(`<div class="banner demo">📧 Magic link sent to <b>${val}</b>. Open it on this device to jump in.</div>`);
     }catch(e){toast("Couldn't send link — check config");console.error(e);}
