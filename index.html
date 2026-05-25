@@ -43,6 +43,7 @@
     background-attachment:fixed;
     color:var(--ink);
     min-height:100vh;
+    font-size:17px;
     -webkit-font-smoothing:antialiased;
   }
   .display{font-family:'Fredoka',sans-serif;}
@@ -76,16 +77,16 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:12px 0;box-shadow:var(--shadow)}
   .card h3{margin:0 0 4px;font-family:'Fredoka';font-size:18px}
   .muted{color:var(--muted)}
-  .small{font-size:12.5px}
-  .tiny{font-size:11px}
+  .small{font-size:14px}
+  .tiny{font-size:12.5px}
   .center{text-align:center}
   .row{display:flex;align-items:center;gap:8px}
   .spread{display:flex;align-items:center;justify-content:space-between;gap:8px}
-  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--muted)}
   .chip.live{color:var(--red);border-color:var(--red)}
   .chip.done{color:var(--green);border-color:#2a6e4d}
   .chip.open{color:var(--cyan);border-color:#2a5a6e}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:13px;padding:10px 14px;font-weight:600;font-size:14px;transition:transform .06s ease, filter .15s}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:13px;padding:10px 14px;font-weight:600;font-size:15px;transition:transform .06s ease, filter .15s}
   .btn:active{transform:scale(.97)}
   .btn.primary{background:linear-gradient(90deg,var(--pink),var(--purple));border:none;color:#fff;box-shadow:0 8px 20px rgba(11,111,179,.4)}
   .btn.lime{background:linear-gradient(90deg,var(--lime),#7be000);border:none;color:#16123a;box-shadow:0 8px 18px rgba(198,255,61,.25)}
@@ -95,7 +96,7 @@
   .btn:disabled{opacity:.45;filter:grayscale(.4)}
   input,select,textarea{font-family:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:15px;width:100%}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple)}
-  label.fld{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 
   /* ---------- match card ---------- */
@@ -103,7 +104,7 @@
   .match .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .teamline{display:flex;align-items:center;gap:8px}
   .flag{font-size:24px;line-height:1;width:30px;text-align:center}
-  .tname{font-weight:600;font-size:15px}
+  .tname{font-weight:600;font-size:16px}
   .vs{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0}
   .vs .side{display:flex;align-items:center;gap:8px}
   .vs .side.away{flex-direction:row-reverse;text-align:right}
@@ -142,7 +143,7 @@
     backdrop-filter:blur(12px);border-top:1px solid var(--line)
   }
   nav.tabs .inner{display:flex;gap:2px;max-width:540px;width:100%;justify-content:space-around}
-  nav.tabs button{background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border-radius:12px;font-size:10px;font-weight:600;min-width:54px}
+  nav.tabs button{background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border-radius:12px;font-size:11.5px;font-weight:600;min-width:54px}
   nav.tabs button .ic{font-size:21px}
   nav.tabs button.on{color:var(--ink);background:var(--card)}
   nav.tabs button.on .ic{filter:drop-shadow(0 0 9px rgba(255,208,46,.75))}
@@ -159,7 +160,7 @@
   .advpick .tg.q2{border-color:var(--cyan);background:rgba(54,224,255,.1)}
 
   /* ---------- prop ---------- */
-  .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:14px}
+  .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:15px}
   .opt.sel{border-color:var(--lime);background:rgba(198,255,61,.1)}
   .opt .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex:none}
   .opt.sel .rd{border-color:var(--lime);background:var(--lime)}
@@ -186,7 +187,7 @@
   .empty .e{font-size:40px}
   .seg{display:flex;gap:6px;overflow-x:auto;padding:4px 0;margin:4px 0;scrollbar-width:none}
   .seg::-webkit-scrollbar{display:none}
-  .seg button{white-space:nowrap;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600}
+  .seg button{white-space:nowrap;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:600}
   .seg button.on{background:var(--card2);color:var(--ink);border-color:var(--purple)}
   .countdown{font-family:'Fredoka';color:var(--cyan)}
 
@@ -256,7 +257,7 @@
   .mvs{flex:none;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px}
   .scorerow{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}
   .scorerow .colon{font-family:'Fredoka';color:var(--muted);font-size:22px}
-  @media (max-width:380px){ .oddbtn{font-size:11px;padding:7px 2px} .oddbtn b{font-size:14px} .tname{font-size:14px} }
+  @media (max-width:380px){ .oddbtn{font-size:11px;padding:7px 2px} .oddbtn b{font-size:14px} .tname{font-size:15px} }
   .avatar{overflow:hidden}
   .avimg{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
   .avbtn{cursor:pointer}
@@ -1277,6 +1278,12 @@ async function updateProfile(fields){
   if(MODE==="live") await sbUpsert("profiles",{id:ME.id,display_name:ME.name,emoji:ME.emoji,avatar:ME.avatar||null,fav_team:ME.team||null});
   saveLocal();
 }
+async function logout(){
+  try{ if(MODE==="live" && supa) await supa.auth.signOut(); }catch(e){ console.error(e); }
+  try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  ME=null;
+  location.reload();
+}
 function openProfile(){
   const root=$("#modal-root");
   let pendAvatar=ME.avatar||null, pendEmoji=ME.emoji||"🙂", pendName=ME.name||"", pendTeam=ME.team||null;
@@ -1298,6 +1305,7 @@ function openProfile(){
           ? `<div class="opt" style="opacity:.95"><span class="flag">${ft?ft.flag:'🌍'}</span><span>${ft?ft.name:'—'}</span><span style="margin-left:auto" class="tiny muted">🔒</span></div>`
           : `<button class="btn block" id="pvteam" type="button">${ft?`${ft.flag} ${ft.name}`:'🌍 Tap to choose your team'}</button>`}
         <button class="btn primary block" id="pvsave" style="margin-top:12px">Save</button>
+        <button class="btn block" id="pvlogout" style="margin-top:8px;border-color:var(--red);color:#ffb3b3">↩︎ Log out</button>
       </div></div></div>`;
     const close=()=>root.innerHTML="";
     $("[data-close]",root).onclick=close;
@@ -1312,6 +1320,7 @@ function openProfile(){
       if(!locked && pendTeam) fields.team=pendTeam; // only settable while unlocked
       await updateProfile(fields); close(); toast("Profile saved ✨"); render();
     };
+    $("#pvlogout",root).onclick=()=>{ if(confirm("Log out of THE MASK? You'll re-enter your name to rejoin.")) logout(); };
   };
   draw();
 }
