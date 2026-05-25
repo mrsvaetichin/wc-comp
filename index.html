@@ -1639,9 +1639,16 @@ async function doLogin(){
 function loadError(msg){
   $("#app").innerHTML=`<div class="app"><div class="hero"><div class="herophoto"><img src="gyok.jpg" alt=""/></div>
     <div class="big"><b>${DB.settings.app_title||"THE MASK"}</b></div></div>
-    <div class="banner warn"><b>Couldn't start live mode.</b><br>${msg}</div>
+    <div class="banner warn"><b>Couldn't connect.</b><br>${msg}</div>
     <button class="btn primary block" onclick="location.reload()">Try again 🔄</button></div>`;
 }
+function bootingScreen(){
+  $("#app").innerHTML=`<div class="app"><div class="hero" style="padding-top:60px">
+    <div class="herophoto"><img src="gyok.jpg" alt=""/></div>
+    <div class="big">Loading <b>THE MASK</b>…</div>
+    <div class="muted">Warming up the pitch ⚽🦇</div></div></div>`;
+}
+function withTimeout(p, ms, label){ return Promise.race([Promise.resolve(p), new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout:"+(label||""))), ms))]); }
 async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDING_JOIN=null; try{ await joinLeague(c); }catch(e){ console.error(e); } } }
 async function boot(){
   WANT_ADMIN = isAdminRoute();
@@ -1649,23 +1656,24 @@ async function boot(){
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
   if(haveKeys){
     MODE="live";
-    // the Supabase library loads from a CDN — wait briefly in case it's slow
-    let tries=0; while(!window.supabase && tries<60){ await new Promise(r=>setTimeout(r,50)); tries++; }
+    bootingScreen(); // never show a blank/frozen background while we connect
+    // the Supabase library loads from a CDN — wait up to ~6s in case it's slow
+    let tries=0; while(!window.supabase && tries<120){ await new Promise(r=>setTimeout(r,50)); tries++; }
     if(!window.supabase){
-      loadError("The Supabase login library didn't load. Check your internet connection or any ad/script blocker, then reload. (If you opened the file directly, deploy it / serve it over http instead.)");
+      loadError("The login library didn't load — a browser extension or your network may be blocking it. Turn off ad/script blockers for this site and reload.");
       return;
     }
     try{
       supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-      const {data}=await supa.auth.getSession();
-      if(data&&data.session){ await liveLoad(data.session.user); await applyPendingJoin(); render(); }
+      const {data}=await withTimeout(supa.auth.getSession(), 12000, "session");
+      if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 15000, "load"); await applyPendingJoin(); render(); }
       else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
       supa.auth.onAuthStateChange(async (_e,session)=>{
-        if(session&&session.user){ await liveLoad(session.user); await applyPendingJoin(); render(); }
+        if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),15000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }
       });
     }catch(e){
       console.error(e);
-      loadError("Couldn't reach your Supabase project. Double-check the URL/key and that the project is running, then reload.");
+      loadError("Couldn't reach the server — your connection may have dropped, or the project is paused. Tap to retry.");
     }
     return;
   }
