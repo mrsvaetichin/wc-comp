@@ -165,6 +165,7 @@
   .hlb-nm{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .hlb-pts{font-family:'Fredoka';font-weight:700;color:var(--lime);white-space:nowrap}
   .hlb-link{background:transparent;border:none;color:var(--cyan);font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+  .bbonus{display:inline-block;background:var(--lime);color:#0c2a08;font-family:'Fredoka';font-weight:700;font-size:12px;border-radius:999px;padding:1px 7px;margin-right:6px}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -402,6 +403,7 @@ const KO_LIM={r16:16,qf:8,sf:4,final:2};
 const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 const FAN_BONUS=1; // +1 pt each time your supported team wins a match
+const BANTER_BONUS=[5,3,1]; // 💬 extra points for the funniest: 🥇+5 🥈+3 🥉+1 (ranked by ❤️ likes, must have ≥1 like)
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
 function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
@@ -704,6 +706,11 @@ function groupStandings(g){
 }
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
+// 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+5 🥈+3 🥉+1).
+// Ranked by ❤️ likes; you must have at least one like to place (so nobody wins it just by existing).
+function banterRank(uid){ const ranked=topBanter().filter(x=>x.likes>0); return ranked.findIndex(x=>x.user===uid); }
+function banterBonus(uid){ const i=banterRank(uid); return (i>=0 && i<BANTER_BONUS.length) ? BANTER_BONUS[i] : 0; }
+
 function scoreFor(profileId){
   const s=DB.settings; let pts=0;
   // match score predictions (uses your latest pick: a half-time re-pick overrides the original)
@@ -740,6 +747,8 @@ function scoreFor(profileId){
   if(fav){ DB.matches.forEach(m=>{ if(m.status!=="finished")return; if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; }); }
   // half-time re-pick penalty
   pts -= REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
+  // 💬 banter bonus: top-3 funniest (by ❤️ likes) earn 🥇+5 🥈+3 🥉+1
+  pts += banterBonus(profileId);
   return {pts};
 }
 // advance picks stored separately for clarity
@@ -1120,8 +1129,9 @@ function heroLeaderboard(){
   let banter;
   if(tb.length){
     const brows=tb.map((r,i)=>{const p=profileById(r.user); if(!p)return''; const medal=i===0?'🥇':i===1?'🥈':'🥉';
-      return `<div class="hlb-row ${r.user===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">❤️ ${r.likes}</span></div>`;}).join("");
-    banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
+      const bonus=r.likes>0?`<span class="bbonus">+${BANTER_BONUS[i]}</span>`:'';
+      return `<div class="hlb-row ${r.user===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
+    banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter <span class="tiny muted">· bonus pts</span></h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
   } else {
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-tab="banter">Start →</button></div><div class="small muted" style="padding:8px 2px">No banter yet — fire the first shot in the 💬 Banter tab.</div></div>`;
   }
@@ -1322,8 +1332,9 @@ function viewBanter(){
   }
   const tb=topBanter().filter(t=>t.likes>0);
   if(tb.length){
-    html+=`<div class="card"><h3 style="font-size:15px">🏆 Top banter <span class="muted tiny">— most-liked in ${curLeague()?curLeague().name:'the league'}</span></h3>`+tb.slice(0,5).map((t,i)=>{const u=profileById(t.user);const medal=i===0?'👑':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
-      return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
+    html+=`<div class="card"><h3 style="font-size:15px">🏆 Top banter <span class="muted tiny">— most-liked in ${curLeague()?curLeague().name:'the league'} · top 3 bank bonus pts</span></h3>`+tb.slice(0,5).map((t,i)=>{const u=profileById(t.user);const medal=i===0?'👑':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
+      const bonus=i<BANTER_BONUS.length?`<span class="bbonus">+${BANTER_BONUS[i]}</span>`:'';
+      return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">${bonus}❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
   }
   const naughty=DB.profiles.map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
   if(naughty.length){
@@ -1361,7 +1372,7 @@ function banterBoard(){
 }
 function viewBanterBoard(){
   const rows=banterBoard();
-  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts — funniest in the league wins the bragging rights.</div>${boardToggle()}</div>`;
+  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts. The top 3 funniest also bank bonus points toward the main standings: <b>🥇 +${BANTER_BONUS[0]} · 🥈 +${BANTER_BONUS[1]} · 🥉 +${BANTER_BONUS[2]}</b>.</div>${boardToggle()}</div>`;
   if(!rows.length || rows.every(r=>r.likes===0&&r.posts===0)){
     html+=`<div class="empty"><div class="e">💬</div>No banter yet — open the 💬 Banter tab and get the trash talk going!</div>`;
     return html;
@@ -1380,10 +1391,11 @@ function viewBanterBoard(){
   rows.forEach((r,i)=>{ const u=profileById(r.user); const me=r.user===ME.id?'me':'';
     const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
     const cards=`${r.yellow?'🟨'+r.yellow:''}${r.red?' 🟥'+r.red:''}`;
+    const bonus=banterBonus(r.user);
     html+=`<div class="lbrow ${me}">
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(u)}</div>
-      <div class="nm">${escapeHtml(u.name)}${r.sentOff?' <span class="advtag miss">🟥 off</span>':''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} <small class="badges">${r.posts} post${r.posts===1?'':'s'}${cards?' · '+cards:''}</small></div>
+      <div class="nm">${escapeHtml(u.name)}${r.sentOff?' <span class="advtag miss">🟥 off</span>':''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} <small class="badges">${r.posts} post${r.posts===1?'':'s'}${cards?' · '+cards:''}${bonus?' · <span style="color:var(--lime)">+'+bonus+' pts</span>':''}</small></div>
       <div class="sc">❤️ ${r.likes}</div>
     </div>`;
   });
@@ -1740,6 +1752,7 @@ function rulesHTML(){
       <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}), then which teams reach the Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
       <li><b>🃏 Extras</b> — tournament-wide predictions: who wins it all (worth 30!), top scorer & fun calls.</li>
+      <li><b>💬 Banter bonus</b> — the 3 funniest (most ❤️ likes on your posts) bank bonus points: 🥇 +${BANTER_BONUS[0]} · 🥈 +${BANTER_BONUS[1]} · 🥉 +${BANTER_BONUS[2]}.</li>
       <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
     </ul>
     <b>The money</b>
