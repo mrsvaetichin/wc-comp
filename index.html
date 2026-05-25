@@ -177,6 +177,13 @@
   .bcval{text-align:right;font-family:'Fredoka';font-weight:700;font-size:12px;color:var(--ink)}
   .bcrow.me .bcnm{color:var(--cyan)}
   .bcrow.me .bctrack{box-shadow:0 0 0 1px var(--cyan)}
+  /* points progression line chart */
+  .linechart{margin-top:8px}
+  .linechart svg{width:100%;height:auto;display:block}
+  .lc-legend{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:10px;font-size:12px}
+  .lc-leg{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+  .lc-leg.me{font-weight:700;color:var(--ink)}
+  .lc-sw{width:14px;height:4px;border-radius:2px;display:inline-block;flex:none}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -1158,22 +1165,78 @@ function barChart(items, fillClass){
   }).join("")+`</div>`;
 }
 function medalFor(rank){ return rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">${rank}</span>`; }
+
+// ── Points progression line chart (each player a line, cumulative match points by matchday) ──
+const LINE_PAL=['#5cc8ff','#c6ff3d','#ff8a3d','#3ddc84','#b388ff','#ff5c8a','#4dd0e1','#ffd02e','#9fa8da','#80cbc4'];
+function dateKey(k){ return (typeof k==='string'&&/^\d{4}-\d{2}-\d{2}/.test(k)) ? k.slice(0,10) : new Date(k).toISOString().slice(0,10); }
+// a player's cumulative MATCH-based points as of a moment (score predictions+banker, fan bonus, group survivors once a group is done, minus re-pick costs incurred)
+function matchPtsAsOf(uid, cutoff){
+  const s=DB.settings; let pts=0;
+  const fin=DB.matches.filter(m=>m.status==="finished" && new Date(m.kickoff).getTime()<=cutoff);
+  fin.forEach(m=>{ const pr=effectivePick(uid,m.id);
+    if(pr&&pr.hp!=null&&pr.ap!=null){ const exact=pr.hp===m.hs&&pr.ap===m.as; const outcome=Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
+      let add=exact?s.pts_exact:outcome?s.pts_result:0; if(pr.banker) add*=2; pts+=add; }
+  });
+  const fav=(profileById(uid)||{}).team;
+  if(fav) fin.forEach(m=>{ if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; });
+  ADV.filter(a=>a.user===uid).forEach(a=>{ const gm=DB.matches.filter(m=>m.grp===a.grp);
+    const done=gm.length>0 && gm.every(m=>m.status==="finished" && new Date(m.kickoff).getTime()<=cutoff);
+    if(!done) return; const st=groupStandings(a.grp); if(st[0]&&st[1]&&[st[0].id,st[1].id].includes(a.team)) pts+=s.pts_advance; });
+  (DB.repicks||[]).filter(r=>r.user===uid).forEach(r=>{ const m=DB.matches.find(x=>x.id===r.match);
+    if(m&&m.status==="finished"&&new Date(m.kickoff).getTime()<=cutoff) pts-=REPICK_COST; });
+  return pts;
+}
+function pointsLineChart(){
+  const lg=curLeague(); if(!lg) return '';
+  // matchday checkpoints = distinct dates that have ≥1 finished match
+  const days=[...new Set(DB.matches.filter(m=>m.status==="finished").map(m=>dateKey(m.kickoff)))].sort();
+  const card=(inner)=>`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">📈 Points progression</h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="tiny muted">Cumulative match points · how the league pulled apart matchday by matchday</div>${inner}</div>`;
+  if(days.length<2) return card(`<div class="small muted" style="padding:10px 2px">The race chart appears once a couple of matchdays are in the books. Hang tight — kickoff is June 11. ⚽</div>`);
+  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
+  // rank members by their final cumulative; cap to 10 lines so it stays readable
+  let mem=leagueMembers(LG).map(p=>({p, series:cps.map(c=>matchPtsAsOf(p.id,c.cut))}));
+  mem.forEach(m=>m.final=m.series[m.series.length-1]);
+  mem.sort((a,b)=> b.final-a.final || a.p.name.localeCompare(b.p.name));
+  const extra=Math.max(0, mem.length-10); mem=mem.slice(0,10);
+  // geometry
+  const W=340,H=190,padL=24,padR=10,padT=12,padB=26;
+  const allv=mem.flatMap(m=>m.series);
+  const yMax=Math.max(1, ...allv), yMin=Math.min(0, ...allv);
+  const x=i=>padL+(cps.length<=1?0:i*(W-padL-padR)/(cps.length-1));
+  const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
+  // gridlines + y labels (3 ticks)
+  let grid='';
+  for(let t=0;t<=3;t++){ const val=yMin+(yMax-yMin)*t/3; const yy=y(val);
+    grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" style="stroke:var(--line);stroke-width:.5"/><text x="${padL-4}" y="${(yy+3).toFixed(1)}" text-anchor="end" style="fill:var(--muted);font-size:8px">${Math.round(val)}</text>`; }
+  // x labels (show up to 6, evenly)
+  let xlab=''; const step=Math.ceil(cps.length/6);
+  cps.forEach((c,i)=>{ if(i%step!==0 && i!==cps.length-1) return; const parts=c.d.split("-");
+    xlab+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" style="fill:var(--muted);font-size:8px">${(+parts[1])}/${(+parts[2])}</text>`; });
+  // lines + end dots
+  const lines=mem.map((m,idx)=>{ const me=m.p.id===ME.id; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
+    const pts=m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const ex=x(cps.length-1), ey=y(m.series[m.series.length-1]);
+    return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${me?3:2}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.9}"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${me?3.5:2.5}" fill="${col}"/>`; }).join("");
+  const svg=`<div class="linechart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Points progression">${grid}${lines}${xlab}</svg></div>`;
+  // legend (ranked)
+  const legend=`<div class="lc-legend">`+mem.map((m,idx)=>{ const me=m.p.id===ME.id; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
+    return `<span class="lc-leg ${me?'me':''}"><span class="lc-sw" style="background:${col}"></span>${escapeHtml(m.p.name.split(" ")[0])}${me?' (you)':''} · ${m.final}</span>`; }).join("")+(extra?`<span class="lc-leg muted">+${extra} more</span>`:'')+`</div>`;
+  return card(svg+legend);
+}
+
 function leagueCharts(){
   const lg=curLeague(); if(!lg) return '';
-  // Points chart — everyone, top 10
-  const lb=leaderboard(); if(!lb.length) return '';
-  const pItems=lb.slice(0,10).map(r=>({name:r.name.split(" ")[0], value:r.pts, valLabel:`${r.pts}`, medal:medalFor(r.rank), me:r.id===ME.id}));
-  const pCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">📊 Points race</h3><div class="tiny muted">Total standings points</div>${barChart(pItems,'pts')}</div>`;
-  // Banter chart — by ❤️ likes, only those with likes, top 10
+  if(!leaderboard().length) return '';
+  // Banter race — by ❤️ likes, only those with likes, top 10
   const bb=banterBoard().filter(r=>r.likes>0).slice(0,10);
   let bCard;
   if(bb.length){
     const bItems=bb.map((r,i)=>({name:(profileById(r.user)||{name:'?'}).name.split(" ")[0], value:r.likes, valLabel:`❤️ ${r.likes}`, medal:medalFor(i+1), me:r.user===ME.id}));
-    bCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="tiny muted">Likes on your posts · top 3 bank bonus pts</div>${barChart(bItems,'ban')}</div>`;
+    bCard=`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">💬 Banter race</h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="tiny muted">Likes on your posts · top 3 bank bonus pts</div>${barChart(bItems,'ban')}</div>`;
   } else {
-    bCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="small muted" style="padding:8px 2px">No likes yet — get some laughs in the 💬 Banter tab.</div></div>`;
+    bCard=`<div class="card"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="small muted" style="padding:8px 2px">No likes yet — get some laughs in the 💬 Banter tab.</div></div>`;
   }
-  return `<div class="herogrid">${pCard}${bCard}</div>`;
+  return bCard;
 }
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
@@ -1184,7 +1247,7 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html=heroLeaderboard()+leagueCharts();
+  let html=heroLeaderboard()+pointsLineChart()+leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
