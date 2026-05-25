@@ -1,9 +1,10 @@
-# ⚽ GOALPOST — your World Cup '26 pool
+# 🦇 THE MASK — your World Cup '26 pool
 
 A playful prediction game for you and ~20 friends. Predict scorelines, call upsets,
 throw virtual coins on longshots, talk trash, and split a real-money pot at the end.
 Built around the **real 2026 World Cup draw** (all 12 groups, 72 group fixtures, opener
-Mexico 🇲🇽 v South Africa 🇿🇦 on June 11).
+Mexico 🇲🇽 v South Africa 🇿🇦 on June 11), with a Gyökeres "mask" theme. Players log in
+with **just a name — no email, no password.**
 
 There are two ways to use it.
 
@@ -11,90 +12,79 @@ There are two ways to use it.
 
 ## 1. Try it right now (Demo mode — zero setup)
 
-Just **open `index.html` in any browser**. It boots straight into a fully playable game
-with sample friends, results, and a live leaderboard so you can feel how it plays. Make
-picks, hit the 🃏 Props tab, watch the 📊 board move. Nothing you do here is shared — it's
-your private sandbox (saved in your browser only).
+Open `index.html` in any browser and it boots straight into a fully playable game with
+sample friends, results, and a live leaderboard. Make picks, hit the 🃏 Props tab, watch
+the 📊 board move. Nothing here is shared — it's a private sandbox in your browser.
 
-When you're ready to play for real with your crew, do the 10-minute setup below.
+> Your live Supabase keys are already in the file, so opening it will show the **live login**.
+> To poke around in demo instead, temporarily blank out `SUPABASE_URL` near the top of the script.
 
 ---
 
-## 2. Go live for your friends (real logins + shared database)
+## 2. Go live for your friends (shared database, name-only login)
 
-You'll use **Supabase** — a free hosted database with built-in logins. Free tier is way
-more than enough for 20 people.
+You're using **Supabase** (database + login) and **Vercel** (hosting). Here's the whole path.
 
-### Step 1 — Create the database
-1. Go to **supabase.com** → sign up (free) → **New project**. Pick any name, set a database
-   password (save it somewhere), choose the region closest to your friends.
-2. Wait ~2 min for it to spin up.
+### Step 1 — Create the tables
+In your Supabase project: **SQL Editor → New query**, paste all of **`schema.sql`**, click
+**Run**. This builds every table, the security rules, and seeds all 48 teams + 72 fixtures +
+the prop bets. (Safe to re-run.)
 
-### Step 2 — Create the tables
-1. In your project, open **SQL Editor** (left sidebar) → **New query**.
-2. Open the included **`schema.sql`**, copy the **whole file**, paste it in, and click **Run**.
-   This creates every table, the security rules, and seeds all 48 teams + fixtures + prop bets.
-   (It's safe to re-run if you ever need to.)
+### Step 2 — Turn on name-only login
+In Supabase: **Authentication → Sign In / Providers** → enable **"Allow anonymous sign-ins."**
+That's what lets each friend join with just a name (the app creates an anonymous identity
+behind the scenes, so the leaderboard and security rules still work — no email required).
 
-### Step 3 — Grab your two keys
-1. Go to **Project Settings → API**.
-2. Copy the **Project URL** (looks like `https://abcd1234.supabase.co`).
-3. Copy the **anon public** key (a long string starting with `eyJ...`). This one is safe to
-   ship in a web page — it's the public key.
-
-### Step 4 — Plug the keys into the app
-Open **`index.html`** in a text editor. Near the top of the `<script>` you'll see:
+### Step 3 — Your keys are already in
+`index.html` already has your Project URL and anon public key filled in near the top:
 
 ```js
-const SUPABASE_URL  = "";   // ← paste your Project URL here
-const SUPABASE_ANON = "";   // ← paste your anon public key here
-const ADMIN_EMAILS  = ["a.svaetichin@gmail.com"]; // ← emails that get the Admin panel
+const SUPABASE_URL  = "https://bjetkgguswexwihossdt.supabase.co";
+const SUPABASE_ANON  = "eyJ...";   // public anon key — safe to ship
+const ADMIN_PASSWORD = "1234";     // change this to lock down the admin panel
 ```
 
-Paste your URL and anon key between the quotes, and put **your** email (and any co-commissioner
-emails) in `ADMIN_EMAILS`. Save the file. The moment those keys are filled in, the app switches
-from demo to **live mode** automatically — real magic-link logins, real shared data.
+(The anon key is meant to be public — it's protected by the security rules in `schema.sql`.
+The **service key must never go in here** — and since it was shared earlier, rotate it in
+**Project Settings → API**.)
 
-### Step 5 — Make yourself the admin
-Log in once (Step 7) so your profile exists, then in Supabase **SQL Editor** run:
+### Step 4 — Deploy to Vercel
+Your files sit at the repo root, so there's no Root Directory to set.
 
-```sql
-update profiles set is_admin = true where email = 'a.svaetichin@gmail.com';
-```
+- **Git import:** push the folder to GitHub, import it in Vercel, **Framework Preset = Other**,
+  no build command. Deploy.
+- **CLI:** run `vercel` in the folder, then `vercel --prod`.
 
-(The `ADMIN_EMAILS` list also auto-grants admin on first login; this SQL line is the
-guaranteed way.)
+The included `vercel.json` serves the app and routes `/admin` correctly. No auth redirect URLs
+to configure — anonymous login doesn't need them.
 
-### Step 6 — Put it on the internet
-Friends need a link, so host the file somewhere. Easiest options, all free:
-
-- **Netlify Drop** — go to **app.netlify.com/drop** and drag this whole `world-cup-pool`
-  folder onto the page. You instantly get a public link. (Recommended — takes 30 seconds.)
-- **Vercel** — `vercel` CLI or drag-and-drop import.
-- **GitHub Pages** — push the folder to a repo, enable Pages.
-
-> One config note: in Supabase go to **Authentication → URL Configuration** and add your
-> hosted link (e.g. `https://your-pool.netlify.app`) to **Site URL / Redirect URLs**, so the
-> magic-link emails send people back to the right place.
-
-### Step 7 — Invite your friends
-Send them the link. Each person enters their email, gets a one-tap **magic link** (no
-passwords), picks a name + emoji, and they're in. That's it.
+### Step 5 — Invite your friends
+Send them the link. Each person types a **name**, picks an emoji badge, taps **Join the pool**,
+and they're in. Their session is remembered on that device, so they won't have to do it again.
 
 ---
 
 ## Running the pool (you, the commissioner 🎩)
 
-Open the **🛠️ Admin** tab (only you see it):
+Admin is gated by a password — **no special account needed**.
+
+1. Go to **`your-site/admin`** (or tap the 🔒 in the top-right of the app).
+2. Enter the password (**default `1234`** — change `ADMIN_PASSWORD` in `index.html` to whatever
+   you like). You'll get the 🛠️ Admin tab.
+
+Inside Admin:
 
 - **Results** — after each match, type the final score and hit *Finalize*. Everyone's points
-  and coins recompute instantly, group standings update, and any completed group auto-scores
-  everyone's "who advances" picks.
-- **Settle props** — when a prop bet resolves (e.g. the Golden Boot total, or the champion),
-  pick the correct answer and settle. Points and coin payouts go out automatically.
-- **Pool settings** — set the buy-in amount, currency, payout split (default 50/30/20), the
-  pool name, and whether final payouts rank by **points** or **coins**. Flip who's paid in the
-  💰 Pool tab.
+  and coins recompute instantly, standings update, and completed groups auto-score the
+  "who advances" picks.
+- **Settle props** — pick the correct answer for a prop (champion, Golden Boot total, etc.) and
+  settle; points and coin payouts go out automatically.
+- **Settings** — buy-in amount, currency, payout split (default 50/30/20), pool name, and
+  whether final payouts rank by points or coins. Flip who's paid in the 💰 Pool tab.
+
+> In live mode, entering the admin password also flags your account as admin in the database so
+> your result entries actually save. Anyone who knows the password becomes admin — it's a
+> trust-based friends pool, so keep the password to yourself (and change it from `1234`).
 
 ---
 
@@ -103,41 +93,37 @@ Open the **🛠️ Admin** tab (only you see it):
 - **Exact scoreline:** +5 points. **Correct result** (right winner/draw, wrong score): +2.
 - **Group survivors:** +4 for each team you correctly tip to escape a group (auto-scored when
   the group finishes).
-- **Prop bets:** each is worth its own points (the champion pick is worth a big 30).
-- **Coins** 🪙: everyone starts with 1,000. On matches and some props you can stake coins on an
-  outcome at auto-generated odds — underdogs pay more (winning the whole thing as Haiti pays
-  300×). Coins drive a second, separate leaderboard for bragging rights.
-- **The pot** 💰: real-money buy-ins are tracked, and projected payouts map to the current
-  standings. All point values, the buy-in, and the split are adjustable in Admin.
+- **Prop bets:** each is worth its own points (the champion pick is a big 30).
+- **Coins** 🪙: everyone starts with 1,000. On matches and some props you can stake coins at
+  auto-generated odds — underdogs pay more (winning it all as Haiti pays 300×). Coins drive a
+  second leaderboard for bragging rights.
+- **The pot** 💰: real-money buy-ins are tracked and projected payouts map to current standings.
+  All values are adjustable in Admin.
 
 ---
 
 ## Customizing
 
-Most things (pool name, buy-in, payout split, settling) are changeable live in the Admin tab.
-For deeper edits, open `index.html`:
+- **Pool name, buy-in, split, settling** — change live in the Admin tab.
+- **The background photo** — it's `gyok.jpg` in this folder. Drop in any image with that name
+  to swap it (or rename and update the `#gyokbg` line in `index.html`).
+- **Admin password** — `ADMIN_PASSWORD` near the top of `index.html`.
+- **Props / teams / odds** — `seedProps()`, `GROUPS`, and `POWER` in `index.html` (and the seed
+  in `schema.sql` for the live database).
 
-- **`DEFAULTS`** — starting coins, point values, default buy-in/split.
-- **`seedProps()`** — add or change prop bets (yes/no, over/under, multiple-choice, or team-pick).
-- **`GROUPS`** / **`POWER`** — teams per group and the rough strength ratings that generate odds.
-
-After editing `index.html`, re-upload it to your host. (Structural seed data like teams/fixtures
-lives in the database once you've run `schema.sql`, so edit those in Supabase or re-run the seed.)
+After editing `index.html`, redeploy to Vercel.
 
 ---
 
 ## Good to know
 
-- **Picks are visible to all members.** That's intentional — it fuels the trash talk. If you'd
-  rather hide picks until kickoff, that needs extra work; ask and it can be added.
-- **To see other people's latest picks/results, reload the page.** The app loads fresh data on
-  open. (Live auto-refresh can be added later.)
-- **Magic-link emails** on Supabase's free tier have hourly rate limits. For 20 people that's
-  usually fine; if you hit a limit, you can connect your own email sender (Resend/SMTP) in
-  Supabase → Authentication settings, or switch to password login.
-- **Admin is trust-based** among friends. Keep the `ADMIN_EMAILS` list short.
-- **Real money:** the app only *tracks* who's in and what the payouts would be — it never
-  processes payments. Settle the cash among yourselves (Venmo, cash, etc.), and keep it a
-  friendly pool in line with the rules where you live.
+- **Picks are visible to all members** — intentional, it fuels the trash talk. Can be hidden
+  until kickoff if you want; just ask.
+- **Reload to see others' latest** picks/results — the app loads fresh data on open.
+- **Anonymous logins** are per-device: if someone clears their browser data they'll start a new
+  identity. Fine for a casual pool.
+- **Real money:** the app only *tracks* who's in and what payouts would be — it never processes
+  payments. Settle the cash yourselves (Venmo, cash, etc.) and keep it a friendly pool in line
+  with the rules where you live.
 
-Have fun, and may your group-stage longshots come in. 🏆
+Do the Gyökeres, and may your longshots come in. 🦇🏆

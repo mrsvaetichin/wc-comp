@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>⚽ MÅLPOST — VM '26 (Bork bork bork!)</title>
+<title>🦇 THE MASK — World Cup '26 Pool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -192,10 +192,10 @@
 
   /* ---------- 🇸🇪 SWEDISH / GYÖKERES MAKEOVER ---------- */
   #app{position:relative;z-index:1}
-  /* tiled Gyökeres 'mask' wallpaper, very faint, behind everything */
-  #gyokbg{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.06;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='98' height='98' viewBox='0 0 98 98'%3E%3Cg fill='%23ffd02e'%3E%3Ccircle cx='49' cy='41' r='15'/%3E%3Cpath d='M31 76 Q31 57 49 57 Q67 57 67 76 Z'/%3E%3Cpath d='M35 57 Q27 41 45 35' stroke='%23ffd02e' stroke-width='9' fill='none' stroke-linecap='round'/%3E%3Cpath d='M63 57 Q71 41 53 35' stroke='%23ffd02e' stroke-width='9' fill='none' stroke-linecap='round'/%3E%3C/g%3E%3Crect x='35' y='34' width='28' height='12' rx='6' fill='%230b6fb3'/%3E%3Ccircle cx='43' cy='40' r='2.7' fill='%23fff'/%3E%3Ccircle cx='55' cy='40' r='2.7' fill='%23fff'/%3E%3C/svg%3E");
-    background-size:98px 98px}
+  /* Gyökeres hero photo as a faded full-bleed background, behind everything */
+  #gyokbg{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.22;
+    background:url("gyok.jpg") center top/cover no-repeat}
+  #gyokbg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg, rgba(10,26,46,.2), rgba(10,26,46,.85))}
   @keyframes wobble{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
   @keyframes bounceY{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
   @keyframes pop{0%{transform:scale(.3) rotate(-12deg);opacity:0}60%{transform:scale(1.14) rotate(5deg);opacity:1}100%{transform:scale(1) rotate(-3deg);opacity:1}}
@@ -213,6 +213,10 @@
   .cele-sub{font-family:'Fredoka';color:#fff;background:var(--pink);display:inline-block;padding:5px 14px;border-radius:999px;margin-top:8px;transform:rotate(-3deg);box-shadow:var(--shadow)}
   .heromask svg{width:128px;height:138px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.5))}
   .modal.shake{animation:shake .4s}
+  .herophoto img{width:100%;max-width:430px;border-radius:18px;border:3px solid var(--gold);box-shadow:var(--shadow);display:block;margin:0 auto 6px}
+  .emojipick{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .emojipick .ep{width:38px;height:38px;border-radius:11px;background:var(--bg);border:1px solid var(--line);font-size:19px;line-height:1;transition:transform .08s}
+  .emojipick .ep.on{border-color:var(--gold);background:rgba(255,208,46,.16);transform:scale(1.1)}
 </style>
 </head>
 <body>
@@ -235,7 +239,7 @@ const ADMIN_EMAILS  = ["a.svaetichin@gmail.com"]; // these emails get the Admin 
 
 /* ---------- tunable game settings (admin can change live) ------------------ */
 const DEFAULTS = {
-  app_title: "MÅLPOST",
+  app_title: "THE MASK",
   starting_coins: 1000,
   pts_exact: 5,      // exact scoreline
   pts_result: 2,     // correct outcome (W/D/L) but wrong score
@@ -296,7 +300,7 @@ const MASK_SVG=`<svg viewBox="0 0 200 210" xmlns="http://www.w3.org/2000/svg">
   <circle cx="118" cy="92" r="6.5" fill="#fff"/>
 </svg>`;
 function party(){if(window.confetti){confetti({particleCount:130,spread:85,origin:{y:.4},colors:["#0b6fb3","#ffd02e","#5cc8ff","#ffffff","#06325e"]});}}
-function celebrate(msg){const c=$("#celebrate");if(!c){party();return;}c.innerHTML=`<div class="cele-card">${MASK_SVG}<div class="cele-msg">${msg||"MÅÅÅL!"}</div><div class="cele-sub">Gör en Gyökeres! 🦇</div></div>`;c.classList.add("show");party();clearTimeout(c._t);c._t=setTimeout(()=>c.classList.remove("show"),1500);}
+function celebrate(msg){const c=$("#celebrate");if(!c){party();return;}c.innerHTML=`<div class="cele-card">${MASK_SVG}<div class="cele-msg">${msg||"GOAAAL!"}</div><div class="cele-sub">Do the Gyökeres! 🦇</div></div>`;c.classList.add("show");party();clearTimeout(c._t);c._t=setTimeout(()=>c.classList.remove("show"),1500);}
 // deterministic seeded RNG (so the demo looks the same each load)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
@@ -312,7 +316,9 @@ let VIEW = "picks";
 const ADMIN_PASSWORD = "1234";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("goalpost_admin")==="1");
 let WANT_ADMIN = false;
-function adminUnlock(pw){ if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("goalpost_admin","1");}catch(e){} return true; } return false; }
+function adminUnlock(pw){ if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("goalpost_admin","1");}catch(e){}
+  if(MODE==="live" && ME && supa){ ME.is_admin=true; sbUpsert("profiles",{id:ME.id,is_admin:true}); } // lets RLS accept admin writes
+  return true; } return false; }
 function adminLock(){ ADMIN_UNLOCKED=false; try{localStorage.removeItem("goalpost_admin");}catch(e){} }
 function isAdminRoute(){ try{ const l=(typeof location!=="undefined")?location:{}; return /admin/i.test((l.pathname||"")+(l.hash||"")+(l.search||"")); }catch(e){ return false; } }
 
@@ -617,24 +623,24 @@ function header(){
   return `<header class="top">
     <div class="swstripe"></div>
     <div class="brandrow">
-      <div class="brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"MÅLPOST"}</b><span class="mascot" title="Gör en Gyökeres!">🦇</span></div>
+      <div class="brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
       <div class="whoami">
-        ${ADMIN_UNLOCKED?'<span class="badge-admin">CHEFEN</span>':''}
+        ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
         <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
         <div class="avatar">${ME.emoji||"🙂"}</div>
       </div>
     </div>
     <div class="statpills">
-      <div class="pill rank"><div class="k">Plats</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
-      <div class="pill points"><div class="k">Poäng</div><div class="v">${sc.pts}</div></div>
-      <div class="pill coins"><div class="k">Mynt</div><div class="v">${sc.coins.toLocaleString()}</div></div>
+      <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
+      <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
+      <div class="pill coins"><div class="k">Coins</div><div class="v">${sc.coins.toLocaleString()}</div></div>
     </div>
   </header>`;
 }
 
 function nav(){
-  const tabs=[["picks","⚽","Tippa"],["bracket","🏆","Grupper"],["props","🃏","Galet"],["board","📊","Tabellen"],["pool","💰","Potten"]];
-  if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Chefen"]);
+  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Props"],["board","📊","Board"],["pool","💰","Pool"]];
+  if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
   return `<nav class="tabs"><div class="inner">${tabs.map(t=>
     `<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
 }
@@ -650,11 +656,11 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 Upcoming"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html=`<div class="card"><h3>⚽ Tippa matcherna</h3>
-    <div class="small muted">Tippa exakt resultat för poäng (${DB.settings.pts_exact} för prick rätt, ${DB.settings.pts_result} för rätt utgång). Slå gärna lite mynt på en vinnare för bonusrikedom. Tipsen låses vid avspark.</div></div>
+  let html=`<div class="card"><h3>⚽ Make your picks</h3>
+    <div class="small muted">Predict the exact scoreline for points (${DB.settings.pts_exact} for spot-on, ${DB.settings.pts_result} for the right result). Optionally throw coins on a winner for bonus riches. Picks lock at kickoff.</div></div>
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
-  if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Inget här än… ta en fika så länge.</div>`;
+  if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
   list.forEach(m=>{ html+=matchCard(m,mine[m.id]); });
   return html;
 }
@@ -746,7 +752,7 @@ function viewBracket(){
 
 /* ---------- PROPS ---------- */
 function viewProps(){
-  let html=`<div class="card"><h3>🃏 Galna vad & kaos</h3><div class="small muted">Det roliga grejerna. Svara för poäng; vissa låter dig slå mynt för bonusvinster (skrällar betalar stort).</div></div>`;
+  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">The fun stuff. Answer for points; some let you throw coins for bonus payouts (longshots pay big).</div></div>`;
   DB.props.forEach(pr=>{
     const a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===pr.id);
     const settled=pr.status==="settled";
@@ -788,10 +794,10 @@ let boardBasis="points";
 function viewBoard(){
   const lb=leaderboard(boardBasis);
   const top=lb[0], last=lb[lb.length-1];
-  const trashTop=[`spöar alla andra grovt — som att tippa med fötterna 🦶`,`har helt klart mutat fotbollsgudarna 😤`,`drar ifrån. Någon stoppa hen! 🏃`][top.rank%3];
-  const trashLast=[`håller i jumboplatsen som en sann legend 🛗`,`tror fortfarande på en comeback 🫡`,`valde känsla före logik 🔮`][last.id.length%3];
-  let html=`<div class="card center"><h3>📊 Tabellen</h3>
-      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Poäng-ligan</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Myntmoguler</button></div>
+  const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them! 🏃`][top.rank%3];
+  const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
+  let html=`<div class="card center"><h3>📊 The Table</h3>
+      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Points pool</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Coin barons</button></div>
       <div class="trash">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div>
     </div>`;
   lb.forEach(r=>{
@@ -818,7 +824,7 @@ function viewPool(){
   const lb=leaderboard(s.bet_basis);
   const splits=s.payout_split;
   let html=`<div class="card center">
-      <h3>💰 Potten</h3>
+      <h3>💰 The Pot</h3>
       <div class="display" style="font-size:40px;color:var(--gold);margin:6px 0">${s.currency}${pot.toLocaleString()}</div>
       <div class="small muted">${paid.length} of ${DB.profiles.length} paid in · ${s.currency}${s.buy_in} each · ranked by ${s.bet_basis}</div>
     </div>`;
@@ -834,7 +840,7 @@ function viewPool(){
   html+=`<div class="card"><h3>✅ Who's paid</h3>`;
   DB.profiles.forEach(p=>{
     html+=`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${p.emoji}</span><span>${p.name}</span>
-      <span class="gp">${p.paid?'<span style="color:var(--green)">Betalt ✓</span>':'<span style="color:var(--red)">Skyldig</span>'}${ADMIN_UNLOCKED?` <button class="btn" style="padding:3px 8px;margin-left:6px" data-paid="${p.id}">vänd</button>`:''}</span></div>`;
+      <span class="gp">${p.paid?'<span style="color:var(--green)">Paid ✓</span>':'<span style="color:var(--red)">Owes</span>'}${ADMIN_UNLOCKED?` <button class="btn" style="padding:3px 8px;margin-left:6px" data-paid="${p.id}">flip</button>`:''}</span></div>`;
   });
   html+=`<div class="small muted" style="margin-top:8px">💡 The app just tracks who's in. Settle the real cash however you like (Venmo, cash, IOUs scrawled on a napkin).</div></div>`;
   return html;
@@ -843,9 +849,9 @@ function viewPool(){
 /* ---------- ADMIN ---------- */
 let adminTab="results";
 function viewAdmin(){
-  let html=`<div class="card"><h3>🛠️ Chefen — commissioner panel</h3><div class="small muted">Du är gaffern. Mata in resultat så poängsätts alla automatiskt, avgör props och styr potten.</div>
-    <div class="seg" style="margin-top:8px">${[["results","Resultat"],["props","Avgör props"],["pool","Inställningar"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <button class="btn ghost" data-dolock style="margin-top:8px;border-color:var(--line);font-size:12px;padding:6px 10px">🔒 Lås admin</button></div>`;
+  let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, and run the pool.</div>
+    <div class="seg" style="margin-top:8px">${[["results","Results"],["props","Settle props"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <button class="btn ghost" data-dolock style="margin-top:8px;border-color:var(--line);font-size:12px;padding:6px 10px">🔒 Lock admin</button></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Type a score and hit ✓ to finalize. Everyone's points & coins recompute instantly.</div>`;
@@ -894,8 +900,8 @@ function viewAdmin(){
       <div class="toggle"><button class="${s.bet_basis==='points'?'on':''}" data-betbasis="points">Points</button><button class="${s.bet_basis==='coins'?'on':''}" data-betbasis="coins">Coins</button></div>
       <button class="btn primary block" style="margin-top:12px" data-savesettings>Save settings</button>
     </div>
-    ${MODE==="demo"?`<div class="card"><h3>⚠️ Farozon</h3>
-      <button class="btn block" data-resetdemo style="border-color:var(--red);color:#ffb3b3">Nollställ demo-data</button></div>`:""}`;
+    ${MODE==="demo"?`<div class="card"><h3>⚠️ Danger zone</h3>
+      <button class="btn block" data-resetdemo style="border-color:var(--red);color:#ffb3b3">Reset demo data</button></div>`:""}`;
   }
   return html;
 }
@@ -908,7 +914,7 @@ function render(){
   if(VIEW==="admin" && !ADMIN_UNLOCKED) VIEW="picks";
   const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,pool:viewPool,admin:viewAdmin};
   const body=(views[VIEW]||viewPicks)();
-  let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demoläge</b> — du spelar mot låtsaskompisar så du får känna på spelet. Lägg in dina Supabase-nycklar (se SETUP.md) för att köra live med riktiga inloggningar.</div>` : "";
+  let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
   $("#app").innerHTML = header()+`<div class="app">${banner}${body}</div>`+nav();
   wire();
   if(WANT_ADMIN && !ADMIN_UNLOCKED){ WANT_ADMIN=false; promptAdmin(); }
@@ -919,7 +925,7 @@ function wire(){
   $$("[data-tab]").forEach(b=>b.onclick=()=>{VIEW=b.dataset.tab;render();window.scrollTo(0,0);});
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
-  const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Admin låst 🔒"); VIEW="picks"; render(); };
+  const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Admin locked 🔒"); VIEW="picks"; render(); };
   // picks filters
   $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
   // score inputs (just store in DOM; saved on Save)
@@ -928,8 +934,8 @@ function wire(){
     const hi=$(`[data-sc="home"][data-m="${id}"]`),ai=$(`[data-sc="away"][data-m="${id}"]`);
     const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
     const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
-    if(hp==null||ap==null){toast("Fyll i båda målen ⚽");return;}
-    await savePrediction(id,hp,ap);celebrate("TIPPAT!");toast("Sparat! Snyggt 🇸🇪");render();
+    if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
+    await savePrediction(id,hp,ap);celebrate("LOCKED IN!");toast("Saved! 🔥");render();
   });
   $$("[data-odd]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.m,k=b.dataset.odd;
@@ -1008,20 +1014,20 @@ function openTeamPicker(cb, onlyGrp){
 function promptAdmin(){
   const root=$("#modal-root");
   root.innerHTML=`<div class="modal-bg"><div class="modal">
-    <div class="mhead"><b>🛠️ Chefen — admin</b><button class="x" data-close>×</button></div>
+    <div class="mhead"><b>🛠️ Admin access</b><button class="x" data-close>×</button></div>
     <div class="mbody center">
-      <div style="font-size:44px">🔐🇸🇪</div>
-      <div class="muted small" style="margin:8px 0 14px">Bara chefen får styra potten. Lösenord, tack!<br><span class="tiny">(Only the boss runs the pool. Password, please!)</span></div>
+      <div style="font-size:44px">🔐🦇</div>
+      <div class="muted small" style="margin:8px 0 14px">Only the boss runs the pool. Password, please!</div>
       <input id="apw" type="password" inputmode="numeric" placeholder="••••" style="text-align:center;font-size:24px;font-family:Fredoka;letter-spacing:8px"/>
-      <button class="btn primary block" id="apwbtn" style="margin-top:14px">Släpp in mig! 🚪</button>
+      <button class="btn primary block" id="apwbtn" style="margin-top:14px">Let me in 🚪</button>
     </div></div></div>`;
   const close=()=>root.innerHTML="";
   $("[data-close]",root).onclick=close;
   $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
   const go=()=>{
     const v=$("#apw",root).value;
-    if(adminUnlock(v)){ close(); toast("Välkommen, Chefen! 🇸🇪🛠️"); celebrate("CHEFEN!"); VIEW="admin"; render(); }
-    else { toast("Nej nej nej! Fel lösenord 🙅"); const m=$(".modal",root); if(m){m.classList.remove("shake");void m.offsetWidth;m.classList.add("shake");} }
+    if(adminUnlock(v)){ close(); toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render(); }
+    else { toast("Nope! Wrong password 🙅"); const m=$(".modal",root); if(m){m.classList.remove("shake");void m.offsetWidth;m.classList.add("shake");} }
   };
   $("#apwbtn",root).onclick=go;
   $("#apw",root).onkeydown=e=>{ if(e.key==="Enter") go(); };
@@ -1031,41 +1037,50 @@ function promptAdmin(){
 /* ============================================================================
    🔐  AUTH + BOOT
    ============================================================================ */
+const EMOJIS=["🦇","🦁","🐉","🐙","🦄","🐺","🌶️","👽","🤡","🐸","🦊","🐯","🦅","🐝","💀","🤖","🦖","👻","🧛","🐳"];
+let pendingEmoji=null;
 function loginScreen(extra=""){
+  if(!pendingEmoji) pendingEmoji=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
   $("#app").innerHTML=`<div class="app"><div class="hero">
-    <div class="heromask">${MASK_SVG}</div>
-    <div class="big">Välkommen till <b>${DB.settings.app_title||"MÅLPOST"}</b></div>
-    <div class="muted">VM '26-tippningen för dig och gänget. Tippa resultat, chansa på skrällar, snacka skit och kamma hem potten. Gör en Gyökeres! 🦇⚽</div>
+    <div class="herophoto"><img src="gyok.jpg" alt="Do the Gyökeres"/></div>
+    <div class="big">Welcome to <b>${DB.settings.app_title||"THE MASK"}</b></div>
+    <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot. Do the Gyökeres! 🦇⚽</div>
   </div>
   <div class="card">${extra}
-    <label class="fld">${MODE==="live"?"E-post":"Vad heter du?"}</label>
-    <input id="email" type="email" placeholder="you@email.com" autocomplete="email"/>
-    <button class="btn primary block" id="loginbtn" style="margin-top:12px">${MODE==="live"?'Skicka magisk länk ✨':'Kör! ⚽'}</button>
-    <div class="small muted center" style="margin-top:10px">${MODE==="live"?'Inget lösenord — vi mejlar en inloggningslänk med ett klick.':'Demoläge: vilket namn som helst funkar.'}</div>
+    <label class="fld">Your name</label>
+    <input id="email" placeholder="What should we call you?" autocomplete="off"/>
+    <label class="fld">Pick your badge</label>
+    <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
+    <button class="btn primary block" id="loginbtn" style="margin-top:14px">Join the pool ⚽</button>
+    <div class="small muted center" style="margin-top:10px">No email, no password — just a name.${MODE==="demo"?' (Demo: play with sample friends.)':''}</div>
   </div></div>`;
-  if(MODE==="demo"){
-    $("#email").placeholder="Skriv ditt namn…";
-  }
+  $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; $$("[data-ep]").forEach(x=>x.classList.remove("on")); b.classList.add("on"); });
   $("#loginbtn").onclick=doLogin;
   $("#email").onkeydown=e=>{if(e.key==="Enter")doLogin();};
 }
 async function doLogin(){
   const val=$("#email").value.trim();
-  if(!val){toast("Skriv något först 🙂");return;}
+  if(!val){toast("Type your name first 🙂");return;}
+  const emoji=pendingEmoji||"🫵";
   if(MODE==="live"){
     try{
-      const {error}=await supa.auth.signInWithOtp({email:val,options:{emailRedirectTo:window.location.origin}});
-      if(error)throw error;
-      loginScreen(`<div class="banner demo">📧 Magisk länk skickad till <b>${val}</b>. Öppna den på den här enheten så är du inne.</div>`);
-    }catch(e){toast("Kunde inte skicka länken — kolla konfigen");console.error(e);}
+      let {data:sess}=await supa.auth.getSession();
+      if(!sess||!sess.session){ const {error}=await supa.auth.signInAnonymously(); if(error) throw error; }
+      const {data:u}=await supa.auth.getUser();
+      const uid=u.user.id;
+      await sbUpsert("profiles",{id:uid,display_name:val,emoji,is_admin:false,paid:false});
+      await liveLoad(u.user);
+      if(ME){ ME.name=val; ME.emoji=emoji; }
+      celebrate("LET'S GO!");VIEW="picks";render();
+    }catch(e){ toast("Couldn't sign in — enable Anonymous sign-ins in Supabase (see SETUP)"); console.error(e); }
     return;
   }
   // demo: create/use a profile by the typed name
   let p=DB.profiles.find(x=>x.name.toLowerCase()===val.toLowerCase());
-  if(!p){ p={id:"me",name:val,emoji:"🫵",email:val+"@demo",is_admin:true,paid:true};
-    // replace the placeholder "me" if present
+  if(!p){ p={id:"me",name:val,emoji,email:val+"@demo",is_admin:false,paid:true};
     DB.profiles=DB.profiles.filter(x=>x.id!=="me"); DB.profiles.unshift(p); }
-  ME=p;saveLocal();celebrate("HEJA!");VIEW="picks";render();
+  else { p.emoji=emoji; }
+  ME=p;saveLocal();celebrate("LET'S GO!");VIEW="picks";render();
 }
 
 async function boot(){

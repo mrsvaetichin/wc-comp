@@ -263,7 +263,13 @@ insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) v
 insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) values ('p-goals','🎯','Goals in the group stage (72 matches)?','ou',null,201.5,7,'open',null,false) on conflict (id) do nothing;
 
 -- league settings (single row)
-insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advance,buy_in,currency,payout_split,bet_basis) values (1,'GOALPOST',1000,5,2,4,20,'$','[50,30,20]'::jsonb,'points') on conflict (id) do nothing;
+insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advance,buy_in,currency,payout_split,bet_basis) values (1,'THE MASK',1000,5,2,4,20,'$','[50,30,20]'::jsonb,'points') on conflict (id) do nothing;
 
--- Done. Now: (1) paste your project URL + anon key into index.html, (2) make yourself admin:
---   update profiles set is_admin = true where email = 'a.svaetichin@gmail.com';
+-- Done. Next steps:
+--  (1) Paste your project URL + anon key into index.html.
+--  (2) Authentication → Sign In / Providers → enable "Allow anonymous sign-ins"
+--      (players log in with just a name — no email).
+--  (3) Admin is handled in-app: visit /admin and enter the password (default 1234).
+--
+-- If you already ran an earlier version of this seed, update the name with:
+--   update settings set app_title = 'THE MASK' where id = 1;
