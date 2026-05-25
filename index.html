@@ -833,8 +833,9 @@ async function saveAdvance(grp, slot, teamId){
   saveLocal();
 }
 /* ---------- league create / join / switch ---------- */
-async function createLeague(name, buyin, currency){
-  name=(name||"").trim()||"My League"; buyin=parseInt(buyin)||0; currency=(currency||"USD").trim()||"USD";
+async function createLeague(name){
+  name=(name||"").trim()||"My League";
+  const buyin=DEFAULTS.buy_in||50, currency=DEFAULTS.currency||"USD"; // fixed for every league — not a creator choice
   const code=genCode(), id="lg-"+code;
   const lg={id,name,code,buy_in:buyin,currency,payout_split:[50,30,20],created_by:ME.id};
   if(MODE==="live"){
@@ -1533,12 +1534,8 @@ function leagueGate(){
   <div class="card"><h3>➕ Create a league</h3>
     <label class="fld">League name</label>
     <input id="lgname" placeholder="e.g. The Lads 🍻" autocomplete="off"/>
-    <div class="grid2">
-      <div><label class="fld">Buy-in</label><input id="lgbuy" inputmode="numeric" value="50"/></div>
-      <div><label class="fld">Currency</label><input id="lgcur" value="USD"/></div>
-    </div>
     <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>
-    <div class="tiny muted center" style="margin-top:6px">You'll get an invite code + link to share.</div>
+    <div class="tiny muted center" style="margin-top:6px">Buy-in is ${DEFAULTS.buy_in} ${DEFAULTS.currency} for everyone · you'll get an invite code + link to share.</div>
   </div>
   <div class="card"><h3>🔑 Join a league</h3>
     <label class="fld">Invite code</label>
@@ -1548,7 +1545,7 @@ function leagueGate(){
   </div></div>`;
 }
 function wireGate(){
-  const c=$("#lgcreate"); if(c) c.onclick=async()=>{ const n=$("#lgname").value.trim(); if(!n){toast("Name your league 🙂");return;} await createLeague(n,$("#lgbuy").value,$("#lgcur").value); celebrate("LEAGUE CREATED!"); VIEW="picks"; render(); };
+  const c=$("#lgcreate"); if(c) c.onclick=async()=>{ const n=$("#lgname").value.trim(); if(!n){toast("Name your league 🙂");return;} await createLeague(n); celebrate("LEAGUE CREATED!"); VIEW="picks"; render(); };
   const j=$("#lgjoin"); if(j) j.onclick=async()=>{ if(await joinLeague($("#lgcode").value)){ celebrate("LET'S GO!"); VIEW="picks"; render(); } };
 }
 function openSwitcher(){
@@ -1598,7 +1595,7 @@ function openLeagueForm(mode){
   const root=$("#modal-root");
   const body = mode==="create"
     ? `<label class="fld">League name</label><input id="lgname" placeholder="e.g. Work Cup ⚽"/>
-       <div class="grid2"><div><label class="fld">Buy-in</label><input id="lgbuy" inputmode="numeric" value="50"/></div><div><label class="fld">Currency</label><input id="lgcur" value="USD"/></div></div>
+       <div class="tiny muted" style="margin-top:8px">Buy-in is ${DEFAULTS.buy_in} ${DEFAULTS.currency} for everyone.</div>
        <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>`
     : `<label class="fld">Invite code</label><input id="lgcode" placeholder="e.g. LADS26" style="text-transform:uppercase"/>
        <button class="btn lime block" id="lgjoin" style="margin-top:12px">Join 🤝</button>`;
