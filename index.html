@@ -1683,11 +1683,11 @@ async function boot(){
     }
     try{
       supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-      const {data}=await withTimeout(supa.auth.getSession(), 12000, "session");
-      if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 15000, "load"); await applyPendingJoin(); render(); }
+      const {data}=await withTimeout(supa.auth.getSession(), 20000, "session");
+      if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 20000, "load"); await applyPendingJoin(); render(); }
       else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
       supa.auth.onAuthStateChange(async (_e,session)=>{
-        if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),15000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }
+        if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),20000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }
       });
     }catch(e){
       console.error(e);
