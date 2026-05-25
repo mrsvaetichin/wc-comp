@@ -258,6 +258,22 @@
   .scorerow{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}
   .scorerow .colon{font-family:'Fredoka';color:var(--muted);font-size:22px}
   @media (max-width:380px){ .oddbtn{font-size:11px;padding:7px 2px} .oddbtn b{font-size:14px} .tname{font-size:15px} }
+  /* ---------- responsive: lay out cards in a grid + use the screen on desktop ---------- */
+  .hwrap{max-width:540px;margin:0 auto}
+  .cardgrid{display:grid;gap:12px;align-items:start;margin-top:12px}
+  .cardgrid > .match, .cardgrid > .card{margin:0}
+  @media (min-width:880px){
+    .hwrap{max-width:1080px}
+    nav.tabs .inner{max-width:600px}
+    .app.view-picks, .app.view-props{max-width:1080px;padding-left:22px;padding-right:22px}
+    .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin{max-width:720px}
+    .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr}
+  }
+  @media (min-width:1340px){
+    .hwrap{max-width:1260px}
+    .app.view-picks, .app.view-props{max-width:1260px}
+    .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr 1fr}
+  }
   .avatar{overflow:hidden}
   .avimg{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
   .avbtn{cursor:pointer}
@@ -300,11 +316,12 @@ const DEFAULTS = {
   currency: "GEL",   // Georgian Lari
   payout_split: [50, 30, 20], // % of pot to 1st / 2nd / 3rd by final POINTS
   bet_basis: "points", // final payouts ranked by 'points' or 'coins'
-  ko: {qf:[],sf:[],final:[]} // admin-set actual knockout results
+  ko: {r16:[],qf:[],sf:[],final:[]} // admin-set actual knockout results
 };
-const KO_PTS={qf:3,sf:5,final:8}; // points per correct knockout-stage team
-const KO_LIM={qf:8,sf:4,final:2};
-const KO_LABEL={qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
+const KO_STAGES=["r16","qf","sf","final"]; // ordered: each later stage implies the earlier ones
+const KO_PTS={r16:2,qf:3,sf:5,final:8}; // points per correct knockout-stage team
+const KO_LIM={r16:16,qf:8,sf:4,final:2};
+const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 const FAN_BONUS=1; // +1 pt each time your supported team wins a match
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
@@ -591,7 +608,7 @@ function scoreFor(profileId){
     if(String(a.answer)===String(pr.correct)) pts+=pr.pts;
   });
   // knockout futures
-  ["qf","sf","final"].forEach(stage=>{
+  KO_STAGES.forEach(stage=>{
     const reached=koReached(stage);
     DB.predictions.filter(p=>p.user===profileId&&p.ko&&p.stage===stage).forEach(p=>{ if(reached.has(p.team)) pts+=KO_PTS[stage]; });
   });
@@ -636,9 +653,10 @@ function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.u
 function myActiveBanker(){return DB.predictions.find(p=>p.user===ME.id&&p.banker&&!p.advance&&((DB.matches.find(m=>m.id===p.match)||{}).status!=="finished"));}
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
-function koActual(){ const k=DB.settings.ko||{}; return {qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
+function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
 function myKO(stage){ return DB.predictions.filter(p=>p.user===ME.id&&p.ko&&p.stage===stage).map(p=>p.team); }
-function koReached(stage){ const a=koActual(); if(stage==="final")return new Set(a.final); if(stage==="sf")return new Set([...a.sf,...a.final]); return new Set([...a.qf,...a.sf,...a.final]); }
+// a team that reached a LATER stage necessarily reached every earlier one, so reaching a stage = union of that stage and all deeper ones
+function koReached(stage){ const a=koActual(); const s=new Set(); KO_STAGES.slice(KO_STAGES.indexOf(stage)).forEach(st=>(a[st]||[]).forEach(t=>s.add(t))); return s; }
 
 function statsFor(profileId){
   const finished=DB.matches.filter(m=>m.status==="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
@@ -809,6 +827,7 @@ function header(){
   const r=myRank(); const sc=r.me;
   return `<header class="top">
     <div class="swstripe"></div>
+    <div class="hwrap">
     <div class="brandrow">
       <div class="brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
       <div class="whoami">
@@ -824,6 +843,7 @@ function header(){
       <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
       <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
       <div class="pill coins"><div class="k">Re-picks</div><div class="v">${repicksLeft(ME.id)}</div></div>
+    </div>
     </div>
   </header>`;
 }
@@ -862,7 +882,7 @@ function viewPicks(){
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
   if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
-  list.forEach(m=>{ html+=matchCard(m); });
+  else html+=`<div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
   return html;
 }
 function revealBlock(m){
@@ -955,8 +975,8 @@ function viewBracket(){
   }
   html+=`</div>`;
   // 🏆 Knockout run predictions
-  html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">Tip the teams you think go deep — ${KO_PTS.qf} pts per correct Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Props tab.)</div>`;
-  ["qf","sf","final"].forEach(stage=>{
+  html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">This is how you bet on the games after the groups: tip which teams reach each stage. ${KO_PTS.r16} pts per correct Round-of-16 team, ${KO_PTS.qf} per Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Props tab.)</div>`;
+  KO_STAGES.forEach(stage=>{
     const mine=myKO(stage), settled=(koActual()[stage]||[]).length>0, reached=koReached(stage);
     html+=`<div class="kostage"><h4>${KO_LABEL[stage]} <span class="muted tiny">(${mine.length}/${KO_LIM[stage]})</span></h4><div class="kochips">`;
     mine.forEach(id=>{const t=teamById(id);const cls=settled?(reached.has(id)?'hit':'miss'):'';html+=`<span class="kochip ${cls}">${t.flag} ${t.name}${settled?(reached.has(id)?' ✓':' ✗'):''}</span>`;});
@@ -980,6 +1000,7 @@ function revealPropBlock(pr){
 function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}"><span class="rd"></span><span>${label}</span></div>`; }
 function viewProps(){
   let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀.</div></div>`;
+  let cards="";
   DB.props.forEach(pr=>{
     const a=myAnswer(pr.id);
     const settled=pr.status==="settled";
@@ -1001,9 +1022,9 @@ function viewProps(){
       else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
       body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
     }
-    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
+    cards+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
   });
-  return html;
+  return html+`<div class="cardgrid">${cards}</div>`;
 }
 
 /* ---------- LEADERBOARD ---------- */
@@ -1104,7 +1125,7 @@ function viewAdmin(){
     });
   } else if(adminTab==="ko"){
     html+=`<div class="small muted" style="margin:0 4px">Mark the teams that actually reached each stage. Everyone's knockout picks score instantly.</div>`;
-    ["qf","sf","final"].forEach(stage=>{
+    KO_STAGES.forEach(stage=>{
       const cur=koActual()[stage]||[];
       html+=`<div class="card"><b>${KO_LABEL[stage]}</b> <span class="muted tiny">(${cur.length})</span><div class="kochips" style="margin-top:6px">`;
       cur.forEach(id=>{const t=teamById(id);html+=`<button class="kochip hit" data-koremove="${stage}|${id}">${t.flag} ${t.name} ✕</button>`;});
@@ -1143,7 +1164,7 @@ function render(){
   const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,pool:viewPool,admin:viewAdmin};
   const body=(views[VIEW]||viewPicks)();
   let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
-  $("#app").innerHTML = header()+`<div class="app">${banner}${body}</div>`+nav();
+  $("#app").innerHTML = header()+`<div class="app view-${VIEW}">${banner}${body}</div>`+nav();
   wire();
   if(WANT_ADMIN && !ADMIN_UNLOCKED){ WANT_ADMIN=false; promptAdmin(); }
 }
@@ -1344,7 +1365,7 @@ function rulesHTML(){
       <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
       <li><b>⭐ Banker</b> — one live pick at a time scores double.</li>
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
-      <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}) and who reaches the QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
+      <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}), then which teams reach the Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
       <li><b>🃏 Props</b> — fun side bets, including who wins it all.</li>
       <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
@@ -1487,7 +1508,7 @@ async function liveLoad(user){
     ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks"].map(tbl));
   DB.repicks=(reps||[]).map(r=>({id:r.id,user:r.user_id,match:r.match_id,hp:r.hp,ap:r.ap}));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
-  if(!DB.settings.ko) DB.settings.ko={qf:[],sf:[],final:[]};
+  if(!DB.settings.ko) DB.settings.ko={r16:[],qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
   DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
   DB.props = props.length?props.map(normalizeProp):seedProps();

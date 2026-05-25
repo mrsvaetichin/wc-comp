@@ -35,7 +35,7 @@ create table if not exists repicks (id text primary key,
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
 alter table profiles    add column if not exists fav_team text;
-alter table settings    add column if not exists ko jsonb default '{"qf":[],"sf":[],"final":[]}';
+alter table settings    add column if not exists ko jsonb default '{"r16":[],"qf":[],"sf":[],"final":[]}';
 alter table predictions add column if not exists banker boolean default false;
 
 create or replace function is_admin() returns boolean language sql security definer stable as $func$

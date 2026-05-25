@@ -101,8 +101,9 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
 - **🔁 Half-time re-pick:** 3 times all tournament you can change a pick on a **live** match,
   for **−3 points** each. Otherwise picks are final.
 - **Group survivors:** +4 for each team you correctly tip to escape a group.
-- **🏆 Knockout run:** pick the teams you think reach the Quarter-finals (+3 each), Semi-finals (+5)
-  and Final (+8). The commissioner marks who reached each stage in **Admin → Knockouts**.
+- **🏆 Knockout run:** this is how you bet on the games after the groups — pick which teams reach
+  each stage: Round of 16 (+2 each), Quarter-finals (+3), Semi-finals (+5), Final (+8). The
+  commissioner marks who actually reached each stage in **Admin → Knockouts** and it scores instantly.
 - **⚽ Your team:** when you join you pick the nation you personally support (locked in for good).
   You earn **+1 point every time they win a match**.
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
