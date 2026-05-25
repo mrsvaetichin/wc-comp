@@ -681,9 +681,9 @@ function seedDemo(){
   const banter=[["f0","Easy group for my lot 😎 see you in the final"],["f2","Bold of someone to back Brazil to flop 🤡"],["f4","May the best mask win 🦇⚽"],["f1","2–1 South Korea?? questionable taste"]];
   banter.forEach((b,i)=>{ if(DB.profiles.find(p=>p.id===b[0])) ALL.comments.push({id:`${b[0]}-${LGID}-seed${i}`,league:LGID,user:b[0],body:b[1],created:new Date(Date.now()-(banter.length-i)*3.6e6).toISOString()}); });
   ALL.cards.push({id:`f4-f2seed-c`,league:LGID,comment:`f2-${LGID}-seed1`,from:"f4",target:"f2",kind:"yellow",created:new Date(Date.now()-1.8e6).toISOString()});
-  // a few likes so the "Top banter" board has life
-  [["me",`f4-${LGID}-seed2`],["f1",`f4-${LGID}-seed2`],["f0",`f4-${LGID}-seed2`],["f2",`f0-${LGID}-seed0`],["me",`f0-${LGID}-seed0`]]
-    .forEach(l=>ALL.likes.push({id:`${l[0]}-${l[1]}-l`,league:LGID,comment:l[1],user:l[0],created:new Date().toISOString()}));
+  // a few likes so the "Top banter" board has life (spread over a few days so the banter line moves)
+  [["me",`f4-${LGID}-seed2`,3],["f1",`f4-${LGID}-seed2`,2],["f0",`f4-${LGID}-seed2`,2],["f2",`f0-${LGID}-seed0`,1],["me",`f0-${LGID}-seed0`,0]]
+    .forEach(l=>ALL.likes.push({id:`${l[0]}-${l[1]}-l`,league:LGID,comment:l[1],user:l[0],created:new Date(Date.now()-l[2]*24*3.6e6).toISOString()}));
   scopeLeague();
   saveLocal();
 }
@@ -1186,57 +1186,75 @@ function matchPtsAsOf(uid, cutoff){
     if(m&&m.status==="finished"&&new Date(m.kickoff).getTime()<=cutoff) pts-=REPICK_COST; });
   return pts;
 }
-function pointsLineChart(){
-  const lg=curLeague(); if(!lg) return '';
-  // matchday checkpoints = distinct dates that have ≥1 finished match
-  const days=[...new Set(DB.matches.filter(m=>m.status==="finished").map(m=>dateKey(m.kickoff)))].sort();
-  const card=(inner)=>`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">📈 Points progression</h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="tiny muted">Cumulative match points · how the league pulled apart matchday by matchday</div>${inner}</div>`;
-  if(days.length<2) return card(`<div class="small muted" style="padding:10px 2px">The race chart appears once a couple of matchdays are in the books. Hang tight — kickoff is June 11. ⚽</div>`);
-  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
-  // rank members by their final cumulative; cap to 10 lines so it stays readable
-  let mem=leagueMembers(LG).map(p=>({p, series:cps.map(c=>matchPtsAsOf(p.id,c.cut))}));
-  mem.forEach(m=>m.final=m.series[m.series.length-1]);
-  mem.sort((a,b)=> b.final-a.final || a.p.name.localeCompare(b.p.name));
-  const extra=Math.max(0, mem.length-10); mem=mem.slice(0,10);
-  // geometry
-  const W=340,H=190,padL=24,padR=10,padT=12,padB=26;
-  const allv=mem.flatMap(m=>m.series);
-  const yMax=Math.max(1, ...allv), yMin=Math.min(0, ...allv);
-  const x=i=>padL+(cps.length<=1?0:i*(W-padL-padR)/(cps.length-1));
+// generic line chart — always draws the axes/grid; lines only appear once there are ≥2 points.
+// labels:[strings]  mem:[{name,me,series:[nums],final}]  emptyMsg shown inside the empty frame.
+function lineChartSVG(labels, mem, emptyMsg){
+  const W=320,H=185,padL=22,padR=10,padT=12,padB=24;
+  const hasData = labels.length>=2 && mem.length>0;
+  const allv = mem.flatMap(m=>m.series);
+  const yMax=Math.max(4, ...(allv.length?allv:[0]));      // default 0–4 scale on an empty board
+  const yMin=Math.min(0, ...(allv.length?allv:[0]));
+  const x=i=>padL+(labels.length<=1?(W-padL-padR)/2:i*(W-padL-padR)/(labels.length-1));
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
-  // gridlines + y labels (3 ticks)
   let grid='';
   for(let t=0;t<=3;t++){ const val=yMin+(yMax-yMin)*t/3; const yy=y(val);
     grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" style="stroke:var(--line);stroke-width:.5"/><text x="${padL-4}" y="${(yy+3).toFixed(1)}" text-anchor="end" style="fill:var(--muted);font-size:8px">${Math.round(val)}</text>`; }
-  // x labels (show up to 6, evenly)
-  let xlab=''; const step=Math.ceil(cps.length/6);
-  cps.forEach((c,i)=>{ if(i%step!==0 && i!==cps.length-1) return; const parts=c.d.split("-");
-    xlab+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" style="fill:var(--muted);font-size:8px">${(+parts[1])}/${(+parts[2])}</text>`; });
-  // lines + end dots
-  const lines=mem.map((m,idx)=>{ const me=m.p.id===ME.id; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
-    const pts=m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    const ex=x(cps.length-1), ey=y(m.series[m.series.length-1]);
-    return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${me?3:2}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.9}"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${me?3.5:2.5}" fill="${col}"/>`; }).join("");
-  const svg=`<div class="linechart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Points progression">${grid}${lines}${xlab}</svg></div>`;
-  // legend (ranked)
-  const legend=`<div class="lc-legend">`+mem.map((m,idx)=>{ const me=m.p.id===ME.id; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
-    return `<span class="lc-leg ${me?'me':''}"><span class="lc-sw" style="background:${col}"></span>${escapeHtml(m.p.name.split(" ")[0])}${me?' (you)':''} · ${m.final}</span>`; }).join("")+(extra?`<span class="lc-leg muted">+${extra} more</span>`:'')+`</div>`;
-  return card(svg+legend);
+  grid+=`<line x1="${padL}" y1="${y(yMin).toFixed(1)}" x2="${W-padR}" y2="${y(yMin).toFixed(1)}" style="stroke:var(--line);stroke-width:1"/>`;
+  let body='';
+  if(hasData){
+    const step=Math.ceil(labels.length/6);
+    labels.forEach((c,i)=>{ if(!c) return; if(i%step!==0 && i!==labels.length-1) return;
+      body+=`<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="middle" style="fill:var(--muted);font-size:8px">${escapeHtml(c)}</text>`; });
+    body+=mem.map((m,idx)=>{ const me=m.me; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
+      const pts=m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      const ex=x(labels.length-1), ey=y(m.series[m.series.length-1]);
+      return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${me?3:2}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.9}"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${me?3.5:2.5}" fill="${col}"/>`; }).join("");
+  } else {
+    body+=`<text x="${(W/2).toFixed(1)}" y="${(padT+(H-padT-padB)/2+3).toFixed(1)}" text-anchor="middle" style="fill:var(--muted);font-size:10px">${escapeHtml(emptyMsg)}</text>`;
+  }
+  return `<div class="linechart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="line chart">${grid}${body}</svg></div>`;
 }
-
+function lcLegend(mem){
+  if(!mem.length) return '';
+  return `<div class="lc-legend">`+mem.slice(0,8).map((m,idx)=>{ const col=m.me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
+    return `<span class="lc-leg ${m.me?'me':''}"><span class="lc-sw" style="background:${col}"></span>${escapeHtml(m.name)}${m.me?' (you)':''} · ${m.valLabel}</span>`; }).join("")+(mem.length>8?`<span class="lc-leg muted">+${mem.length-8} more</span>`:'')+`</div>`;
+}
+function lcCard(title, sub, gotoTab, linkText, svg, legend){
+  return `<div class="card herolb"><div class="spread"><h3 style="font-size:15px;margin:0">${title}</h3><button class="hlb-link" data-goboard="${gotoTab}">${linkText}</button></div><div class="tiny muted">${sub}</div>${svg}${legend}</div>`;
+}
+// Points progression — cumulative match points by matchday (a 0-point origin gives a line from the first matchday)
+function pointsLineCard(){
+  const days=[...new Set(DB.matches.filter(m=>m.status==="finished").map(m=>dateKey(m.kickoff)))].sort();
+  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
+  let mem=leagueMembers(LG).map(p=>({name:p.name.split(" ")[0], me:p.id===ME.id,
+    series:[0, ...cps.map(c=>matchPtsAsOf(p.id,c.cut))]}));            // leading 0 = pre-tournament baseline
+  mem.forEach(m=>{ m.final=m.series[m.series.length-1]; m.valLabel=`${m.final}`; });
+  mem.sort((a,b)=> b.final-a.final || a.name.localeCompare(b.name));
+  mem=mem.slice(0,10);
+  const labels=days.length ? ['', ...days.map(d=>{const a=d.split("-");return (+a[1])+"/"+(+a[2]);})] : [];
+  const svg=lineChartSVG(labels, mem, 'Lines appear after kickoff ⚽');
+  const legend = labels.length>=2 ? lcLegend(mem) : '';
+  return lcCard('📈 Points race', 'Cumulative points by matchday', 'points', 'Table →', svg, legend);
+}
+// Banter progression — cumulative ❤️ likes received, by day
+function banterLineCard(){
+  const likes=DB.likes||[];
+  const authorOf=id=>{ const c=DB.comments.find(x=>x.id===id); return c?c.user:null; };
+  const days=[...new Set(likes.map(l=>dateKey(l.created)))].sort();
+  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
+  let mem=leagueMembers(LG).map(p=>({name:p.name.split(" ")[0], me:p.id===ME.id,
+    series:[0, ...cps.map(c=>likes.filter(l=>authorOf(l.comment)===p.id && new Date(l.created).getTime()<=c.cut).length)]}));
+  mem.forEach(m=>{ m.final=m.series[m.series.length-1]; m.valLabel=`❤️ ${m.final}`; });
+  mem=mem.filter(m=>m.final>0).sort((a,b)=> b.final-a.final || a.name.localeCompare(b.name)).slice(0,10);
+  const labels=days.length ? ['', ...days.map(d=>{const a=d.split("-");return (+a[1])+"/"+(+a[2]);})] : [];
+  const svg=lineChartSVG(labels, mem, 'Lines appear once likes roll in 💬');
+  const legend = (labels.length>=2 && mem.length) ? lcLegend(mem) : '';
+  return lcCard('💬 Banter race', 'Cumulative ❤️ likes · top 3 bank bonus pts', 'banter', 'League →', svg, legend);
+}
 function leagueCharts(){
   const lg=curLeague(); if(!lg) return '';
   if(!leaderboard().length) return '';
-  // Banter race — by ❤️ likes, only those with likes, top 10
-  const bb=banterBoard().filter(r=>r.likes>0).slice(0,10);
-  let bCard;
-  if(bb.length){
-    const bItems=bb.map((r,i)=>({name:(profileById(r.user)||{name:'?'}).name.split(" ")[0], value:r.likes, valLabel:`❤️ ${r.likes}`, medal:medalFor(i+1), me:r.user===ME.id}));
-    bCard=`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">💬 Banter race</h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="tiny muted">Likes on your posts · top 3 bank bonus pts</div>${barChart(bItems,'ban')}</div>`;
-  } else {
-    bCard=`<div class="card"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="small muted" style="padding:8px 2px">No likes yet — get some laughs in the 💬 Banter tab.</div></div>`;
-  }
-  return bCard;
+  return `<div class="herogrid">${pointsLineCard()}${banterLineCard()}</div>`;
 }
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
@@ -1247,7 +1265,7 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html=heroLeaderboard()+pointsLineChart()+leagueCharts();
+  let html=heroLeaderboard()+leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
