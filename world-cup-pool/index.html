@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>⚽ GOALPOST — World Cup '26 Pool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.2/confetti.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ============================================================
+     GOALPOST — World Cup 2026 friends' prediction pool
+     Playful / meme-y theme. Mobile-first, works on desktop too.
+     ============================================================ */
+  :root{
+    --bg:#0c0a1f;
+    --bg2:#16123a;
+    --card:#1d1842;
+    --card2:#272058;
+    --line:#3a3170;
+    --ink:#f4f1ff;
+    --muted:#a99fd6;
+    --pink:#ff4d8d;
+    --lime:#c6ff3d;
+    --cyan:#36e0ff;
+    --gold:#ffd23f;
+    --purple:#9b6bff;
+    --green:#3ddc84;
+    --red:#ff5c5c;
+    --radius:20px;
+    --shadow:0 12px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:'Outfit',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(155,107,255,.25), transparent 60%),
+      radial-gradient(1000px 500px at 110% 0%, rgba(54,224,255,.18), transparent 55%),
+      linear-gradient(180deg,var(--bg),var(--bg2));
+    background-attachment:fixed;
+    color:var(--ink);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .display{font-family:'Fredoka',sans-serif;}
+  .app{max-width:540px;margin:0 auto;padding:0 14px 120px;}
+  a{color:var(--cyan)}
+  button{font-family:inherit;cursor:pointer;border:none}
+
+  /* ---------- header ---------- */
+  header.top{
+    position:sticky;top:0;z-index:30;
+    margin:0 -14px 8px;padding:12px 16px 10px;
+    background:linear-gradient(180deg, rgba(12,10,31,.96), rgba(12,10,31,.78));
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .brand{display:flex;align-items:center;gap:8px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px}
+  .brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
+  .brand b{background:linear-gradient(90deg,var(--pink),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .whoami{display:flex;align-items:center;gap:8px}
+  .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:18px;background:var(--card2);border:2px solid var(--line)}
+  .statpills{display:flex;gap:8px;margin-top:10px}
+  .pill{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 10px;text-align:center}
+  .pill .k{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+  .pill .v{font-family:'Fredoka';font-weight:700;font-size:17px;line-height:1.1}
+  .pill.points .v{color:var(--lime)}
+  .pill.coins .v{color:var(--gold)}
+  .pill.rank .v{color:var(--cyan)}
+
+  /* ---------- generic ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:12px 0;box-shadow:var(--shadow)}
+  .card h3{margin:0 0 4px;font-family:'Fredoka';font-size:18px}
+  .muted{color:var(--muted)}
+  .small{font-size:12.5px}
+  .tiny{font-size:11px}
+  .center{text-align:center}
+  .row{display:flex;align-items:center;gap:8px}
+  .spread{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--muted)}
+  .chip.live{color:var(--red);border-color:var(--red)}
+  .chip.done{color:var(--green);border-color:#2a6e4d}
+  .chip.open{color:var(--cyan);border-color:#2a5a6e}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:13px;padding:10px 14px;font-weight:600;font-size:14px;transition:transform .06s ease, filter .15s}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:linear-gradient(90deg,var(--pink),var(--purple));border:none;color:#fff;box-shadow:0 8px 20px rgba(255,77,141,.3)}
+  .btn.lime{background:linear-gradient(90deg,var(--lime),#7be000);border:none;color:#16123a;box-shadow:0 8px 18px rgba(198,255,61,.25)}
+  .btn.gold{background:linear-gradient(90deg,var(--gold),#ff9f1c);border:none;color:#2a1a00}
+  .btn.ghost{background:transparent}
+  .btn.block{width:100%}
+  .btn:disabled{opacity:.45;filter:grayscale(.4)}
+  input,select,textarea{font-family:inherit;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:15px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple)}
+  label.fld{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+  /* ---------- match card ---------- */
+  .match{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin:10px 0}
+  .match .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .teamline{display:flex;align-items:center;gap:8px}
+  .flag{font-size:24px;line-height:1;width:30px;text-align:center}
+  .tname{font-weight:600;font-size:15px}
+  .vs{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0}
+  .vs .side{display:flex;align-items:center;gap:8px}
+  .vs .side.away{flex-direction:row-reverse;text-align:right}
+  .scoreinput{width:48px;text-align:center;font-family:'Fredoka';font-size:20px;padding:8px 0}
+  .vsmid{font-family:'Fredoka';color:var(--muted);font-size:13px}
+  .result-score{font-family:'Fredoka';font-size:22px}
+  .pickbar{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .earn{font-weight:700}
+  .earn.good{color:var(--lime)}
+  .earn.bad{color:var(--muted)}
+  .odds{display:flex;gap:6px;margin-top:8px}
+  .oddbtn{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:8px 4px;text-align:center;font-size:12px;color:var(--muted)}
+  .oddbtn b{display:block;color:var(--ink);font-family:'Fredoka';font-size:15px}
+  .oddbtn.sel{border-color:var(--gold);background:rgba(255,210,63,.12);color:var(--gold)}
+  .oddbtn.sel b{color:var(--gold)}
+
+  /* ---------- leaderboard ---------- */
+  .lbrow{display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:14px;margin:6px 0;background:var(--card)}
+  .lbrow.me{background:linear-gradient(90deg, rgba(155,107,255,.22), rgba(54,224,255,.08));border:1px solid var(--purple)}
+  .lbrow .pos{width:30px;text-align:center;font-family:'Fredoka';font-size:18px}
+  .lbrow .nm{flex:1;font-weight:600}
+  .lbrow .nm small{display:block;color:var(--muted);font-weight:400}
+  .lbrow .sc{font-family:'Fredoka';font-size:18px}
+  .lbrow .mv{font-size:12px;width:24px;text-align:center}
+  .medal{font-size:20px}
+  .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
+  .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
+  .toggle button.on{background:var(--card2);color:var(--ink)}
+
+  /* ---------- nav ---------- */
+  nav.tabs{
+    position:fixed;left:0;right:0;bottom:0;z-index:40;
+    display:flex;justify-content:center;gap:2px;
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg, rgba(12,10,31,.6), rgba(12,10,31,.97));
+    backdrop-filter:blur(12px);border-top:1px solid var(--line)
+  }
+  nav.tabs .inner{display:flex;gap:2px;max-width:540px;width:100%;justify-content:space-around}
+  nav.tabs button{background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border-radius:12px;font-size:10px;font-weight:600;min-width:54px}
+  nav.tabs button .ic{font-size:21px}
+  nav.tabs button.on{color:var(--ink);background:var(--card)}
+  nav.tabs button.on .ic{filter:drop-shadow(0 0 8px rgba(255,77,141,.6))}
+
+  /* ---------- group / bracket ---------- */
+  .grphead{display:flex;align-items:center;gap:8px;margin:14px 0 6px}
+  .grpbadge{font-family:'Fredoka';font-weight:700;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:4px 10px}
+  .standrow{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--line)}
+  .standrow:last-child{border-bottom:none}
+  .standrow .gp{margin-left:auto;font-family:'Fredoka';font-size:13px;color:var(--muted)}
+  .advpick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .advpick .tg{flex:1;min-width:46%;display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:8px;font-size:13px}
+  .advpick .tg.q1{border-color:var(--gold);background:rgba(255,210,63,.1)}
+  .advpick .tg.q2{border-color:var(--cyan);background:rgba(54,224,255,.1)}
+
+  /* ---------- prop ---------- */
+  .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:14px}
+  .opt.sel{border-color:var(--lime);background:rgba(198,255,61,.1)}
+  .opt .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex:none}
+  .opt.sel .rd{border-color:var(--lime);background:var(--lime)}
+
+  /* ---------- modal / toast ---------- */
+  .modal-bg{position:fixed;inset:0;background:rgba(5,4,15,.7);backdrop-filter:blur(4px);z-index:60;display:grid;place-items:center;padding:18px}
+  .modal{background:var(--card);border:1px solid var(--line);border-radius:22px;max-width:460px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
+  .modal .mhead{position:sticky;top:0;background:var(--card);padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .modal .mbody{padding:16px 18px}
+  .x{font-size:24px;background:transparent;color:var(--muted);line-height:1}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:var(--card2);border:1px solid var(--line);color:var(--ink);padding:12px 18px;border-radius:14px;z-index:80;opacity:0;transition:all .25s;font-weight:600;box-shadow:var(--shadow);max-width:90%;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .banner{border-radius:14px;padding:10px 12px;font-size:12.5px;margin:8px 0}
+  .banner.demo{background:rgba(255,210,63,.12);border:1px solid var(--gold);color:var(--gold)}
+  .banner.warn{background:rgba(255,92,92,.12);border:1px solid var(--red);color:#ffb3b3}
+  .hero{ text-align:center;padding:30px 18px 10px}
+  .hero .big{font-family:'Fredoka';font-size:34px;line-height:1.05;margin:8px 0}
+  .hero .big b{background:linear-gradient(90deg,var(--pink),var(--gold),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .emojis{font-size:40px;letter-spacing:4px}
+  .divider{height:1px;background:var(--line);margin:14px 0}
+  .trash{font-style:italic;color:var(--gold);font-size:13px;margin-top:4px}
+  .badge-admin{font-size:10px;background:var(--pink);color:#fff;border-radius:6px;padding:2px 6px;font-weight:700;letter-spacing:.5px}
+  .empty{ text-align:center;color:var(--muted);padding:30px 10px}
+  .empty .e{font-size:40px}
+  .seg{display:flex;gap:6px;overflow-x:auto;padding:4px 0;margin:4px 0;scrollbar-width:none}
+  .seg::-webkit-scrollbar{display:none}
+  .seg button{white-space:nowrap;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600}
+  .seg button.on{background:var(--card2);color:var(--ink);border-color:var(--purple)}
+  .countdown{font-family:'Fredoka';color:var(--cyan)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================================
+   ⚙️  CONFIG — leave blank to run in instant DEMO mode (no setup).
+   To go LIVE with real logins + a shared database for your friends,
+   create a free Supabase project, run schema.sql, and paste your keys below.
+   (Full step-by-step is in SETUP.md)
+   ============================================================================ */
+const SUPABASE_URL  = "";   // e.g. "https://xxxx.supabase.co"
+const SUPABASE_ANON  = "";  // e.g. "eyJhbGciOi..."  (the public 'anon' key)
+const ADMIN_EMAILS  = ["a.svaetichin@gmail.com"]; // these emails get the Admin panel
+
+/* ---------- tunable game settings (admin can change live) ------------------ */
+const DEFAULTS = {
+  app_title: "GOALPOST",
+  starting_coins: 1000,
+  pts_exact: 5,      // exact scoreline
+  pts_result: 2,     // correct outcome (W/D/L) but wrong score
+  pts_advance: 4,    // each correctly predicted team to escape a group
+  buy_in: 20,        // real-money buy-in per person
+  currency: "$",
+  payout_split: [50, 30, 20], // % of pot to 1st / 2nd / 3rd by final POINTS
+  bet_basis: "points" // final payouts ranked by 'points' or 'coins'
+};
+
+/* ============================================================================
+   🌍  THE REAL 2026 WORLD CUP DRAW (held Dec 5, 2025, Washington D.C.)
+   Group stage Jun 11–27 · Knockouts to Jul 19 · Hosts USA/MEX/CAN
+   ============================================================================ */
+const GROUPS = {
+  A:[["Mexico","🇲🇽"],["South Africa","🇿🇦"],["South Korea","🇰🇷"],["Czechia","🇨🇿"]],
+  B:[["Canada","🇨🇦"],["Switzerland","🇨🇭"],["Qatar","🇶🇦"],["Bosnia & Herz.","🇧🇦"]],
+  C:[["Brazil","🇧🇷"],["Morocco","🇲🇦"],["Haiti","🇭🇹"],["Scotland","🏴󠁧󠁢󠁳󠁣󠁴󠁿"]],
+  D:[["USA","🇺🇸"],["Paraguay","🇵🇾"],["Australia","🇦🇺"],["Türkiye","🇹🇷"]],
+  E:[["Germany","🇩🇪"],["Curaçao","🇨🇼"],["Côte d'Ivoire","🇨🇮"],["Ecuador","🇪🇨"]],
+  F:[["Netherlands","🇳🇱"],["Japan","🇯🇵"],["Tunisia","🇹🇳"],["Sweden","🇸🇪"]],
+  G:[["Belgium","🇧🇪"],["Egypt","🇪🇬"],["Iran","🇮🇷"],["New Zealand","🇳🇿"]],
+  H:[["Spain","🇪🇸"],["Cabo Verde","🇨🇻"],["Saudi Arabia","🇸🇦"],["Uruguay","🇺🇾"]],
+  I:[["France","🇫🇷"],["Senegal","🇸🇳"],["Norway","🇳🇴"],["Iraq","🇮🇶"]],
+  J:[["Argentina","🇦🇷"],["Algeria","🇩🇿"],["Austria","🇦🇹"],["Jordan","🇯🇴"]],
+  K:[["Portugal","🇵🇹"],["Uzbekistan","🇺🇿"],["Colombia","🇨🇴"],["DR Congo","🇨🇩"]],
+  L:[["England","🏴󠁧󠁢󠁥󠁮󠁧󠁿"],["Croatia","🇭🇷"],["Ghana","🇬🇭"],["Panama","🇵🇦"]]
+};
+
+// rough "power" ratings (0-100) — only used to auto-generate fun betting odds.
+// Admin can ignore; these just make coin wagers feel like a sportsbook.
+const POWER = {
+  "Argentina":92,"France":91,"Spain":90,"Brazil":90,"England":87,"Portugal":86,
+  "Germany":85,"Netherlands":84,"Belgium":80,"Croatia":79,"Uruguay":79,"Colombia":77,
+  "Morocco":78,"Japan":76,"Switzerland":75,"Senegal":75,"USA":74,"Mexico":74,
+  "Ecuador":72,"South Korea":72,"Austria":72,"Norway":74,"Sweden":71,"Türkiye":72,
+  "Australia":69,"Egypt":70,"Côte d'Ivoire":70,"Scotland":69,"Paraguay":68,"Canada":69,
+  "Iran":69,"Tunisia":67,"Algeria":69,"Czechia":70,"Ghana":68,"Qatar":64,"Panama":62,
+  "Saudi Arabia":63,"South Africa":63,"Uzbekistan":64,"DR Congo":65,"Iraq":62,
+  "Jordan":61,"New Zealand":60,"Bosnia & Herz.":68,"Cabo Verde":59,"Curaçao":57,"Haiti":58
+};
+
+/* ============================================================================
+   🃏  STATE + tiny utilities
+   ============================================================================ */
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+function party(){if(window.confetti){confetti({particleCount:120,spread:80,origin:{y:.4},colors:["#ff4d8d","#ffd23f","#36e0ff","#c6ff3d","#9b6bff"]});}}
+// deterministic seeded RNG (so the demo looks the same each load)
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+const DB = { settings:{}, teams:[], matches:[], props:[], predictions:[], propAnswers:[], profiles:[] };
+let ME = null;        // current profile object
+let MODE = "demo";    // 'demo' | 'live'
+let supa = null;
+let VIEW = "picks";
+
+/* ---------- odds engine ---------- */
+function teamPower(name){return POWER[name]||62;}
+function matchOdds(home,away){
+  const dh = (teamPower(home)-teamPower(away))/12 + 0.35; // home edge
+  const pHome = 1/(1+Math.exp(-dh));
+  const pAwayRaw = 1/(1+Math.exp(dh));
+  // carve out a draw chunk
+  const draw = 0.26 - Math.abs(pHome-pAwayRaw)*0.12;
+  const d = clamp(draw,0.14,0.30);
+  let h = pHome*(1-d), a = pAwayRaw*(1-d);
+  const s = h+a+d; h/=s;a/=s;
+  const margin=1.06;
+  const dec=p=>Math.max(1.05, Math.round((1/p)/margin*100)/100);
+  return {home:dec(h),draw:dec(d),away:dec(a)};
+}
+function championOdds(name){
+  const p = teamPower(name);
+  let o = 6*Math.pow(1.5,(90-p)/3);   // favorites ~6x, minnows up to 300x
+  o = clamp(o,6,300);
+  return o>=20 ? Math.round(o) : Math.round(o*10)/10;
+}
+
+/* ============================================================================
+   🌱  SEED (used in demo, and as the offline fallback dataset)
+   ============================================================================ */
+function buildTeams(){
+  const teams=[];
+  Object.entries(GROUPS).forEach(([g,arr])=>{
+    arr.forEach((t,i)=>teams.push({id:`${g}${i+1}`,name:t[0],flag:t[1],grp:g,pos:i+1}));
+  });
+  return teams;
+}
+function teamById(id){return DB.teams.find(t=>t.id===id);}
+function teamByName(n){return DB.teams.find(t=>t.name===n);}
+
+function buildGroupMatches(){
+  // FIFA-style round robin per group of 4 across 3 matchdays
+  const pat=[[0,1],[2,3],[0,2],[3,1],[3,0],[1,2]]; // 6 fixtures
+  const md =[1,1,2,2,3,3];
+  const matches=[];
+  const groups=Object.keys(GROUPS);
+  // matchday base dates (kickoffs spread Jun 11–27, 2026)
+  const mdDates={1:"2026-06-13",2:"2026-06-18",3:"2026-06-24"};
+  groups.forEach((g,gi)=>{
+    const tt=DB.teams.filter(t=>t.grp===g);
+    pat.forEach((p,k)=>{
+      const day=new Date(mdDates[md[k]]);
+      day.setDate(day.getDate() + ((gi+ (k%2?1:0)) % 3) - 1); // spread a little
+      const koff=`${day.toISOString().slice(0,10)}T${["12:00","15:00","18:00","21:00"][ (gi+k)%4 ]}:00`;
+      matches.push({
+        id:`G-${g}-${k+1}`, stage:"group", grp:g, md:md[k],
+        home:tt[p[0]].id, away:tt[p[1]].id,
+        kickoff:koff, hs:null, as:null, status:"scheduled"
+      });
+    });
+  });
+  // opening match is fixed & real
+  const opener = matches.find(m=>m.home==="A1"&&m.away==="A2");
+  if(opener) opener.kickoff="2026-06-11T20:00:00";
+  return matches;
+}
+
+function seedProps(){
+  const champTeams = DB.teams.map(t=>({v:t.id,label:`${t.flag} ${t.name}`}));
+  return [
+    {id:"p-champ", icon:"🏆", q:"Who lifts the trophy?", type:"team", options:champTeams, pts:30, status:"open", correct:null, allow_coins:true},
+    {id:"p-flop", icon:"😱", q:"Which giant FLOPS out in the group stage?", type:"mc", pts:8, status:"open", correct:null, allow_coins:true,
+      options:[{v:"Brazil",label:"🇧🇷 Brazil"},{v:"Argentina",label:"🇦🇷 Argentina"},{v:"France",label:"🇫🇷 France"},{v:"Spain",label:"🇪🇸 Spain"},{v:"England",label:"🏴 England"},{v:"Germany",label:"🇩🇪 Germany"},{v:"none",label:"🛡️ None of them (boring)"}]},
+    {id:"p-cinderella", icon:"🐴", q:"Best Cinderella run — which underdog goes furthest?", type:"mc", pts:10, status:"open", correct:null, allow_coins:true,
+      options:[{v:"Haiti",label:"🇭🇹 Haiti"},{v:"Curaçao",label:"🇨🇼 Curaçao"},{v:"Cabo Verde",label:"🇨🇻 Cabo Verde"},{v:"Jordan",label:"🇯🇴 Jordan"},{v:"Panama",label:"🇵🇦 Panama"},{v:"Uzbekistan",label:"🇺🇿 Uzbekistan"},{v:"New Zealand",label:"🇳🇿 New Zealand"}]},
+    {id:"p-usa", icon:"🦅", q:"Do the host USA escape Group D?", type:"yesno", pts:5, status:"open", correct:null, allow_coins:true},
+    {id:"p-pens", icon:"🥅", q:"Will the FINAL go to penalties?", type:"yesno", pts:6, status:"open", correct:null, allow_coins:false},
+    {id:"p-boot", icon:"⚽", q:"Golden Boot top scorer — total goals?", type:"ou", line:7.5, pts:6, status:"open", correct:null, allow_coins:false},
+    {id:"p-reds", icon:"🟥", q:"Total red cards in the whole tournament?", type:"ou", line:18.5, pts:5, status:"open", correct:null, allow_coins:false},
+    {id:"p-goals", icon:"🎯", q:"Goals in the group stage (72 matches)?", type:"ou", line:201.5, pts:7, status:"open", correct:null, allow_coins:false}
+  ];
+}
+
+const DEMO_FRIENDS = [
+  ["Big Dave","🦁"],["Steph","🐙"],["Marco","🐉"],["The Gaffer","🎩"],
+  ["Priya","🦄"],["Lukas","🐺"],["Nat","🌶️"],["Coach K","🏆"],["Tomás","👽"]
+];
+
+function seedDemo(){
+  const rng=mulberry32(20260611);
+  DB.settings={...DEFAULTS};
+  DB.teams=buildTeams();
+  DB.matches=buildGroupMatches();
+  DB.props=seedProps();
+  DB.profiles=[];
+  DB.predictions=[];
+  DB.propAnswers=[];
+
+  // you + friends
+  DB.profiles.push({id:"me", name:"You", emoji:"🫵", email:"you@demo", is_admin:true, paid:true});
+  DEMO_FRIENDS.forEach((f,i)=>DB.profiles.push({id:"f"+i, name:f[0], emoji:f[1], email:f[0]+"@demo", is_admin:false, paid: rng()>0.25}));
+
+  // finish a handful of matches so there's a live leaderboard
+  const finishIds=["A1","A2"]; // we'll finish first fixture of several groups
+  const toFinish = DB.matches.filter(m=>m.md===1).slice(0,7);
+  toFinish.forEach(m=>{ m.status="finished"; m.hs=Math.floor(rng()*4); m.as=Math.floor(rng()*3); });
+
+  // everyone (incl. you) makes predictions
+  DB.profiles.forEach(p=>{
+    DB.matches.forEach(m=>{
+      // you only "pre-played" the already-finished ones; leave upcoming for the user
+      if(p.id==="me" && m.status!=="finished") return;
+      if(rng()<0.12 && p.id!=="me") return; // friends occasionally forget
+      const hp=Math.floor(rng()*4), ap=Math.floor(rng()*3);
+      const pred={id:`${p.id}-${m.id}`, user:p.id, match:m.id, hp, ap, wager:0, pick:null};
+      if(rng()<0.45){ // toss some coins on a winner — settles on finished matches for a lively coin board
+        pred.pick=["home","draw","away"][Math.floor(rng()*3)];
+        pred.wager=[20,50,100,150,250][Math.floor(rng()*5)];
+      }
+      DB.predictions.push(pred);
+    });
+    // prop answers
+    DB.props.forEach(pr=>{
+      if(p.id==="me") return; // let the user answer their own props
+      if(rng()<0.3) return;
+      let ans;
+      if(pr.type==="team") ans=DB.teams[Math.floor(rng()*DB.teams.length)].id;
+      else if(pr.type==="yesno") ans=rng()>0.5?"yes":"no";
+      else if(pr.type==="ou") ans=rng()>0.5?"over":"under";
+      else ans=pr.options[Math.floor(rng()*pr.options.length)].v;
+      DB.propAnswers.push({id:`${p.id}-${pr.id}`, user:p.id, prop:pr.id, answer:ans, wager: pr.allow_coins&&rng()<0.5?[50,100,200][Math.floor(rng()*3)]:0});
+    });
+  });
+
+  // settle ONE prop for early drama (the USA one — say they made it)
+  const usp=DB.props.find(p=>p.id==="p-usa"); usp.status="settled"; usp.correct="yes";
+  saveLocal();
+}
+
+/* ============================================================================
+   💾  PERSISTENCE (demo = localStorage, live = Supabase)
+   ============================================================================ */
+const LS_KEY="goalpost_demo_v1";
+function saveLocal(){ if(MODE==="demo") localStorage.setItem(LS_KEY, JSON.stringify({DB, meId:ME?ME.id:"me"})); }
+function loadLocal(){
+  const raw=localStorage.getItem(LS_KEY);
+  if(!raw) return false;
+  try{const o=JSON.parse(raw);Object.assign(DB,o.DB);ME=DB.profiles.find(p=>p.id===(o.meId||"me"))||DB.profiles[0];return true;}catch(e){return false;}
+}
+
+/* ============================================================================
+   🧮  SCORING ENGINE — recomputed from scratch every render (no drift)
+   ============================================================================ */
+function groupStandings(g){
+  const tt=DB.teams.filter(t=>t.grp===g).map(t=>({id:t.id,name:t.name,flag:t.flag,P:0,W:0,D:0,L:0,GF:0,GA:0,GD:0,Pts:0}));
+  const map=Object.fromEntries(tt.map(t=>[t.id,t]));
+  DB.matches.filter(m=>m.grp===g&&m.status==="finished").forEach(m=>{
+    const h=map[m.home],a=map[m.away];if(!h||!a)return;
+    h.P++;a.P++;h.GF+=m.hs;h.GA+=m.as;a.GF+=m.as;a.GA+=m.hs;
+    if(m.hs>m.as){h.W++;a.L++;h.Pts+=3;}else if(m.hs<m.as){a.W++;h.L++;a.Pts+=3;}else{h.D++;a.D++;h.Pts++;a.Pts++;}
+  });
+  tt.forEach(t=>t.GD=t.GF-t.GA);
+  tt.sort((x,y)=>y.Pts-x.Pts||y.GD-x.GD||y.GF-x.GF||x.name.localeCompare(y.name));
+  return tt;
+}
+function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
+
+function scoreFor(profileId){
+  const s=DB.settings; let pts=0, coins=s.starting_coins;
+  const preds=DB.predictions.filter(p=>p.user===profileId);
+  // match score predictions
+  preds.forEach(pr=>{
+    const m=DB.matches.find(x=>x.id===pr.match);
+    if(!m||m.status!=="finished") return;
+    if(pr.hp==null||pr.ap==null) return;
+    const exact = pr.hp===m.hs && pr.ap===m.as;
+    const outcome = Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
+    if(exact) pts+=s.pts_exact;
+    else if(outcome) pts+=s.pts_result;
+    // coin wager on outcome
+    if(pr.wager>0 && pr.pick){
+      const odds=matchOdds(teamById(m.home).name,teamById(m.away).name);
+      const won=(pr.pick==="home"&&m.hs>m.as)||(pr.pick==="away"&&m.as>m.hs)||(pr.pick==="draw"&&m.hs===m.as);
+      coins += won ? Math.round(pr.wager*(odds[pr.pick]-1)) : -pr.wager;
+    }
+  });
+  // group advance predictions (stored in ADV, refreshed each render)
+  ADV.filter(a=>a.user===profileId).forEach(a=>{
+    if(!groupComplete(a.grp)) return;
+    const st=groupStandings(a.grp);
+    const top2=[st[0].id,st[1].id];
+    if(top2.includes(a.team)) pts+=s.pts_advance;
+  });
+  // props
+  DB.propAnswers.filter(a=>a.user===profileId).forEach(a=>{
+    const pr=DB.props.find(x=>x.id===a.prop);
+    if(!pr||pr.status!=="settled") return;
+    const won = String(a.answer)===String(pr.correct);
+    if(won) pts+=pr.pts;
+    if(pr.allow_coins && a.wager>0){
+      let odds=2.0;
+      if(pr.type==="team") odds=championOdds(teamById(a.answer)?teamById(a.answer).name:"");
+      else if(pr.type==="yesno") odds=1.9; else odds=1.95;
+      coins += won ? Math.round(a.wager*(odds-1)) : -a.wager;
+    }
+  });
+  return {pts, coins};
+}
+// advance picks stored separately for clarity
+let ADV=[]; // {user, grp, team}
+function loadAdv(){ ADV = DB.predictions.filter(p=>p.advance).map(p=>({user:p.user,grp:p.grp,team:p.team})); }
+
+function leaderboard(basis="points"){
+  const rows=DB.profiles.map(p=>{const sc=scoreFor(p.id);return {...p, pts:sc.pts, coins:sc.coins};});
+  rows.sort((a,b)=> basis==="coins" ? b.coins-a.coins : (b.pts-a.pts||b.coins-a.coins));
+  rows.forEach((r,i)=>r.rank=i+1);
+  return rows;
+}
+function myRank(basis="points"){const lb=leaderboard(basis);const r=lb.find(x=>x.id===ME.id);return {rank:r.rank,total:lb.length,me:r};}
+
+/* ============================================================================
+   🔌  DATA WRITES (work in both modes)
+   ============================================================================ */
+async function savePrediction(matchId, hp, ap){
+  let pr=DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);
+  if(!pr){pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,wager:0,pick:null};DB.predictions.push(pr);}
+  else {pr.hp=hp;pr.ap=ap;}
+  if(MODE==="live") await sbUpsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,wager:pr.wager,pick:pr.pick});
+  saveLocal();
+}
+async function saveWager(matchId, pick, wager){
+  let pr=DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);
+  if(!pr){pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp:null,ap:null,wager,pick};DB.predictions.push(pr);}
+  else {pr.pick=pick;pr.wager=wager;}
+  if(MODE==="live") await sbUpsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp:pr.hp,ap:pr.ap,wager,pick});
+  saveLocal();
+}
+async function saveAdvance(grp, slot, teamId){
+  // slot 0/1; we store up to 2 advance picks per group
+  const mine=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===grp);
+  // remove if same team already in other slot
+  let pr=mine[slot];
+  if(!pr){pr={id:`${ME.id}-adv-${grp}-${slot}`,user:ME.id,advance:true,grp,team:teamId};DB.predictions.push(pr);}
+  else pr.team=teamId;
+  if(MODE==="live") await sbUpsert("advances",{id:pr.id,user_id:ME.id,grp,slot,team:teamId});
+  loadAdv();saveLocal();
+}
+async function saveProp(propId, answer, wager){
+  let a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===propId);
+  if(!a){a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer,wager:wager||0};DB.propAnswers.push(a);}
+  else {a.answer=answer; if(wager!=null)a.wager=wager;}
+  if(MODE==="live") await sbUpsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer:a.answer,wager:a.wager});
+  saveLocal();
+}
+// admin writes
+async function adminScore(matchId,hs,as){
+  const m=DB.matches.find(x=>x.id===matchId);m.hs=hs;m.as=as;m.status="finished";
+  if(MODE==="live") await sbUpsert("matches",{id:matchId,home_score:hs,away_score:as,status:"finished"});
+  saveLocal();
+}
+async function adminUnscore(matchId){
+  const m=DB.matches.find(x=>x.id===matchId);m.hs=null;m.as=null;m.status="scheduled";
+  if(MODE==="live") await sbUpsert("matches",{id:matchId,home_score:null,away_score:null,status:"scheduled"});
+  saveLocal();
+}
+async function adminSettleProp(propId,correct){
+  const p=DB.props.find(x=>x.id===propId);p.correct=correct;p.status="settled";
+  if(MODE==="live") await sbUpsert("props",{id:propId,correct,status:"settled"});
+  saveLocal();
+}
+async function adminSetting(key,val){
+  DB.settings[key]=val;
+  if(MODE==="live") await sbUpsert("settings",{id:1,...DB.settings});
+  saveLocal();
+}
+async function adminTogglePaid(profileId){
+  const p=DB.profiles.find(x=>x.id===profileId);p.paid=!p.paid;
+  if(MODE==="live") await sbUpsert("profiles",{id:profileId,paid:p.paid});
+  saveLocal();
+}
+
+/* ---- supabase helpers (live mode) ---- */
+async function sbUpsert(table,row){ try{ await supa.from(table).upsert(row); }catch(e){ console.error(e); toast("Sync error"); } }
+
+/* ============================================================================
+   🖼️  RENDER
+   ============================================================================ */
+function fmtKick(iso){
+  const d=new Date(iso);
+  const opt={weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"};
+  return d.toLocaleString(undefined,opt);
+}
+function countdown(iso){
+  const ms=new Date(iso)-Date.now();
+  if(ms<=0) return null;
+  const dys=Math.floor(ms/864e5), hrs=Math.floor(ms%864e5/36e5);
+  if(dys>0) return `${dys}d ${hrs}h`;
+  const mins=Math.floor(ms%36e5/6e4);return `${hrs}h ${mins}m`;
+}
+function isLocked(m){return m.status==="finished" || new Date(m.kickoff)<=Date.now();}
+
+function header(){
+  const r=myRank(); const sc=r.me;
+  return `<header class="top">
+    <div class="brandrow">
+      <div class="brand"><span class="ball">⚽</span><span>${DB.settings.app_title||"GOALPOST"}</span></div>
+      <div class="whoami">
+        ${ME.is_admin?'<span class="badge-admin">ADMIN</span>':''}
+        <div class="avatar">${ME.emoji||"🙂"}</div>
+      </div>
+    </div>
+    <div class="statpills">
+      <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
+      <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
+      <div class="pill coins"><div class="k">Coins</div><div class="v">${sc.coins.toLocaleString()}</div></div>
+    </div>
+  </header>`;
+}
+
+function nav(){
+  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Props"],["board","📊","Board"],["pool","💰","Pool"]];
+  if(ME.is_admin) tabs.push(["admin","🛠️","Admin"]);
+  return `<nav class="tabs"><div class="inner">${tabs.map(t=>
+    `<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
+}
+
+/* ---------- PICKS ---------- */
+let pickFilter="upcoming";
+function viewPicks(){
+  const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
+  let list=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+  const groupsSel=["all",...Object.keys(GROUPS)];
+  if(pickFilter==="upcoming") list=list.filter(m=>!isLocked(m));
+  else if(pickFilter==="finished") list=list.filter(m=>m.status==="finished");
+  else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
+
+  const segs=[["upcoming","🔮 Upcoming"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
+  let html=`<div class="card"><h3>⚽ Make your picks</h3>
+    <div class="small muted">Predict the exact scoreline for leaderboard points (${DB.settings.pts_exact} for spot-on, ${DB.settings.pts_result} for the right result). Optionally throw coins on a winner for bonus riches. Picks lock at kickoff.</div></div>
+    <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
+
+  if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet.</div>`;
+  list.forEach(m=>{ html+=matchCard(m,mine[m.id]); });
+  return html;
+}
+function matchCard(m,pred){
+  const h=teamById(m.home),a=teamById(m.away);
+  const locked=isLocked(m);
+  const odds=matchOdds(h.name,a.name);
+  const cd=countdown(m.kickoff);
+  let inner="";
+  if(m.status==="finished"){
+    // result + your outcome
+    let earn="";
+    if(pred&&pred.hp!=null){
+      const exact=pred.hp===m.hs&&pred.ap===m.as;
+      const out=Math.sign(pred.hp-pred.ap)===Math.sign(m.hs-m.as);
+      const got = exact?DB.settings.pts_exact: out?DB.settings.pts_result:0;
+      earn=`<div class="small ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you picked ${pred.hp}–${pred.ap} · +${got} pts</div>`;
+    } else earn=`<div class="small muted">You didn't pick this one</div>`;
+    inner=`<div class="vs">
+        <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
+        <div class="result-score">${m.hs}–${m.as}</div>
+        <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
+      </div>${earn}`;
+  } else if(locked){
+    inner=`<div class="vs">
+        <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
+        <div class="vsmid">🔒 LOCKED</div>
+        <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
+      </div><div class="small muted">${pred&&pred.hp!=null?`Your pick: ${pred.hp}–${pred.ap}`:"No pick — kickoff passed"}</div>`;
+  } else {
+    const hv=pred&&pred.hp!=null?pred.hp:"";
+    const av=pred&&pred.ap!=null?pred.ap:"";
+    inner=`<div class="vs">
+        <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
+        <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${hv}" placeholder="–" maxlength="2"/>
+        <div class="vsmid">:</div>
+        <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${av}" placeholder="–" maxlength="2"/>
+        <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
+      </div>
+      <div class="odds">
+        ${["home","draw","away"].map(k=>{
+          const sel=pred&&pred.pick===k?"sel":"";
+          const lab=k==="home"?h.flag+" "+h.name.split(" ")[0]:k==="draw"?"Draw":a.flag+" "+a.name.split(" ")[0];
+          return `<button class="oddbtn ${sel}" data-odd="${k}" data-m="${m.id}"><span>${lab}</span><b>${odds[k].toFixed(2)}×</b></button>`;
+        }).join("")}
+      </div>
+      ${pred&&pred.pick?`<div class="small muted" style="margin-top:6px">🪙 ${pred.wager||0} coins on <b>${pred.pick}</b> · tap a coin amount:
+        <div class="row" style="margin-top:6px;gap:6px">${[0,50,100,250].map(w=>`<button class="btn ${pred.wager===w?'gold':''}" style="flex:1;padding:6px" data-wg="${w}" data-m="${m.id}">${w===0?'No bet':w}</button>`).join("")}</div></div>`:''}
+      <div class="pickbar"><button class="btn lime" data-save="${m.id}">Save pick</button>
+      ${cd?`<span class="small countdown">⏱ ${cd}</span>`:''}</div>`;
+  }
+  const tag = m.status==="finished"?'<span class="chip done">FT</span>': locked?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
+  return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
+}
+
+/* ---------- GROUPS / BRACKET ---------- */
+let grpSel="A";
+function viewBracket(){
+  let html=`<div class="card"><h3>🏆 Group predictions</h3>
+    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. Pick your tournament winner over in the 🃏 Props tab for big points.</div></div>
+    <div class="seg">${Object.keys(GROUPS).map(g=>`<button class="${grpSel===g?'on':''}" data-grp="${g}">Group ${g}</button>`).join("")}</div>`;
+  const g=grpSel;
+  const st=groupStandings(g);
+  const complete=groupComplete(g);
+  const myAdv=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===g).map(p=>p.team);
+  html+=`<div class="card"><div class="grphead"><span class="grpbadge">Group ${g}</span>${complete?'<span class="chip done">Final</span>':'<span class="chip open">In progress</span>'}</div>`;
+  // standings
+  st.forEach((t,i)=>{
+    const adv=i<2?'<span class="tiny" style="color:var(--gold)">▲ adv</span>':'';
+    html+=`<div class="standrow"><b style="width:16px;color:var(--muted)">${i+1}</b><span class="flag" style="font-size:18px;width:24px">${t.flag}</span><span>${t.name}</span> <span class="gp">${t.Pts}pts · ${t.GF}-${t.GA} ${adv}</span></div>`;
+  });
+  // advance picks
+  html+=`<div class="divider"></div><div class="small muted">Your survivors from Group ${g}:</div><div class="advpick">`;
+  [0,1].forEach(slot=>{
+    const cls=slot===0?"q1":"q2";
+    const cur=myAdv[slot];
+    const t=cur?teamById(cur):null;
+    html+=`<button class="tg ${cls}" data-advslot="${slot}" data-advgrp="${g}" ${complete?'disabled':''}>
+      <span>${slot===0?'🥇':'🥈'}</span>${t?`${t.flag} ${t.name}`:`<span class="muted">Pick #${slot+1}…</span>`}</button>`;
+  });
+  html+=`</div>`;
+  if(complete){
+    const correct=myAdv.filter(id=>[st[0].id,st[1].id].includes(id)).length;
+    html+=`<div class="small earn good" style="margin-top:8px">Group done — you nailed ${correct}/2 survivors (+${correct*DB.settings.pts_advance} pts)</div>`;
+  }
+  html+=`</div>`;
+  return html;
+}
+
+/* ---------- PROPS ---------- */
+function viewProps(){
+  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">The fun stuff. Answer for points; some let you throw coins for bonus payouts (longshots pay big).</div></div>`;
+  DB.props.forEach(pr=>{
+    const a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===pr.id);
+    const settled=pr.status==="settled";
+    let opts="";
+    if(pr.type==="yesno"){
+      opts=["yes","no"].map(v=>optRow(pr,v,v==="yes"?"✅ Yes":"❌ No",a)).join("");
+    } else if(pr.type==="ou"){
+      opts=["over","under"].map(v=>optRow(pr,v,(v==="over"?"⬆️ Over ":"⬇️ Under ")+pr.line,a)).join("");
+    } else if(pr.type==="team"){
+      const cur=a?teamById(a.answer):null;
+      opts=`<button class="opt ${a?'sel':''}" data-teamprop="${pr.id}" ${settled?'disabled':''}>
+        <span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span>
+        ${a?`<span style="margin-left:auto;color:var(--gold)" class="small">${championOdds(cur?cur.name:"").toFixed(1)}×</span>`:''}</button>`;
+    } else {
+      opts=pr.options.map(o=>optRow(pr,o.v,o.label,a)).join("");
+    }
+    let res="";
+    if(settled){
+      const won=a&&String(a.answer)===String(pr.correct);
+      const corLabel = pr.options? (pr.options.find(o=>o.v==pr.correct)||{}).label||pr.correct : pr.correct;
+      res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You got it! +'+pr.pts+' pts':'❌ Settled — '+(corLabel)}</div>`;
+    }
+    const wagerUI = (pr.allow_coins && !settled) ? `<div class="small muted" style="margin-top:8px">🪙 Bonus coin bet:
+        <div class="row" style="gap:6px;margin-top:6px">${[0,50,100,200].map(w=>`<button class="btn ${a&&a.wager===w?'gold':''}" style="flex:1;padding:6px" data-propwg="${w}" data-prop="${pr.id}" ${a?'':'disabled'}>${w===0?'None':w}</button>`).join("")}</div>
+        ${a?'':'<div class="tiny" style="margin-top:4px">Pick an answer first to bet coins</div>'}</div>` : '';
+    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.pts} pts</span></div>
+      ${opts}${wagerUI}${res}</div>`;
+  });
+  return html;
+}
+function optRow(pr,v,label,a){
+  const sel=a&&String(a.answer)===String(v)?"sel":"";
+  const dis=pr.status==="settled"?'style="pointer-events:none;opacity:.7"':'';
+  return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}" ${dis}><span class="rd"></span><span>${label}</span></div>`;
+}
+
+/* ---------- LEADERBOARD ---------- */
+let boardBasis="points";
+function viewBoard(){
+  const lb=leaderboard(boardBasis);
+  const top=lb[0], last=lb[lb.length-1];
+  const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them 🏃`][top.rank%3];
+  const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
+  let html=`<div class="card center"><h3>📊 The Table</h3>
+      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Points pool</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Coin barons</button></div>
+      <div class="trash">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div>
+    </div>`;
+  lb.forEach(r=>{
+    const me=r.id===ME.id?'me':'';
+    const medal=r.rank===1?'🥇':r.rank===2?'🥈':r.rank===3?'🥉':`<span class="muted">${r.rank}</span>`;
+    const val= boardBasis==="coins"? `🪙 ${r.coins.toLocaleString()}` : `${r.pts} pts`;
+    const sub= boardBasis==="coins"? `${r.pts} pts` : `🪙 ${r.coins.toLocaleString()}`;
+    html+=`<div class="lbrow ${me}">
+      <div class="pos medal">${medal}</div>
+      <div class="avatar" style="width:30px;height:30px;font-size:15px">${r.emoji}</div>
+      <div class="nm">${r.name}${me?' <span class="tiny" style="color:var(--purple)">(you)</span>':''}<small>${sub}</small></div>
+      <div class="sc">${val}</div>
+    </div>`;
+  });
+  html+=`<div class="card small muted center">🪦 ${last.emoji} <b>${last.name}</b> ${trashLast}</div>`;
+  return html;
+}
+
+/* ---------- POOL / BUY-IN ---------- */
+function viewPool(){
+  const s=DB.settings;
+  const paid=DB.profiles.filter(p=>p.paid);
+  const pot=paid.length*s.buy_in;
+  const lb=leaderboard(s.bet_basis);
+  const splits=s.payout_split;
+  let html=`<div class="card center">
+      <h3>💰 The Pot</h3>
+      <div class="display" style="font-size:40px;color:var(--gold);margin:6px 0">${s.currency}${pot.toLocaleString()}</div>
+      <div class="small muted">${paid.length} of ${DB.profiles.length} paid in · ${s.currency}${s.buy_in} each · ranked by ${s.bet_basis}</div>
+    </div>`;
+  html+=`<div class="card"><h3>🏆 Projected payouts</h3><div class="small muted">If the tournament ended right now:</div>`;
+  ["🥇 1st","🥈 2nd","🥉 3rd"].forEach((lbl,i)=>{
+    const winner=lb[i]; const amt=Math.round(pot*(splits[i]||0)/100);
+    html+=`<div class="standrow"><span style="width:40px">${lbl}</span>
+      <span class="avatar" style="width:26px;height:26px;font-size:13px">${winner?winner.emoji:'❓'}</span>
+      <span>${winner?winner.name:'—'}</span>
+      <span class="gp" style="color:var(--gold)">${s.currency}${amt.toLocaleString()} <span class="muted tiny">(${splits[i]||0}%)</span></span></div>`;
+  });
+  html+=`</div>`;
+  html+=`<div class="card"><h3>✅ Who's paid</h3>`;
+  DB.profiles.forEach(p=>{
+    html+=`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${p.emoji}</span><span>${p.name}</span>
+      <span class="gp">${p.paid?'<span style="color:var(--green)">Paid ✓</span>':'<span style="color:var(--red)">Owes</span>'}${ME.is_admin?` <button class="btn" style="padding:3px 8px;margin-left:6px" data-paid="${p.id}">flip</button>`:''}</span></div>`;
+  });
+  html+=`<div class="small muted" style="margin-top:8px">💡 The app just tracks who's in. Settle the real cash however you like (Venmo, cash, IOUs scrawled on a napkin).</div></div>`;
+  return html;
+}
+
+/* ---------- ADMIN ---------- */
+let adminTab="results";
+function viewAdmin(){
+  let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, and run the pool.</div>
+    <div class="seg" style="margin-top:8px">${[["results","Results"],["props","Settle props"],["pool","Pool settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div></div>`;
+  if(adminTab==="results"){
+    const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+    html+=`<div class="small muted" style="margin:0 4px">Type a score and hit ✓ to finalize. Everyone's points & coins recompute instantly.</div>`;
+    upcoming.forEach(m=>{
+      const h=teamById(m.home),a=teamById(m.away);
+      const done=m.status==="finished";
+      html+=`<div class="match"><div class="spread"><span class="small muted">Grp ${m.grp} MD${m.md} · ${fmtKick(m.kickoff)}</span>${done?'<span class="chip done">FT</span>':''}</div>
+        <div class="vs">
+          <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
+          <input class="scoreinput" inputmode="numeric" data-asc="home" data-m="${m.id}" value="${m.hs??''}" maxlength="2"/>
+          <div class="vsmid">:</div>
+          <input class="scoreinput" inputmode="numeric" data-asc="away" data-m="${m.id}" value="${m.as??''}" maxlength="2"/>
+          <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
+        </div>
+        <div class="row" style="gap:6px"><button class="btn lime" style="flex:1" data-ascore="${m.id}">✓ Finalize</button>
+        ${done?`<button class="btn ghost" data-aunscore="${m.id}">undo</button>`:''}</div></div>`;
+    });
+  } else if(adminTab==="props"){
+    DB.props.forEach(pr=>{
+      const settled=pr.status==="settled";
+      let optionsList=[];
+      if(pr.type==="yesno") optionsList=[["yes","Yes"],["no","No"]];
+      else if(pr.type==="ou") optionsList=[["over","Over "+pr.line],["under","Under "+pr.line]];
+      else if(pr.type==="team") optionsList=DB.teams.map(t=>[t.id,`${t.flag} ${t.name}`]);
+      else optionsList=pr.options.map(o=>[o.v,o.label]);
+      html+=`<div class="card"><div class="spread"><b>${pr.icon} ${pr.q}</b>${settled?'<span class="chip done">settled</span>':'<span class="chip open">open</span>'}</div>
+        <label class="fld">Correct answer</label>
+        <select data-settle="${pr.id}"><option value="">— choose —</option>${optionsList.map(o=>`<option value="${o[0]}" ${pr.correct==o[0]?'selected':''}>${o[1]}</option>`).join("")}</select>
+        <button class="btn primary block" style="margin-top:8px" data-dosettle="${pr.id}">${settled?'Re-settle & rescore':'Settle & score everyone'}</button></div>`;
+    });
+  } else {
+    const s=DB.settings;
+    html+=`<div class="card">
+      <label class="fld">Pool name</label><input data-set="app_title" value="${s.app_title}"/>
+      <div class="grid2">
+        <div><label class="fld">Buy-in (${s.currency})</label><input data-set="buy_in" inputmode="numeric" value="${s.buy_in}"/></div>
+        <div><label class="fld">Currency</label><input data-set="currency" value="${s.currency}"/></div>
+      </div>
+      <label class="fld">Payout split % (1st / 2nd / 3rd)</label>
+      <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
+        <input data-split="0" inputmode="numeric" value="${s.payout_split[0]}"/>
+        <input data-split="1" inputmode="numeric" value="${s.payout_split[1]}"/>
+        <input data-split="2" inputmode="numeric" value="${s.payout_split[2]}"/>
+      </div>
+      <label class="fld">Rank payouts by</label>
+      <div class="toggle"><button class="${s.bet_basis==='points'?'on':''}" data-betbasis="points">Points</button><button class="${s.bet_basis==='coins'?'on':''}" data-betbasis="coins">Coins</button></div>
+      <button class="btn primary block" style="margin-top:12px" data-savesettings>Save settings</button>
+    </div>
+    <div class="card"><h3>⚠️ Danger zone</h3>
+      <button class="btn block" data-resetdemo style="border-color:var(--red);color:#ffb3b3">Reset demo data</button></div>`;
+  }
+  return html;
+}
+
+/* ============================================================================
+   🎛️  RENDER ROOT + EVENT WIRING
+   ============================================================================ */
+function render(){
+  loadAdv();
+  const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,pool:viewPool,admin:viewAdmin};
+  const body=(views[VIEW]||viewPicks)();
+  let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
+  $("#app").innerHTML = header()+`<div class="app">${banner}${body}</div>`+nav();
+  wire();
+}
+
+function wire(){
+  // nav
+  $$("[data-tab]").forEach(b=>b.onclick=()=>{VIEW=b.dataset.tab;render();window.scrollTo(0,0);});
+  // picks filters
+  $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
+  // score inputs (just store in DOM; saved on Save)
+  $$("[data-save]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.save;
+    const hi=$(`[data-sc="home"][data-m="${id}"]`),ai=$(`[data-sc="away"][data-m="${id}"]`);
+    const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
+    const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
+    if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
+    await savePrediction(id,hp,ap);toast("Pick saved! 🔒");party();render();
+  });
+  $$("[data-odd]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.m,k=b.dataset.odd;
+    const pr=DB.predictions.find(p=>p.user===ME.id&&p.match===id&&!p.advance);
+    const wager=pr&&pr.wager?pr.wager:50;
+    await saveWager(id,k,wager);render();
+  });
+  $$("[data-wg]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.m,w=parseInt(b.dataset.wg);
+    const pr=DB.predictions.find(p=>p.user===ME.id&&p.match===id&&!p.advance);
+    await saveWager(id,pr?pr.pick:"home",w);toast(w?`🪙 ${w} coins down`:"Bet cleared");render();
+  });
+  // advance picks
+  $$("[data-advslot]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveAdvance(b.dataset.advgrp,parseInt(b.dataset.advslot),t.id).then(render);}, b.dataset.advgrp));
+  $$("[data-grp]").forEach(b=>b.onclick=()=>{grpSel=b.dataset.grp;render();});
+  // props
+  $$("[data-propopt]").forEach(b=>b.onclick=async()=>{await saveProp(b.dataset.prop,b.dataset.propopt);party();render();});
+  $$("[data-teamprop]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveProp(b.dataset.teamprop,t.id).then(render);}));
+  $$("[data-propwg]").forEach(b=>b.onclick=async()=>{
+    const a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===b.dataset.prop);
+    if(!a){toast("Pick an answer first");return;}
+    await saveProp(b.dataset.prop,a.answer,parseInt(b.dataset.propwg));toast("Bonus bet set 🪙");render();
+  });
+  // board
+  $$("[data-basis]").forEach(b=>b.onclick=()=>{boardBasis=b.dataset.basis;render();});
+  // pool
+  $$("[data-paid]").forEach(b=>b.onclick=async()=>{await adminTogglePaid(b.dataset.paid);render();});
+  // admin
+  $$("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab;render();});
+  $$("[data-ascore]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.ascore;
+    const hi=$(`[data-asc="home"][data-m="${id}"]`),ai=$(`[data-asc="away"][data-m="${id}"]`);
+    if(hi.value===""||ai.value===""){toast("Enter both scores");return;}
+    await adminScore(id,clamp(parseInt(hi.value)||0,0,30),clamp(parseInt(ai.value)||0,0,30));
+    toast("Scored! Everyone updated 📊");render();
+  });
+  $$("[data-aunscore]").forEach(b=>b.onclick=async()=>{await adminUnscore(b.dataset.aunscore);render();});
+  $$("[data-dosettle]").forEach(b=>b.onclick=async()=>{
+    const sel=$(`[data-settle="${b.dataset.dosettle}"]`);
+    if(!sel.value){toast("Choose the correct answer");return;}
+    await adminSettleProp(b.dataset.dosettle,sel.value);toast("Prop settled ✅");render();
+  });
+  const saveBtn=$("[data-savesettings]");
+  if(saveBtn) saveBtn.onclick=async()=>{
+    await adminSetting("app_title",$('[data-set="app_title"]').value||"GOALPOST");
+    await adminSetting("buy_in",parseInt($('[data-set="buy_in"]').value)||0);
+    await adminSetting("currency",$('[data-set="currency"]').value||"$");
+    const sp=[0,1,2].map(i=>parseInt($(`[data-split="${i}"]`).value)||0);
+    await adminSetting("payout_split",sp);
+    toast("Settings saved ⚙️");render();
+  };
+  $$("[data-betbasis]").forEach(b=>b.onclick=async()=>{await adminSetting("bet_basis",b.dataset.betbasis);render();});
+  const reset=$("[data-resetdemo]");
+  if(reset) reset.onclick=()=>{if(confirm("Wipe demo data and reseed?")){localStorage.removeItem(LS_KEY);seedDemo();ME=DB.profiles.find(p=>p.id==="me");render();}};
+}
+
+/* ---------- team picker modal ---------- */
+function openTeamPicker(cb, onlyGrp){
+  const teams=onlyGrp?DB.teams.filter(t=>t.grp===onlyGrp):DB.teams;
+  const root=$("#modal-root");
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b>🌍 Pick a team${onlyGrp?` (Group ${onlyGrp})`:''}</b><button class="x" data-close>×</button></div>
+    <div class="mbody">
+      ${onlyGrp?'':'<input id="tsearch" placeholder="Search teams…" style="margin-bottom:10px"/>'}
+      <div id="tlist">${teams.map(t=>`<div class="opt" data-pick="${t.id}"><span class="flag">${t.flag}</span><span>${t.name}</span><span class="gp muted tiny" style="margin-left:auto">Grp ${t.grp}</span></div>`).join("")}</div>
+    </div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $("[data-close]",root).onclick=close;
+  $(".modal-bg",root).onclick=e=>{if(e.target.classList.contains("modal-bg"))close();};
+  $$("[data-pick]",root).forEach(b=>b.onclick=()=>{cb(teamById(b.dataset.pick));close();});
+  const srch=$("#tsearch",root);
+  if(srch) srch.oninput=()=>{const q=srch.value.toLowerCase();$$("[data-pick]",root).forEach(d=>{d.style.display=d.textContent.toLowerCase().includes(q)?"":"none";});};
+}
+
+/* ============================================================================
+   🔐  AUTH + BOOT
+   ============================================================================ */
+function loginScreen(extra=""){
+  $("#app").innerHTML=`<div class="app"><div class="hero">
+    <div class="emojis">⚽🏆🔥</div>
+    <div class="big">Welcome to <b>${DB.settings.app_title||"GOALPOST"}</b></div>
+    <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot.</div>
+  </div>
+  <div class="card">${extra}
+    <label class="fld">Email</label>
+    <input id="email" type="email" placeholder="you@email.com" autocomplete="email"/>
+    <button class="btn primary block" id="loginbtn" style="margin-top:12px">${MODE==="live"?'Send me a magic link ✨':'Enter the pool ⚽'}</button>
+    <div class="small muted center" style="margin-top:10px">${MODE==="live"?'No password — we email you a one-tap login link.':'Demo mode: any name/email works.'}</div>
+  </div></div>`;
+  if(MODE==="demo"){
+    $("#email").placeholder="Pick a display name…";
+  }
+  $("#loginbtn").onclick=doLogin;
+  $("#email").onkeydown=e=>{if(e.key==="Enter")doLogin();};
+}
+async function doLogin(){
+  const val=$("#email").value.trim();
+  if(!val){toast("Type something first 🙂");return;}
+  if(MODE==="live"){
+    try{
+      const {error}=await supa.auth.signInWithOtp({email:val,options:{emailRedirectTo:window.location.href}});
+      if(error)throw error;
+      loginScreen(`<div class="banner demo">📧 Magic link sent to <b>${val}</b>. Open it on this device to jump in.</div>`);
+    }catch(e){toast("Couldn't send link — check config");console.error(e);}
+    return;
+  }
+  // demo: create/use a profile by the typed name
+  let p=DB.profiles.find(x=>x.name.toLowerCase()===val.toLowerCase());
+  if(!p){ p={id:"me",name:val,emoji:"🫵",email:val+"@demo",is_admin:true,paid:true};
+    // replace the placeholder "me" if present
+    DB.profiles=DB.profiles.filter(x=>x.id!=="me"); DB.profiles.unshift(p); }
+  ME=p;saveLocal();party();VIEW="picks";render();
+}
+
+async function boot(){
+  if(SUPABASE_URL && SUPABASE_ANON && window.supabase){
+    MODE="live";
+    supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+    const {data}=await supa.auth.getSession();
+    if(data&&data.session){ await liveLoad(data.session.user); render(); }
+    else { Object.assign(DB,{settings:{...DEFAULTS}}); loginScreen(); }
+    supa.auth.onAuthStateChange(async (_e,session)=>{
+      if(session&&session.user){ await liveLoad(session.user); render(); }
+    });
+    return;
+  }
+  // DEMO
+  MODE="demo";
+  if(!loadLocal()) seedDemo();
+  if(!ME) ME=DB.profiles.find(p=>p.id==="me")||DB.profiles[0];
+  // show a quick login the first time? Jump straight in for demo polish.
+  render();
+}
+
+async function liveLoad(user){
+  // pull everything into the same shape the UI expects
+  const tbl=async n=>{const {data}=await supa.from(n).select("*");return data||[];};
+  const [settings,teams,matches,props,preds,answers,profiles,advances]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances"].map(tbl));
+  DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
+  DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
+  DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
+  DB.props = props.length?props.map(normalizeProp):seedProps();
+  DB.predictions = preds.map(p=>({id:p.id,user:p.user_id,match:p.match_id,hp:p.hp,ap:p.ap,wager:p.wager,pick:p.pick}))
+    .concat(advances.map(a=>({id:a.id,user:a.user_id,advance:true,grp:a.grp,team:a.team})));
+  DB.propAnswers = answers.map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager}));
+  DB.profiles = profiles.map(p=>({id:p.id,name:p.display_name||p.email,emoji:p.emoji||"🙂",email:p.email,is_admin:!!p.is_admin,paid:!!p.paid}));
+  // ensure my profile exists
+  let mine=DB.profiles.find(p=>p.id===user.id);
+  if(!mine){
+    const isAdmin=ADMIN_EMAILS.includes((user.email||"").toLowerCase());
+    mine={id:user.id,name:(user.email||"Player").split("@")[0],emoji:"🫵",email:user.email,is_admin:isAdmin,paid:false};
+    DB.profiles.push(mine);
+    await sbUpsert("profiles",{id:user.id,email:user.email,display_name:mine.name,emoji:mine.emoji,is_admin:isAdmin,paid:false});
+  }
+  ME=mine;
+}
+function normalizeProp(p){return {id:p.id,icon:p.icon,q:p.q,type:p.type,options:p.options,line:p.line,pts:p.pts,status:p.status,correct:p.correct,allow_coins:p.allow_coins};}
+
+boot();
+</script>
+</body>
+</html>
