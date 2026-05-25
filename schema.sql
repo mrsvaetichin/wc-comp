@@ -5,7 +5,7 @@
 -- ============================================================================
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  email text, display_name text, emoji text default '🙂', avatar text,
+  email text, display_name text, emoji text default '🙂', avatar text, fav_team text,
   is_admin boolean default false, paid boolean default false, created_at timestamptz default now());
 create table if not exists settings (
   id int primary key default 1, app_title text default 'THE MASK', starting_coins int default 1000,
@@ -34,6 +34,7 @@ create table if not exists repicks (id text primary key,
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
+alter table profiles    add column if not exists fav_team text;
 alter table settings    add column if not exists ko jsonb default '{"qf":[],"sf":[],"final":[]}';
 alter table predictions add column if not exists banker boolean default false;
 

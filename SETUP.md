@@ -103,6 +103,8 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
 - **Group survivors:** +4 for each team you correctly tip to escape a group.
 - **🏆 Knockout run:** pick the teams you think reach the Quarter-finals (+3 each), Semi-finals (+5)
   and Final (+8). The commissioner marks who reached each stage in **Admin → Knockouts**.
+- **⚽ Your team:** when you join you pick the nation you personally support (locked in for good).
+  You earn **+1 point every time they win a match**.
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
 - **💸 Buy-in:** **50 GEL to play** — paid to the commissioner; the top 3 split the pot.
 - **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
