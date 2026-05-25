@@ -313,7 +313,7 @@ const DEFAULTS = {
   pts_result: 2,     // correct outcome (W/D/L) but wrong score
   pts_advance: 4,    // each correctly predicted team to escape a group
   buy_in: 50,        // real-money buy-in per person
-  currency: "GEL",   // Georgian Lari
+  currency: "USD",   // US Dollar → shows as "50 USD"
   payout_split: [50, 30, 20], // % of pot to 1st / 2nd / 3rd by final POINTS
   bet_basis: "points", // final payouts ranked by 'points' or 'coins'
   ko: {r16:[],qf:[],sf:[],final:[]} // admin-set actual knockout results
@@ -1001,7 +1001,9 @@ function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class
 function viewProps(){
   let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀.</div></div>`;
   let cards="";
-  DB.props.forEach(pr=>{
+  // keep the fun GOAT prop pinned first regardless of DB insertion order
+  const props=[...DB.props].sort((a,b)=>(b.id==="p-goat")-(a.id==="p-goat"));
+  props.forEach(pr=>{
     const a=myAnswer(pr.id);
     const settled=pr.status==="settled";
     const d=pdraft(pr.id);

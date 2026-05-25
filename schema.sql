@@ -10,7 +10,7 @@ create table if not exists profiles (
 create table if not exists settings (
   id int primary key default 1, app_title text default 'THE MASK', starting_coins int default 1000,
   pts_exact int default 5, pts_result int default 2, pts_advance int default 4,
-  buy_in int default 50, currency text default 'GEL', payout_split jsonb default '[50,30,20]',
+  buy_in int default 50, currency text default 'USD', payout_split jsonb default '[50,30,20]',
   bet_basis text default 'points', ko jsonb default '{"qf":[],"sf":[],"final":[]}');
 create table if not exists teams (id text primary key, name text, flag text, grp text, pos int);
 create table if not exists matches (id text primary key, stage text, grp text, md int,
@@ -243,6 +243,6 @@ insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) v
 insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) values ('p-goals','🎯','Goals in the group stage (72 matches)?','ou',null,201.5,7,'open',null,false) on conflict (id) do nothing;
 
 -- league settings (re-running updates name/buy-in/currency)
-insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advance,buy_in,currency,payout_split,bet_basis,ko) values (1,'THE MASK',1000,5,2,4,50,'GEL','[50,30,20]'::jsonb,'points','{"qf":[],"sf":[],"final":[]}'::jsonb) on conflict (id) do update set app_title=excluded.app_title, buy_in=excluded.buy_in, currency=excluded.currency;
+insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advance,buy_in,currency,payout_split,bet_basis,ko) values (1,'THE MASK',1000,5,2,4,50,'USD','[50,30,20]'::jsonb,'points','{"r16":[],"qf":[],"sf":[],"final":[]}'::jsonb) on conflict (id) do update set app_title=excluded.app_title, buy_in=excluded.buy_in, currency=excluded.currency;
 
 -- After running: Authentication -> enable "Allow anonymous sign-ins". Admin = visit /admin, password 1234.

@@ -107,7 +107,7 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
 - **⚽ Your team:** when you join you pick the nation you personally support (locked in for good).
   You earn **+1 point every time they win a match**.
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
-- **💸 Buy-in:** **50 GEL to play** — paid to the commissioner; the top 3 split the pot.
+- **💸 Buy-in:** **50 USD to play** — paid to the commissioner; the top 3 split the pot. (Change the amount/currency anytime in **Admin → Settings**.)
 - **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
 - **🔥 Streaks & badges:** correct-result streaks light a flame; badges (Sniper, Giant Slayer,
   On Fire, Banker Boss) show on the leaderboard + podium.
