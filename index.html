@@ -464,6 +464,8 @@ function buildGroupMatches(){
 function seedProps(){
   const champTeams = DB.teams.map(t=>({v:t.id,label:`${t.flag} ${t.name}`}));
   return [
+    {id:"p-goat", icon:"🐐", q:"Settle it — who's the GOAT? (choose wisely 😉)", type:"mc", pts:1, status:"open", correct:null, allow_coins:false,
+      options:[{v:"zlatan",label:"🇸🇪 Zlatan"},{v:"ronaldo",label:"🇵🇹 Ronaldo"}]},
     {id:"p-champ", icon:"🏆", q:"Who lifts the trophy?", type:"team", options:champTeams, pts:30, status:"open", correct:null, allow_coins:true},
     {id:"p-flop", icon:"😱", q:"Which giant FLOPS out in the group stage?", type:"mc", pts:8, status:"open", correct:null, allow_coins:true,
       options:[{v:"Brazil",label:"🇧🇷 Brazil"},{v:"Argentina",label:"🇦🇷 Argentina"},{v:"France",label:"🇫🇷 France"},{v:"Spain",label:"🇪🇸 Spain"},{v:"England",label:"🏴 England"},{v:"Germany",label:"🇩🇪 Germany"},{v:"none",label:"🛡️ None of them (boring)"}]},
@@ -583,7 +585,9 @@ function scoreFor(profileId){
   // props
   DB.propAnswers.filter(a=>a.user===profileId).forEach(a=>{
     const pr=DB.props.find(x=>x.id===a.prop);
-    if(!pr||pr.status!=="settled") return;
+    if(!pr) return;
+    if(pr.id==="p-goat"){ if(a.answer==="zlatan") pts+=1; else if(a.answer==="ronaldo") pts-=1; return; } // 🐐 just-for-fun loyalty test, scores on answer
+    if(pr.status!=="settled") return;
     if(String(a.answer)===String(pr.correct)) pts+=pr.pts;
   });
   // knockout futures
@@ -983,7 +987,9 @@ function viewProps(){
     let body="";
     if(a||settled){
       let res="";
-      if(settled){ const won=a&&String(a.answer)===String(pr.correct);
+      if(pr.id==="p-goat" && a){ const z=a.answer==="zlatan";
+        res=`<div class="small ${z?'earn good':'earn bad'}" style="margin-top:6px">${z?'😎 Correct answer. +1 pt':'😬 Bold choice… −1 pt'}</div>`; }
+      else if(settled){ const won=a&&String(a.answer)===String(pr.correct);
         res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You nailed it! +'+pr.pts+' pts':'❌ Settled · correct: '+labelFor(pr,pr.correct)}</div>`; }
       body=`<div class="small" style="margin-top:6px">🔒 Your answer: <b>${a?labelFor(pr,a.answer):'—'}</b></div>${res}${revealPropBlock(pr)}`;
     } else {
@@ -995,7 +1001,7 @@ function viewProps(){
       else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
       body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
     }
-    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.pts} pts</span></div>${body}</div>`;
+    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
   });
   return html;
 }
