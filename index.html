@@ -60,6 +60,8 @@
     border-bottom:1px solid var(--line);
   }
   .brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .leaguechip{display:inline-flex;align-items:center;gap:6px;max-width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-family:'Fredoka';font-weight:700;font-size:14px;color:var(--ink)}
+  .leaguechip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .brand{display:flex;align-items:center;gap:8px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px}
   .brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
   .brand b{background:linear-gradient(90deg,var(--pink),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -325,7 +327,7 @@ const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",fin
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 const FAN_BONUS=1; // +1 pt each time your supported team wins a match
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
-function money(n){ const c=DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
+function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
 /* ============================================================================
    🌍  THE REAL 2026 WORLD CUP DRAW (held Dec 5, 2025, Washington D.C.)
@@ -397,6 +399,32 @@ let ME = null;        // current profile object
 let MODE = "demo";    // 'demo' | 'live'
 let supa = null;
 let VIEW = "picks";
+
+/* ---------- 🏆 PRIVATE LEAGUES ----------
+   Reality (teams, matches, scores, knockout results, prop answers) is GLOBAL.
+   Predictions are PER-LEAGUE: ALL.* hold every league's picks; DB.predictions/
+   propAnswers/repicks are kept as a *scoped view* of the CURRENT league (LG) so
+   every existing read function keeps working unchanged. */
+let LEAGUES=[];        // leagues ME belongs to: {id,name,code,buy_in,currency,payout_split,created_by}
+let MEMBERS=[];        // memberships: {league,user,paid}
+let LG=null;           // current league id
+let PENDING_JOIN=null; // invite code from ?join=… waiting to be applied after login
+const ALL={pred:[],pans:[],rep:[]}; // master picks across all leagues (each row has .league)
+const LG_KEY="themask_league";
+function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+function curLeague(){ return LEAGUES.find(l=>l.id===LG)||null; }
+function isMember(uid,lid){ return MEMBERS.some(m=>m.user===uid&&m.league===lid); }
+function leagueMembers(lid){ const ids=new Set(MEMBERS.filter(m=>m.league===lid).map(m=>m.user)); return DB.profiles.filter(p=>ids.has(p.id)); }
+function memberPaid(uid,lid){ const m=MEMBERS.find(x=>x.user===uid&&x.league===lid); return m?!!m.paid:false; }
+function inviteLink(code){ try{ return location.origin+location.pathname+"?join="+code; }catch(e){ return "?join="+code; } }
+function persistLG(){ try{ localStorage.setItem(LG_KEY, LG||""); }catch(e){} }
+// rebuild the per-league scoped arrays the rest of the app reads from the master ALL.* store
+function scopeLeague(){
+  DB.predictions = ALL.pred.filter(p=>p.league===LG);
+  DB.propAnswers = ALL.pans.filter(p=>p.league===LG);
+  DB.repicks     = ALL.rep.filter(p=>p.league===LG);
+  if(typeof loadAdv==="function") loadAdv();
+}
 
 /* ---------- 🔐 admin gate (visit /admin or tap the lock, password 1234) ----
    Note: this is a friendly client-side UI gate. In LIVE mode, actually saving
@@ -508,13 +536,18 @@ function seedDemo(){
   DB.matches=buildGroupMatches();
   DB.props=seedProps();
   DB.profiles=[];
-  DB.predictions=[];
-  DB.propAnswers=[];
-  DB.repicks=[];
+  DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[];
+  ALL.pred=[]; ALL.pans=[]; ALL.rep=[];
+
+  // a sample private league everyone's already in (you can create/join more)
+  const LGID="lg-demo";
+  LEAGUES=[{id:LGID,name:"The Lads 🍻",code:"LADS26",buy_in:50,currency:"USD",payout_split:[50,30,20],created_by:"me"}];
+  MEMBERS=[]; LG=LGID;
 
   // you + friends
-  DB.profiles.push({id:"me", name:"You", emoji:"🫵", email:"you@demo", is_admin:true, paid:true, team:null});
-  DEMO_FRIENDS.forEach((f,i)=>DB.profiles.push({id:"f"+i, name:f[0], emoji:f[1], email:f[0]+"@demo", is_admin:false, paid: rng()>0.25, team: DB.teams[Math.floor(rng()*DB.teams.length)].id}));
+  DB.profiles.push({id:"me", name:"You", emoji:"🫵", email:"you@demo", is_admin:true, team:null});
+  DEMO_FRIENDS.forEach((f,i)=>DB.profiles.push({id:"f"+i, name:f[0], emoji:f[1], email:f[0]+"@demo", is_admin:false, team: DB.teams[Math.floor(rng()*DB.teams.length)].id}));
+  DB.profiles.forEach(p=>MEMBERS.push({league:LGID,user:p.id,paid: p.id==="me"?true:rng()>0.25}));
 
   // finish a handful of matches so there's a live leaderboard
   const finishIds=["A1","A2"]; // we'll finish first fixture of several groups
@@ -528,12 +561,7 @@ function seedDemo(){
       if(p.id==="me" && m.status!=="finished") return;
       if(rng()<0.12 && p.id!=="me") return; // friends occasionally forget
       const hp=Math.floor(rng()*4), ap=Math.floor(rng()*3);
-      const pred={id:`${p.id}-${m.id}`, user:p.id, match:m.id, hp, ap, wager:0, pick:null};
-      if(rng()<0.45){ // toss some coins on a winner — settles on finished matches for a lively coin board
-        pred.pick=["home","draw","away"][Math.floor(rng()*3)];
-        pred.wager=[20,50,100,150,250][Math.floor(rng()*5)];
-      }
-      DB.predictions.push(pred);
+      ALL.pred.push({id:`${p.id}-${LGID}-${m.id}`, user:p.id, league:LGID, match:m.id, hp, ap});
     });
     // prop answers
     DB.props.forEach(pr=>{
@@ -544,24 +572,33 @@ function seedDemo(){
       else if(pr.type==="yesno") ans=rng()>0.5?"yes":"no";
       else if(pr.type==="ou") ans=rng()>0.5?"over":"under";
       else ans=pr.options[Math.floor(rng()*pr.options.length)].v;
-      DB.propAnswers.push({id:`${p.id}-${pr.id}`, user:p.id, prop:pr.id, answer:ans, wager: pr.allow_coins&&rng()<0.5?[50,100,200][Math.floor(rng()*3)]:0});
+      ALL.pans.push({id:`${p.id}-${LGID}-${pr.id}`, user:p.id, league:LGID, prop:pr.id, answer:ans});
     });
   });
 
   // settle ONE prop for early drama (the USA one — say they made it)
   const usp=DB.props.find(p=>p.id==="p-usa"); usp.status="settled"; usp.correct="yes";
+  scopeLeague();
   saveLocal();
 }
 
 /* ============================================================================
    💾  PERSISTENCE (demo = localStorage, live = Supabase)
    ============================================================================ */
-const LS_KEY="themask_demo_v1";
-function saveLocal(){ if(MODE==="demo") localStorage.setItem(LS_KEY, JSON.stringify({DB, meId:ME?ME.id:"me"})); }
+const LS_KEY="themask_demo_v2";
+function saveLocal(){ if(MODE==="demo") localStorage.setItem(LS_KEY, JSON.stringify({DB, ALL, LEAGUES, MEMBERS, LG, meId:ME?ME.id:"me"})); }
 function loadLocal(){
   const raw=localStorage.getItem(LS_KEY);
   if(!raw) return false;
-  try{const o=JSON.parse(raw);Object.assign(DB,o.DB);ME=DB.profiles.find(p=>p.id===(o.meId||"me"))||DB.profiles[0];return true;}catch(e){return false;}
+  try{
+    const o=JSON.parse(raw);
+    Object.assign(DB,o.DB);
+    if(o.ALL){ ALL.pred=o.ALL.pred||[]; ALL.pans=o.ALL.pans||[]; ALL.rep=o.ALL.rep||[]; }
+    LEAGUES=o.LEAGUES||[]; MEMBERS=o.MEMBERS||[]; LG=o.LG||(LEAGUES[0]&&LEAGUES[0].id)||null;
+    ME=DB.profiles.find(p=>p.id===(o.meId||"me"))||DB.profiles[0];
+    scopeLeague();
+    return true;
+  }catch(e){return false;}
 }
 
 /* ============================================================================
@@ -624,7 +661,7 @@ let ADV=[]; // {user, grp, team}
 function loadAdv(){ ADV = DB.predictions.filter(p=>p.advance).map(p=>({user:p.user,grp:p.grp,team:p.team})); }
 
 function leaderboard(){
-  const rows=DB.profiles.map(p=>({...p, pts:scoreFor(p.id).pts}));
+  const rows=leagueMembers(LG).map(p=>({...p, pts:scoreFor(p.id).pts}));
   rows.sort((a,b)=> b.pts-a.pts || a.name.localeCompare(b.name));
   rows.forEach((r,i)=>r.rank=i+1);
   return rows;
@@ -700,41 +737,43 @@ async function reloadPredictions(){ if(MODE!=="live"||!supa)return;
   const {data:a,error:ae}=await supa.from("advances").select("*");
   const {data:k,error:ke}=await supa.from("ko_picks").select("*");
   // if a read fails, keep what we already have for that kind rather than wiping the UI
-  const match = pe ? DB.predictions.filter(x=>!x.advance&&!x.ko) : (p||[]).map(x=>({id:x.id,user:x.user_id,match:x.match_id,hp:x.hp,ap:x.ap,wager:x.wager,pick:x.pick,banker:x.banker}));
-  const adv   = ae ? DB.predictions.filter(x=>x.advance) : (a||[]).map(x=>({id:x.id,user:x.user_id,advance:true,grp:x.grp,team:x.team}));
-  const ko    = ke ? DB.predictions.filter(x=>x.ko)      : (k||[]).map(x=>({id:x.id,user:x.user_id,ko:true,stage:x.stage,team:x.team}));
-  DB.predictions = match.concat(adv).concat(ko); loadAdv(); }
-async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}=await supa.from("prop_answers").select("*"); if(error)return; DB.propAnswers=(data||[]).map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager})); }
+  const match = pe ? ALL.pred.filter(x=>!x.advance&&!x.ko) : (p||[]).map(x=>({id:x.id,user:x.user_id,league:x.league_id,match:x.match_id,hp:x.hp,ap:x.ap,banker:x.banker}));
+  const adv   = ae ? ALL.pred.filter(x=>x.advance) : (a||[]).map(x=>({id:x.id,user:x.user_id,league:x.league_id,advance:true,grp:x.grp,team:x.team}));
+  const ko    = ke ? ALL.pred.filter(x=>x.ko)      : (k||[]).map(x=>({id:x.id,user:x.user_id,league:x.league_id,ko:true,stage:x.stage,team:x.team}));
+  ALL.pred = match.concat(adv).concat(ko); scopeLeague(); }
+async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}=await supa.from("prop_answers").select("*"); if(error)return; ALL.pans=(data||[]).map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer})); scopeLeague(); }
 async function lockPick(matchId, hp, ap, banker){
+  if(!LG){ toast("Join a league first"); return; }
   if(hasPicked(matchId))return;
-  const pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,banker:!!banker};
-  DB.predictions.push(pr);
-  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }
+  const pr={id:`${ME.id}-${LG}-${matchId}`,user:ME.id,league:LG,match:matchId,hp,ap,banker:!!banker};
+  ALL.pred.push(pr); scopeLeague();
+  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }
   delete DRAFT[matchId]; saveLocal();
 }
 async function lockProp(propId, answer){
+  if(!LG)return;
   if(myAnswer(propId))return;
-  const a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer};
-  DB.propAnswers.push(a);
-  if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer}); await reloadProps(); }
+  const a={id:`${ME.id}-${LG}-${propId}`,user:ME.id,league:LG,prop:propId,answer};
+  ALL.pans.push(a); scopeLeague();
+  if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,league_id:LG,prop_id:propId,answer}); await reloadProps(); }
   delete PDRAFT[propId]; saveLocal();
 }
-async function reloadRepicks(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("repicks").select("*"); DB.repicks=(data||[]).map(r=>({id:r.id,user:r.user_id,match:r.match_id,hp:r.hp,ap:r.ap})); }
+async function reloadRepicks(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("repicks").select("*"); ALL.rep=(data||[]).map(r=>({id:r.id,user:r.user_id,league:r.league_id,match:r.match_id,hp:r.hp,ap:r.ap})); scopeLeague(); }
 async function saveRepick(matchId, hp, ap){
   if(repicksLeft(ME.id)<=0){ toast("No re-picks left"); return; }
   const m=DB.matches.find(x=>x.id===matchId); if(!m||!inPlay(m)){ toast("Re-picks only while a match is live"); return; }
-  const r={id:`${ME.id}-rp-${matchId}-${Date.now()}`,user:ME.id,match:matchId,hp,ap};
-  DB.repicks.push(r);
-  if(MODE==="live"){ await sbInsert("repicks",{id:r.id,user_id:ME.id,match_id:matchId,hp,ap}); await reloadRepicks(); }
+  const r={id:`${ME.id}-${LG}-rp-${matchId}-${Date.now()}`,user:ME.id,league:LG,match:matchId,hp,ap};
+  ALL.rep.push(r); scopeLeague();
+  if(MODE==="live"){ await sbInsert("repicks",{id:r.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap}); await reloadRepicks(); }
   delete DRAFT[matchId]; saveLocal();
 }
 async function saveKO(stage, teamId){
   const mine=myKO(stage);
   if(mine.length>=KO_LIM[stage]){ toast(`Max ${KO_LIM[stage]} ${KO_LABEL[stage]}`); return; }
   if(mine.includes(teamId)){ toast("Already picked that team"); return; }
-  const pr={id:`${ME.id}-ko-${stage}-${teamId}`,user:ME.id,ko:true,stage,team:teamId};
-  DB.predictions.push(pr);
-  if(MODE==="live") await sbInsert("ko_picks",{id:pr.id,user_id:ME.id,stage,team:teamId});
+  const pr={id:`${ME.id}-${LG}-ko-${stage}-${teamId}`,user:ME.id,league:LG,ko:true,stage,team:teamId};
+  ALL.pred.push(pr); scopeLeague();
+  if(MODE==="live") await sbInsert("ko_picks",{id:pr.id,user_id:ME.id,league_id:LG,stage,team:teamId});
   saveLocal();
 }
 async function adminAddKO(stage,teamId){ const ko=koActual(); if(!ko[stage].includes(teamId))ko[stage].push(teamId); await adminSetting("ko",ko); }
@@ -743,10 +782,53 @@ async function saveAdvance(grp, slot, teamId){
   const mine=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===grp);
   if(mine[slot]) return;                                  // immutable once set
   if(mine.some(p=>p.team===teamId)){ toast("You already picked that team"); return; }
-  const pr={id:`${ME.id}-adv-${grp}-${slot}`,user:ME.id,advance:true,grp,team:teamId};
-  DB.predictions.push(pr);
-  if(MODE==="live") await sbInsert("advances",{id:pr.id,user_id:ME.id,grp,slot,team:teamId});
-  loadAdv();saveLocal();
+  const pr={id:`${ME.id}-${LG}-adv-${grp}-${slot}`,user:ME.id,league:LG,advance:true,grp,team:teamId};
+  ALL.pred.push(pr); scopeLeague();
+  if(MODE==="live") await sbInsert("advances",{id:pr.id,user_id:ME.id,league_id:LG,grp,slot,team:teamId});
+  saveLocal();
+}
+/* ---------- league create / join / switch ---------- */
+async function createLeague(name, buyin, currency){
+  name=(name||"").trim()||"My League"; buyin=parseInt(buyin)||0; currency=(currency||"USD").trim()||"USD";
+  const code=genCode(), id="lg-"+code;
+  const lg={id,name,code,buy_in:buyin,currency,payout_split:[50,30,20],created_by:ME.id};
+  if(MODE==="live"){
+    await sbInsert("leagues",{id,name,code,buy_in:buyin,currency,payout_split:lg.payout_split,created_by:ME.id});
+    await sbInsert("memberships",{league_id:id,user_id:ME.id,paid:false});
+  }
+  LEAGUES.push(lg); MEMBERS.push({league:id,user:ME.id,paid:false});
+  LG=id; persistLG(); scopeLeague(); saveLocal(); return lg;
+}
+async function joinLeague(code){
+  code=(code||"").trim().toUpperCase(); if(!code) return false;
+  let lg=LEAGUES.find(l=>l.code===code);
+  if(!lg){
+    if(MODE==="live"){
+      const {data}=await supa.from("leagues").select("*").eq("code",code).maybeSingle();
+      if(!data){ toast("No league found for that code"); return false; }
+      lg={id:data.id,name:data.name,code:data.code,buy_in:data.buy_in,currency:data.currency,payout_split:data.payout_split,created_by:data.created_by};
+    } else { toast("No league found for that code"); return false; }
+  }
+  if(!LEAGUES.some(l=>l.id===lg.id)) LEAGUES.push(lg);
+  if(!isMember(ME.id,lg.id)){
+    MEMBERS.push({league:lg.id,user:ME.id,paid:false});
+    if(MODE==="live") await sbInsert("memberships",{league_id:lg.id,user_id:ME.id,paid:false});
+  }
+  LG=lg.id; persistLG();
+  if(MODE==="live") await loadLeagueData(); else scopeLeague();
+  saveLocal(); toast(`Joined ${lg.name} ✅`); return true;
+}
+function switchLeague(id){ if(!LEAGUES.some(l=>l.id===id))return; LG=id; persistLG(); scopeLeague(); VIEW="picks"; render(); }
+// (re)load the leagues I'm in, their members, and every league's picks
+async function loadLeagueData(){
+  if(MODE!=="live"||!supa){ scopeLeague(); return; }
+  const [lg,mem]=await Promise.all([supa.from("leagues").select("*"), supa.from("memberships").select("*")]);
+  const myIds=new Set((mem.data||[]).filter(m=>m.user_id===ME.id).map(m=>m.league_id));
+  LEAGUES=(lg.data||[]).filter(l=>myIds.has(l.id)).map(l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by}));
+  MEMBERS=(mem.data||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
+  await reloadPredictions(); await reloadProps(); await reloadRepicks();
+  if(!LEAGUES.some(l=>l.id===LG)) LG=(LEAGUES[0]&&LEAGUES[0].id)||null;
+  persistLG(); scopeLeague();
 }
 /* ---------- live results auto-sync (TheSportsDB free API) ---------- */
 const SPORTSDB_KEY="3", SPORTSDB_LEAGUE="4429", SPORTSDB_SEASON="2026"; // 4429 = FIFA World Cup
@@ -797,8 +879,8 @@ async function adminSetting(key,val){
   saveLocal();
 }
 async function adminTogglePaid(profileId){
-  const p=DB.profiles.find(x=>x.id===profileId);p.paid=!p.paid;
-  if(MODE==="live") await sbUpsert("profiles",{id:profileId,paid:p.paid});
+  const m=MEMBERS.find(x=>x.user===profileId&&x.league===LG); if(!m)return; m.paid=!m.paid;
+  if(MODE==="live") await sbUpsert("memberships",{league_id:LG,user_id:profileId,paid:m.paid});
   saveLocal();
 }
 
@@ -839,6 +921,7 @@ function header(){
         <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
       </div>
     </div>
+    <button class="leaguechip" data-leagues title="Switch league"><span>🏆 ${curLeague()?curLeague().name:"Pick a league"}</span><b style="opacity:.6">▾</b></button>
     <div class="statpills">
       <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
       <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
@@ -1064,18 +1147,23 @@ function viewBoard(){
 
 /* ---------- POOL / BUY-IN ---------- */
 function viewPool(){
-  const s=DB.settings;
-  const paid=DB.profiles.filter(p=>p.paid);
-  const pot=paid.length*s.buy_in;
+  const lg=curLeague(); if(!lg) return '';
+  const members=leagueMembers(LG);
+  const paid=members.filter(p=>memberPaid(p.id,LG));
+  const pot=paid.length*lg.buy_in;
   const lb=leaderboard();
-  const splits=s.payout_split;
-  const buyin=money(s.buy_in);
+  const splits=lg.payout_split||[50,30,20];
+  const buyin=money(lg.buy_in);
+  const canManage = ADMIN_UNLOCKED || lg.created_by===ME.id;
   let html=`<div class="card center">
-      <h3>💰 The Pot</h3>
+      <h3>💰 ${lg.name}</h3>
       <div class="display" style="font-size:40px;color:var(--gold);margin:6px 0">${money(pot)}</div>
-      <div class="small muted">${paid.length} of ${DB.profiles.length} paid in · ${buyin} each · ranked by points</div>
+      <div class="small muted">${paid.length} of ${members.length} paid in · ${buyin} each · ranked by points</div>
     </div>
-    <div class="banner demo">💸 <b>It's ${buyin} to play.</b> Everyone puts in ${buyin} — that's the prize pot. Pay the commissioner (cash / bank transfer) and you're in. At the end, the top 3 split the pot ${splits.join("/")}%.</div>`;
+    <div class="card"><div class="small"><b>📨 Invite friends</b> — share to grow <b>${lg.name}</b>.</div>
+      <div class="row" style="gap:6px;margin-top:8px"><input readonly value="${lg.code}" style="font-family:Fredoka;letter-spacing:3px;text-align:center"/><button class="btn" data-copycode="${lg.code}" style="white-space:nowrap">Copy code</button></div>
+      <button class="btn block" data-copylink="${lg.code}" style="margin-top:6px">🔗 Copy invite link</button></div>
+    <div class="banner demo">💸 <b>It's ${buyin} to play.</b> Everyone in ${lg.name} puts in ${buyin} — that's the prize pot. Pay the organiser and you're in. At the end the top 3 split the pot ${splits.join("/")}%.</div>`;
   html+=`<div class="card"><h3>🏆 Projected payouts</h3><div class="small muted">If the tournament ended right now:</div>`;
   ["🥇 1st","🥈 2nd","🥉 3rd"].forEach((lbl,i)=>{
     const winner=lb[i]; const amt=Math.round(pot*(splits[i]||0)/100);
@@ -1086,11 +1174,11 @@ function viewPool(){
   });
   html+=`</div>`;
   html+=`<div class="card"><h3>✅ Who's paid</h3>`;
-  DB.profiles.forEach(p=>{
+  members.forEach(p=>{ const isPaid=memberPaid(p.id,LG);
     html+=`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span>${p.name}</span>
-      <span class="gp">${p.paid?'<span style="color:var(--green)">Paid ✓</span>':'<span style="color:var(--red)">Owes</span>'}${ADMIN_UNLOCKED?` <button class="btn" style="padding:3px 8px;margin-left:6px" data-paid="${p.id}">flip</button>`:''}</span></div>`;
+      <span class="gp">${isPaid?'<span style="color:var(--green)">Paid ✓</span>':'<span style="color:var(--red)">Owes</span>'}${canManage?` <button class="btn" style="padding:3px 8px;margin-left:6px" data-paid="${p.id}">flip</button>`:''}</span></div>`;
   });
-  html+=`<div class="small muted" style="margin-top:8px">💡 The app just tracks who's in. Settle the real cash however you like (Venmo, cash, IOUs scrawled on a napkin).</div></div>`;
+  html+=`<div class="small muted" style="margin-top:8px">💡 The app just tracks who's in. Settle the real cash however you like (Venmo, cash, IOUs on a napkin).</div></div>`;
   return html;
 }
 
@@ -1161,6 +1249,8 @@ function viewAdmin(){
    🎛️  RENDER ROOT + EVENT WIRING
    ============================================================================ */
 function render(){
+  // not in any league yet → show the create/join gate (no header/nav)
+  if(ME && (!LG || !curLeague())){ $("#app").innerHTML = leagueGate(); wireGate(); return; }
   loadAdv();
   if(VIEW==="admin" && !ADMIN_UNLOCKED) VIEW="picks";
   const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,pool:viewPool,admin:viewAdmin};
@@ -1230,6 +1320,9 @@ function wire(){
   // live results sync + rules
   $$("[data-sync]").forEach(b=>b.onclick=()=>syncResults(true));
   const rl=$("[data-rules]"); if(rl) rl.onclick=openRules;
+  const lgs=$("[data-leagues]"); if(lgs) lgs.onclick=openSwitcher;
+  $$("[data-copycode]").forEach(b=>b.onclick=()=>copyText(b.dataset.copycode));
+  $$("[data-copylink]").forEach(b=>b.onclick=()=>copyText(inviteLink(b.dataset.copylink)));
   // pool
   $$("[data-paid]").forEach(b=>b.onclick=async()=>{await adminTogglePaid(b.dataset.paid);render();});
   // admin
@@ -1358,11 +1451,12 @@ function openProfile(){
 
 /* ---------- rules / how-it-works ---------- */
 function rulesHTML(){
-  const s=DB.settings, buyin=money(s.buy_in||50);
+  const s=DB.settings, buyin=money((curLeague()&&curLeague().buy_in)||s.buy_in||50);
   return `<div style="font-size:14px;line-height:1.55">
     <p style="margin:0 0 8px"><b>THE MASK</b> is a friendly World Cup '26 prediction game — just for our crew. Call the scores, talk trash, top the table, win the pot.</p>
     <b>How to play</b>
     <ul style="margin:4px 0 8px;padding-left:18px">
+      <li><b>🏆 Private leagues</b> — play in your own league(s). Create one and share the invite code/link, or join with a code. Your picks &amp; standings are separate in each league; switch any time via the 🏆 chip up top.</li>
       <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
       <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
       <li><b>⭐ Banker</b> — one live pick at a time scores double.</li>
@@ -1373,7 +1467,7 @@ function rulesHTML(){
       <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
     </ul>
     <b>The money</b>
-    <p style="margin:4px 0 8px">It's <b>${buyin} to play</b>, paid to the commissioner. The pot is split by the top 3 (${(s.payout_split||[50,30,20]).join("/")}%). Results sync in live, so nobody has to type scores.</p>
+    <p style="margin:4px 0 8px">Every league sets its own buy-in (this one's <b>${buyin}</b>), paid to the league organiser. The pot is split by the top 3 (${((curLeague()&&curLeague().payout_split)||s.payout_split||[50,30,20]).join("/")}%). Results sync in live, so nobody has to type scores.</p>
     <b>Terms (the friendly kind)</b>
     <p class="muted" style="margin:4px 0 0">A private game among friends, for fun and bragging rights — not a commercial gambling service. Buy-ins and payouts are settled between players offline; the app only keeps score. Play responsibly, only with people you trust, and follow the rules where you live. Live scores are best-effort from a third-party feed and the commissioner can correct any result.</p>
   </div>`;
@@ -1384,6 +1478,70 @@ function openRules(){
   const close=()=>root.innerHTML="";
   $$("[data-close]",root).forEach(b=>b.onclick=close);
   $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+}
+
+/* ---------- 🏆 league gate + switcher + invites ---------- */
+function copyText(t){ try{ navigator.clipboard.writeText(t); toast("Copied 📋"); }catch(e){ toast(t); } }
+function leagueGate(){
+  return `<div class="app login"><div class="hero">
+    <div class="herophoto"><img src="gyok.jpg" alt="Do the Gyökeres"/></div>
+    <div class="big">You're in, <b>${(ME&&ME.name)||"player"}</b>!</div>
+    <div class="muted">Now set up a <b>private league</b> for your crew, or join one with an invite code. You can be in as many leagues as you like. 🦇⚽</div>
+  </div>
+  <div class="card"><h3>➕ Create a league</h3>
+    <label class="fld">League name</label>
+    <input id="lgname" placeholder="e.g. The Lads 🍻" autocomplete="off"/>
+    <div class="grid2">
+      <div><label class="fld">Buy-in</label><input id="lgbuy" inputmode="numeric" value="50"/></div>
+      <div><label class="fld">Currency</label><input id="lgcur" value="USD"/></div>
+    </div>
+    <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>
+    <div class="tiny muted center" style="margin-top:6px">You'll get an invite code + link to share.</div>
+  </div>
+  <div class="card"><h3>🔑 Join a league</h3>
+    <label class="fld">Invite code</label>
+    <input id="lgcode" placeholder="e.g. LADS26" autocomplete="off" style="text-transform:uppercase"/>
+    <button class="btn lime block" id="lgjoin" style="margin-top:12px">Join 🤝</button>
+    <div class="tiny muted center" style="margin-top:6px">Got an invite link? Just open it — you'll join automatically.</div>
+  </div></div>`;
+}
+function wireGate(){
+  const c=$("#lgcreate"); if(c) c.onclick=async()=>{ const n=$("#lgname").value.trim(); if(!n){toast("Name your league 🙂");return;} await createLeague(n,$("#lgbuy").value,$("#lgcur").value); celebrate("LEAGUE CREATED!"); VIEW="picks"; render(); };
+  const j=$("#lgjoin"); if(j) j.onclick=async()=>{ if(await joinLeague($("#lgcode").value)){ celebrate("LET'S GO!"); VIEW="picks"; render(); } };
+}
+function openSwitcher(){
+  const root=$("#modal-root"); const cur=curLeague();
+  const list=LEAGUES.map(l=>`<div class="opt ${l.id===LG?'sel':''}" data-switch="${l.id}"><span>🏆 ${l.name}</span>${l.id===LG?'<span class="tiny" style="margin-left:auto;color:var(--cyan)">current</span>':''}</div>`).join("")||'<div class="small muted">You\'re not in any leagues yet.</div>';
+  const invite = cur ? `<div class="card" style="margin:12px 0 0;padding:12px"><div class="small"><b>📨 Invite friends to ${cur.name}</b></div>
+    <div class="row" style="gap:6px;margin-top:8px"><input id="invcode" readonly value="${cur.code}" style="font-family:Fredoka;letter-spacing:3px;text-align:center"/><button class="btn" data-copycode style="white-space:nowrap">Copy code</button></div>
+    <button class="btn block" data-copylink style="margin-top:6px">🔗 Copy invite link</button></div>` : '';
+  root.innerHTML=`<div class="modal-bg"><div class="modal"><div class="mhead"><b>🏆 Your leagues</b><button class="x" data-close>×</button></div><div class="mbody">
+    ${list}${invite}
+    <div class="row" style="gap:8px;margin-top:12px"><button class="btn primary" style="flex:1" data-newleague>➕ Create</button><button class="btn lime" style="flex:1" data-joinleague>🔑 Join</button></div>
+  </div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $$("[data-close]",root).forEach(b=>b.onclick=close);
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  $$("[data-switch]",root).forEach(b=>b.onclick=()=>{ close(); switchLeague(b.dataset.switch); });
+  const cc=$("[data-copycode]",root); if(cc) cc.onclick=()=>copyText(cur.code);
+  const cl=$("[data-copylink]",root); if(cl) cl.onclick=()=>copyText(inviteLink(cur.code));
+  const nl=$("[data-newleague]",root); if(nl) nl.onclick=()=>openLeagueForm("create");
+  const jl=$("[data-joinleague]",root); if(jl) jl.onclick=()=>openLeagueForm("join");
+}
+function openLeagueForm(mode){
+  const root=$("#modal-root");
+  const body = mode==="create"
+    ? `<label class="fld">League name</label><input id="lgname" placeholder="e.g. Work Cup ⚽"/>
+       <div class="grid2"><div><label class="fld">Buy-in</label><input id="lgbuy" inputmode="numeric" value="50"/></div><div><label class="fld">Currency</label><input id="lgcur" value="USD"/></div></div>
+       <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>`
+    : `<label class="fld">Invite code</label><input id="lgcode" placeholder="e.g. LADS26" style="text-transform:uppercase"/>
+       <button class="btn lime block" id="lgjoin" style="margin-top:12px">Join 🤝</button>`;
+  root.innerHTML=`<div class="modal-bg"><div class="modal"><div class="mhead"><b>${mode==="create"?'➕ Create a league':'🔑 Join a league'}</b><button class="x" data-close>×</button></div><div class="mbody">${body}</div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $$("[data-close]",root).forEach(b=>b.onclick=close);
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  const c=$("#lgcreate",root); if(c) c.onclick=async()=>{ const n=$("#lgname",root).value.trim(); if(!n){toast("Name your league 🙂");return;} await createLeague(n,$("#lgbuy",root).value,$("#lgcur",root).value); close(); celebrate("LEAGUE CREATED!"); render(); };
+  const j=$("#lgjoin",root); if(j) j.onclick=async()=>{ if(await joinLeague($("#lgcode",root).value)){ close(); celebrate("LET'S GO!"); render(); } };
 }
 
 /* ---------- admin password gate ---------- */
@@ -1430,7 +1588,7 @@ function loginScreen(extra=""){
     <label class="fld">⚽ Who do you support? <span class="muted tiny">(+${FAN_BONUS} pt per win — locked in)</span></label>
     <button class="btn block" id="favteam" type="button">${pendingTeam&&teamById(pendingTeam)?`${teamById(pendingTeam).flag} ${teamById(pendingTeam).name}`:'🌍 Tap to choose your team'}</button>
     <button class="btn primary block" id="loginbtn" style="margin-top:14px">Join the pool ⚽</button>
-    <div class="small center" style="margin-top:10px">💸 <b>${money(DB.settings.buy_in||50)} to play</b> · the winners split the pot</div>
+    <div class="small center" style="margin-top:10px">🏆 <b>Next: create or join your private league</b> · set your own buy-in</div>
     <div class="tiny muted center" style="margin-top:4px">No email, no password — just a name. Add a photo once you're in.${MODE==="demo"?' (Demo mode.)':''}</div>
   </div>
   <div class="card"><h3 style="font-size:16px">📖 What this is & the rules</h3>${rulesHTML()}</div>
@@ -1453,6 +1611,7 @@ async function doLogin(){
       await sbUpsert("profiles",{id:uid,display_name:val,emoji,is_admin:false,paid:false,fav_team:pendingTeam||null});
       await liveLoad(u.user);
       if(ME){ ME.name=val; ME.emoji=emoji; if(pendingTeam&&!ME.team) ME.team=pendingTeam; }
+      await applyPendingJoin();
       celebrate("LET'S GO!");VIEW="picks";render();
     }catch(e){ toast("Couldn't sign in — enable Anonymous sign-ins in Supabase (see SETUP)"); console.error(e); }
     return;
@@ -1471,8 +1630,10 @@ function loadError(msg){
     <div class="banner warn"><b>Couldn't start live mode.</b><br>${msg}</div>
     <button class="btn primary block" onclick="location.reload()">Try again 🔄</button></div>`;
 }
+async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDING_JOIN=null; try{ await joinLeague(c); }catch(e){ console.error(e); } } }
 async function boot(){
   WANT_ADMIN = isAdminRoute();
+  try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
   if(haveKeys){
     MODE="live";
@@ -1485,10 +1646,10 @@ async function boot(){
     try{
       supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
       const {data}=await supa.auth.getSession();
-      if(data&&data.session){ await liveLoad(data.session.user); render(); }
+      if(data&&data.session){ await liveLoad(data.session.user); await applyPendingJoin(); render(); }
       else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
       supa.auth.onAuthStateChange(async (_e,session)=>{
-        if(session&&session.user){ await liveLoad(session.user); render(); }
+        if(session&&session.user){ await liveLoad(session.user); await applyPendingJoin(); render(); }
       });
     }catch(e){
       console.error(e);
@@ -1506,28 +1667,37 @@ async function boot(){
 async function liveLoad(user){
   // pull everything into the same shape the UI expects
   const tbl=async n=>{const {data}=await supa.from(n).select("*");return data||[];};
-  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps]=await Promise.all(
-    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks"].map(tbl));
-  DB.repicks=(reps||[]).map(r=>({id:r.id,user:r.user_id,match:r.match_id,hp:r.hp,ap:r.ap}));
+  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships"].map(tbl));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
   if(!DB.settings.ko) DB.settings.ko={r16:[],qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
   DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
   DB.props = props.length?props.map(normalizeProp):seedProps();
-  DB.predictions = preds.map(p=>({id:p.id,user:p.user_id,match:p.match_id,hp:p.hp,ap:p.ap,wager:p.wager,pick:p.pick,banker:p.banker}))
-    .concat(advances.map(a=>({id:a.id,user:a.user_id,advance:true,grp:a.grp,team:a.team})))
-    .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,ko:true,stage:k.stage,team:k.team})));
-  DB.propAnswers = answers.map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager}));
-  DB.profiles = profiles.map(p=>({id:p.id,name:p.display_name||p.email,emoji:p.emoji||"🙂",avatar:p.avatar||null,team:p.fav_team||null,email:p.email,is_admin:!!p.is_admin,paid:!!p.paid}));
+  DB.profiles = profiles.map(p=>({id:p.id,name:p.display_name||p.email,emoji:p.emoji||"🙂",avatar:p.avatar||null,team:p.fav_team||null,email:p.email,is_admin:!!p.is_admin}));
+  // 🏆 leagues + memberships (LEAGUES = only the ones I'm in)
+  const myIds=new Set((memberships||[]).filter(m=>m.user_id===user.id).map(m=>m.league_id));
+  LEAGUES=(leagues||[]).filter(l=>myIds.has(l.id)).map(l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by}));
+  MEMBERS=(memberships||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
+  // every league's picks → master store (scoped per-league at render time)
+  ALL.pred = preds.map(p=>({id:p.id,user:p.user_id,league:p.league_id,match:p.match_id,hp:p.hp,ap:p.ap,banker:p.banker}))
+    .concat(advances.map(a=>({id:a.id,user:a.user_id,league:a.league_id,advance:true,grp:a.grp,team:a.team})))
+    .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,league:k.league_id,ko:true,stage:k.stage,team:k.team})));
+  ALL.pans = answers.map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer}));
+  ALL.rep  = (reps||[]).map(r=>({id:r.id,user:r.user_id,league:r.league_id,match:r.match_id,hp:r.hp,ap:r.ap}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
   if(!mine){
     const isAdmin=ADMIN_EMAILS.includes((user.email||"").toLowerCase());
-    mine={id:user.id,name:(user.email||"Player").split("@")[0],emoji:"🫵",email:user.email,is_admin:isAdmin,paid:false};
+    mine={id:user.id,name:(user.email||"Player").split("@")[0],emoji:"🫵",email:user.email,is_admin:isAdmin};
     DB.profiles.push(mine);
     await sbUpsert("profiles",{id:user.id,email:user.email,display_name:mine.name,emoji:mine.emoji,is_admin:isAdmin,paid:false});
   }
   ME=mine;
+  // pick the current league (last used if still a member, else first)
+  const stored=(typeof localStorage!=="undefined"&&localStorage.getItem(LG_KEY))||null;
+  LG = (LEAGUES.find(l=>l.id===stored)?stored:(LEAGUES[0]&&LEAGUES[0].id)) || null;
+  scopeLeague();
   syncResults(false); // pull any live scores (throttled, non-blocking)
 }
 function normalizeProp(p){return {id:p.id,icon:p.icon,q:p.q,type:p.type,options:p.options,line:p.line,pts:p.pts,status:p.status,correct:p.correct,allow_coins:p.allow_coins};}

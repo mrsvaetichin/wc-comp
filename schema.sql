@@ -31,12 +31,28 @@ create table if not exists ko_picks (id text primary key,
   user_id uuid references auth.users(id) on delete cascade, stage text, team text);
 create table if not exists repicks (id text primary key,
   user_id uuid references auth.users(id) on delete cascade, match_id text, hp int, ap int, created_at timestamptz default now());
+-- 🏆 private leagues + who's in them
+create table if not exists leagues (id text primary key,
+  name text not null, code text unique not null,
+  buy_in int default 50, currency text default 'USD', payout_split jsonb default '[50,30,20]',
+  created_by uuid references auth.users(id) on delete set null, created_at timestamptz default now());
+create table if not exists memberships (
+  league_id text references leagues(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  paid boolean default false, joined_at timestamptz default now(),
+  primary key (league_id, user_id));
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
 alter table profiles    add column if not exists fav_team text;
 alter table settings    add column if not exists ko jsonb default '{"r16":[],"qf":[],"sf":[],"final":[]}';
 alter table predictions add column if not exists banker boolean default false;
+-- predictions/answers/etc. are now scoped to a league
+alter table predictions  add column if not exists league_id text;
+alter table prop_answers add column if not exists league_id text;
+alter table advances     add column if not exists league_id text;
+alter table ko_picks     add column if not exists league_id text;
+alter table repicks      add column if not exists league_id text;
 
 create or replace function is_admin() returns boolean language sql security definer stable as $func$
   select coalesce((select is_admin from profiles where id = auth.uid()), false);
@@ -52,6 +68,8 @@ alter table prop_answers enable row level security;
 alter table advances enable row level security;
 alter table ko_picks enable row level security;
 alter table repicks enable row level security;
+alter table leagues enable row level security;
+alter table memberships enable row level security;
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
@@ -67,41 +85,56 @@ drop policy if exists pr_admin on props;    create policy pr_admin on props for 
 
 -- Helper fns are SECURITY DEFINER so their internal lookups run as the owner and DON'T re-trigger
 -- the table's own RLS — this is what prevents the "infinite recursion in policy" 500 errors.
-create or replace function public.has_pick(mid text) returns boolean
+create or replace function public.is_member(lid text) returns boolean
   language sql security definer stable set search_path = public as $$
-  select exists(select 1 from predictions where match_id = mid and user_id = auth.uid()); $$;
-create or replace function public.has_answer(pid text) returns boolean
+  select exists(select 1 from memberships where league_id = lid and user_id = auth.uid()); $$;
+create or replace function public.has_pick(mid text, lid text) returns boolean
   language sql security definer stable set search_path = public as $$
-  select exists(select 1 from prop_answers where prop_id = pid and user_id = auth.uid()); $$;
-grant execute on function public.has_pick(text), public.has_answer(text) to authenticated, anon;
+  select exists(select 1 from predictions where match_id = mid and league_id = lid and user_id = auth.uid()); $$;
+create or replace function public.has_answer(pid text, lid text) returns boolean
+  language sql security definer stable set search_path = public as $$
+  select exists(select 1 from prop_answers where prop_id = pid and league_id = lid and user_id = auth.uid()); $$;
+grant execute on function public.is_member(text), public.has_pick(text,text), public.has_answer(text,text) to authenticated, anon;
 
--- PICKS ARE BLIND + IMMUTABLE: read only if yours, you've picked the same match, or it kicked off.
+-- PICKS ARE BLIND + IMMUTABLE, and only visible inside leagues you belong to:
+-- read a row if you're a member AND (it's yours, you've picked the same match in this league, or it kicked off).
 drop policy if exists pred_read on predictions;
 create policy pred_read on predictions for select to authenticated using (
-  user_id = auth.uid()
-  or public.has_pick(match_id)
-  or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now())));
+  is_member(league_id) and (
+    user_id = auth.uid()
+    or public.has_pick(match_id, league_id)
+    or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now()))));
 drop policy if exists pred_own on predictions;
 drop policy if exists pred_insert on predictions;
-create policy pred_insert on predictions for insert to authenticated with check (user_id = auth.uid());
+create policy pred_insert on predictions for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
 
 drop policy if exists pa_read on prop_answers;
 create policy pa_read on prop_answers for select to authenticated using (
-  user_id = auth.uid()
-  or public.has_answer(prop_id)
-  or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled'));
+  is_member(league_id) and (
+    user_id = auth.uid()
+    or public.has_answer(prop_id, league_id)
+    or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled')));
 drop policy if exists pa_own on prop_answers;
 drop policy if exists pa_insert on prop_answers;
-create policy pa_insert on prop_answers for insert to authenticated with check (user_id = auth.uid());
+create policy pa_insert on prop_answers for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
 
-drop policy if exists adv_read on advances;   create policy adv_read on advances for select to authenticated using (true);
+drop policy if exists adv_read on advances;   create policy adv_read on advances for select to authenticated using (is_member(league_id));
 drop policy if exists adv_own on advances;
-drop policy if exists adv_insert on advances; create policy adv_insert on advances for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists adv_insert on advances; create policy adv_insert on advances for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
 
-drop policy if exists ko_read on ko_picks;    create policy ko_read on ko_picks for select to authenticated using (true);
-drop policy if exists ko_insert on ko_picks;  create policy ko_insert on ko_picks for insert to authenticated with check (user_id = auth.uid());
-drop policy if exists rp_read on repicks;     create policy rp_read on repicks for select to authenticated using (true);
-drop policy if exists rp_insert on repicks;   create policy rp_insert on repicks for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists ko_read on ko_picks;    create policy ko_read on ko_picks for select to authenticated using (is_member(league_id));
+drop policy if exists ko_insert on ko_picks;  create policy ko_insert on ko_picks for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists rp_read on repicks;     create policy rp_read on repicks for select to authenticated using (is_member(league_id));
+drop policy if exists rp_insert on repicks;   create policy rp_insert on repicks for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+
+-- leagues: anyone signed-in can look one up (needed to join by code); only the creator edits it.
+drop policy if exists lg_read on leagues;   create policy lg_read on leagues for select to authenticated using (true);
+drop policy if exists lg_ins on leagues;    create policy lg_ins on leagues for insert to authenticated with check (created_by = auth.uid());
+drop policy if exists lg_upd on leagues;    create policy lg_upd on leagues for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
+-- memberships: see members of leagues you're in; join yourself; you (or the league owner) can update paid.
+drop policy if exists mb_read on memberships; create policy mb_read on memberships for select to authenticated using (user_id = auth.uid() or is_member(league_id));
+drop policy if exists mb_ins on memberships;  create policy mb_ins on memberships for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists mb_upd on memberships;  create policy mb_upd on memberships for update to authenticated using (user_id = auth.uid() or exists(select 1 from leagues l where l.id = league_id and l.created_by = auth.uid())) with check (true);
 
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw, official matchday dates, props)
@@ -242,7 +275,26 @@ insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) v
 insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) values ('p-reds','🟥','Total red cards in the whole tournament?','ou',null,18.5,5,'open',null,false) on conflict (id) do nothing;
 insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) values ('p-goals','🎯','Goals in the group stage (72 matches)?','ou',null,201.5,7,'open',null,false) on conflict (id) do nothing;
 
--- league settings (re-running updates name/buy-in/currency)
+-- global scoring settings (re-running keeps these in sync)
 insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advance,buy_in,currency,payout_split,bet_basis,ko) values (1,'THE MASK',1000,5,2,4,50,'USD','[50,30,20]'::jsonb,'points','{"r16":[],"qf":[],"sf":[],"final":[]}'::jsonb) on conflict (id) do update set app_title=excluded.app_title, buy_in=excluded.buy_in, currency=excluded.currency;
+
+-- ============================================================================
+--  MIGRATION → PRIVATE LEAGUES
+--  Puts every existing player + all their existing picks into one "Default League"
+--  so nothing is lost when you upgrade. Safe to re-run.
+-- ============================================================================
+insert into leagues (id,name,code,buy_in,currency,payout_split,created_by)
+  values ('lg-default','THE MASK','MASK26',50,'USD','[50,30,20]'::jsonb,null)
+  on conflict (id) do nothing;
+-- everyone who already has a profile joins the Default League (carry over their paid flag)
+insert into memberships (league_id,user_id,paid)
+  select 'lg-default', id, coalesce(paid,false) from profiles
+  on conflict (league_id,user_id) do nothing;
+-- tag every pre-league pick to the Default League
+update predictions  set league_id='lg-default' where league_id is null;
+update prop_answers set league_id='lg-default' where league_id is null;
+update advances     set league_id='lg-default' where league_id is null;
+update ko_picks     set league_id='lg-default' where league_id is null;
+update repicks      set league_id='lg-default' where league_id is null;
 
 -- After running: Authentication -> enable "Allow anonymous sign-ins". Admin = visit /admin, password 1234.

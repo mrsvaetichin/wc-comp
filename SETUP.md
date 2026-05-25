@@ -1,10 +1,16 @@
 # 🦇 THE MASK — your World Cup '26 pool
 
-A playful prediction game for you and ~20 friends. Predict scorelines, call upsets,
-throw virtual coins on longshots, talk trash, and split a real-money pot at the end.
+A playful prediction game for you and your friends. Predict scorelines, call upsets,
+back who goes deep, talk trash, and split a real-money pot at the end.
 Built around the **real 2026 World Cup draw** (all 12 groups, 72 group fixtures, opener
 Mexico 🇲🇽 v South Africa 🇿🇦 on June 11), with a Gyökeres "mask" theme. Players log in
 with **just a name — no email, no password.**
+
+### 🏆 Private leagues
+After signing in, each player **creates a league** (name + buy-in + currency) or **joins one
+with an invite code/link** (`…/?join=CODE`). You can be in several leagues at once and switch
+between them with the 🏆 chip in the header. Predictions, leaderboards and the pot are
+**separate in each league**; the real World Cup results are shared and sync in automatically.
 
 There are two ways to use it.
 
