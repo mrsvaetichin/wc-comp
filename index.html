@@ -60,13 +60,29 @@
     border-bottom:1px solid var(--line);
   }
   .brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .leaguebar{display:flex;align-items:center;gap:11px;width:100%;margin-top:10px;background:linear-gradient(90deg, rgba(255,208,46,.16), var(--card2) 70%);border:1px solid var(--gold);border-radius:14px;padding:9px 13px;text-align:left;color:var(--ink)}
-  .leaguebar .lbicon{font-size:21px;flex:none}
-  .leaguebar .lbinfo{display:flex;flex-direction:column;line-height:1.15;min-width:0;flex:1}
-  .leaguebar .lblabel{font-size:10px;letter-spacing:1.2px;color:var(--gold);font-weight:800}
-  .leaguebar .lbname{font-family:'Fredoka';font-weight:700;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .leaguebar .lbmeta{display:flex;flex-direction:column;align-items:flex-end;gap:1px;font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
-  .leaguebar .caret{font-size:12px;color:var(--gold);font-weight:700}
+  /* ----- unified top bar: stacks on mobile, one row on desktop ----- */
+  .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .tb-brand{display:flex;align-items:center;gap:7px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px}
+  .tb-brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
+  .tb-meta{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .tb-pill{display:none}
+  .tb-tabs{display:none}
+  .tb-league{order:9;flex-basis:100%;display:flex;align-items:center;gap:10px;margin-top:2px;background:linear-gradient(90deg, rgba(255,208,46,.16), var(--card2) 70%);border:1px solid var(--gold);border-radius:14px;padding:9px 12px;color:var(--ink);text-align:left}
+  .tb-league .tbl-ic{font-size:20px;flex:none}
+  .tb-league .tbl-name{display:flex;flex-direction:column;line-height:1.12;min-width:0;flex:1}
+  .tb-league .tbl-label{font-size:10px;letter-spacing:1.2px;color:var(--gold);font-weight:800}
+  .tb-league .tbl-title{font-family:'Fredoka';font-weight:700;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tb-league .tbl-rank{font-family:'Fredoka';font-weight:700;font-size:17px;color:var(--cyan);flex:none}
+  .tb-league .caret{font-size:13px;color:var(--gold);font-weight:700;flex:none}
+  /* anchored league dropdown (replaces the modal) */
+  .lgmenu-bg{position:fixed;inset:0;z-index:60}
+  .lgmenu{position:fixed;background:var(--card);border:1px solid var(--gold);border-radius:14px;box-shadow:var(--shadow);padding:10px;max-height:78vh;overflow:auto}
+  .lgmenu-head{font-size:10px;letter-spacing:1.2px;color:var(--gold);font-weight:800;margin:2px 0 7px}
+  .lgitem{display:flex;align-items:center;width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:5px;color:var(--ink);font-weight:600;font-size:14px;text-align:left}
+  .lgitem.on{border-color:var(--gold);background:var(--card2)}
+  .lgitem .lgi-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lgitem .lgi-r{margin-left:auto;font-family:'Fredoka';color:var(--cyan);font-size:13px;flex:none;padding-left:8px}
+  .lgmenu-invite{border-top:1px solid var(--line);margin-top:7px;padding-top:8px}
   .brand{display:flex;align-items:center;gap:8px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px}
   .brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
   .brand b{background:linear-gradient(90deg,var(--pink),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -269,21 +285,26 @@
   .hwrap{max-width:540px;margin:0 auto}
   .cardgrid{display:grid;gap:12px;align-items:start;margin-top:12px}
   .cardgrid > .match, .cardgrid > .card{margin:0}
-  .topnav{display:none}  /* desktop top-nav; on mobile the bottom bar is used instead */
   @media (min-width:880px){
     .hwrap{max-width:1080px}
     .app.view-picks, .app.view-props{max-width:1080px;padding-left:22px;padding-right:22px}
     .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin{max-width:720px}
     .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr}
-    /* swap the phone-style fixed bottom bar for a proper top nav */
+    /* one tidy top bar instead of the stacked mobile header + bottom tab bar */
     nav.tabs{display:none}
     .app{padding-bottom:40px}
-    .topnav{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
-    .topnav button{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:9px 16px;font-weight:600;font-size:15px;transition:filter .12s}
-    .topnav button .ic{font-size:18px}
-    .topnav button:hover{color:var(--ink);filter:brightness(1.15)}
-    .topnav button.on{color:var(--ink);background:var(--card2);border-color:var(--gold)}
-    .topnav button.on .ic{filter:drop-shadow(0 0 8px rgba(255,208,46,.7))}
+    .statpills{display:none}
+    .topbar{flex-wrap:nowrap;gap:14px}
+    .tb-league{order:0;flex-basis:auto;margin-top:0;padding:7px 12px;max-width:300px}
+    .tb-league .tbl-title{font-size:16px;max-width:160px}
+    .tb-league .tbl-label{display:none}
+    .tb-tabs{display:flex;gap:7px;flex:1;flex-wrap:wrap;order:0}
+    .tb-tabs button{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:11px;padding:8px 13px;font-weight:600;font-size:14px;transition:filter .12s}
+    .tb-tabs button .ic{font-size:17px}
+    .tb-tabs button:hover{color:var(--ink);filter:brightness(1.15)}
+    .tb-tabs button.on{color:var(--ink);background:var(--card2);border-color:var(--gold)}
+    .tb-tabs button.on .ic{filter:drop-shadow(0 0 8px rgba(255,208,46,.7))}
+    .tb-meta .tb-pill{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 11px}
   }
   @media (min-width:1340px){
     .hwrap{max-width:1260px}
@@ -927,32 +948,35 @@ function countdown(iso){
 function isLocked(m){return m.status==="finished" || new Date(m.kickoff)<=Date.now();}
 
 function header(){
-  const r=myRank(); const sc=r.me;
+  const r=myRank(); const sc=r.me; const lg=curLeague();
+  const flame=(function(){const s=statsFor(ME.id);return s.streak>=2?`<span class="hstreak" title="${s.streak} correct in a row">🔥${s.streak}</span>`:'';})();
   return `<header class="top">
     <div class="swstripe"></div>
     <div class="hwrap">
-    <div class="brandrow">
-      <div class="brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
-      <div class="whoami">
-        ${(function(){const s=statsFor(ME.id);return s.streak>=2?`<span class="hstreak" title="${s.streak} correct in a row">🔥${s.streak}</span>`:'';})()}
-        ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
-        <button class="lockbtn" data-rules title="How to play">ℹ️</button>
-        <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
-        <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
-        <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
+      <div class="topbar">
+        <div class="tb-brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
+        <button class="tb-league" data-leagues title="Switch / manage leagues">
+          <span class="tbl-ic">🏆</span>
+          <span class="tbl-name"><span class="tbl-label">LEAGUE</span><span class="tbl-title">${lg?lg.name:"Pick a league"}</span></span>
+          <span class="tbl-rank">#${r.rank}<span class="muted" style="font-size:12px">/${r.total}</span></span>
+          <span class="caret">▾</span>
+        </button>
+        <nav class="tb-tabs">${navTabs()}</nav>
+        <div class="tb-meta">
+          <span class="tb-pill" title="Your points">⚽ ${sc.pts}</span>
+          <span class="tb-pill" title="Re-picks left">🔁 ${repicksLeft(ME.id)}</span>
+          ${flame}
+          ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
+          <button class="lockbtn" data-rules title="How to play">ℹ️</button>
+          <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
+          <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
+          <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
+        </div>
       </div>
-    </div>
-    <button class="leaguebar" data-leagues title="Switch / manage your leagues">
-      <span class="lbicon">🏆</span>
-      <span class="lbinfo"><span class="lblabel">YOUR LEAGUE${LEAGUES.length>1?` · ${LEAGUES.length}`:''}</span><span class="lbname">${curLeague()?curLeague().name:"Pick a league"}</span></span>
-      <span class="lbmeta">${curLeague()?`${leagueMembers(LG).length} ${leagueMembers(LG).length===1?'player':'players'}`:''}<span class="caret">▾ switch</span></span>
-    </button>
-    <div class="statpills">
-      <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
-      <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
-      <div class="pill coins"><div class="k">Re-picks</div><div class="v">${repicksLeft(ME.id)}</div></div>
-    </div>
-    <div class="topnav">${navTabs()}</div>
+      <div class="statpills">
+        <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
+        <div class="pill coins"><div class="k">Re-picks</div><div class="v">${repicksLeft(ME.id)}</div></div>
+      </div>
     </div>
   </header>`;
 }
@@ -1348,7 +1372,7 @@ function wire(){
   // live results sync + rules
   $$("[data-sync]").forEach(b=>b.onclick=()=>syncResults(true));
   const rl=$("[data-rules]"); if(rl) rl.onclick=openRules;
-  const lgs=$("[data-leagues]"); if(lgs) lgs.onclick=openSwitcher;
+  const lgs=$("[data-leagues]"); if(lgs) lgs.onclick=()=>openLeagueMenu(lgs);
   $$("[data-copycode]").forEach(b=>b.onclick=()=>copyText(b.dataset.copycode));
   $$("[data-copylink]").forEach(b=>b.onclick=()=>copyText(inviteLink(b.dataset.copylink)));
   // pool
@@ -1555,6 +1579,28 @@ function openSwitcher(){
   $$("[data-switch]",root).forEach(b=>b.onclick=()=>{ close(); switchLeague(b.dataset.switch); });
   const cc=$("[data-copycode]",root); if(cc) cc.onclick=()=>copyText(cur.code);
   const cl=$("[data-copylink]",root); if(cl) cl.onclick=()=>copyText(inviteLink(cur.code));
+  const nl=$("[data-newleague]",root); if(nl) nl.onclick=()=>openLeagueForm("create");
+  const jl=$("[data-joinleague]",root); if(jl) jl.onclick=()=>openLeagueForm("join");
+}
+function openLeagueMenu(anchor){
+  const root=$("#modal-root"); const cur=curLeague();
+  const r=anchor.getBoundingClientRect();
+  const w=Math.min(320, window.innerWidth-16);
+  const left=Math.max(8, Math.min(r.left, window.innerWidth-w-8)), top=r.bottom+6;
+  const list=LEAGUES.map(l=>{ const rk=myRankInLeague(l.id);
+    return `<button class="lgitem ${l.id===LG?'on':''}" data-switch="${l.id}"><span class="lgi-n">🏆 ${l.name}</span><span class="lgi-r">#${rk.rank}/${rk.total}${l.id===LG?' ✓':''}</span></button>`;
+  }).join("")||'<div class="small muted" style="padding:6px 4px">No leagues yet.</div>';
+  const invite=cur?`<div class="lgmenu-invite"><span class="tiny muted">📨 INVITE TO ${cur.name.toUpperCase()}</span>
+    <div class="row" style="gap:6px;margin-top:5px"><input readonly value="${cur.code}" style="font-family:'Fredoka';letter-spacing:2px;text-align:center;padding:7px"/><button class="btn" data-copycode="${cur.code}" style="white-space:nowrap;padding:7px 10px">Code</button><button class="btn" data-copylink="${cur.code}" style="white-space:nowrap;padding:7px 10px">🔗</button></div></div>`:'';
+  root.innerHTML=`<div class="lgmenu-bg"><div class="lgmenu" style="left:${left}px;top:${top}px;width:${w}px">
+    <div class="lgmenu-head">YOUR LEAGUES</div>${list}${invite}
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" style="flex:1" data-newleague>＋ Create</button><button class="btn lime" style="flex:1" data-joinleague>🔑 Join</button></div>
+  </div></div>`;
+  const close=()=>root.innerHTML="";
+  $(".lgmenu-bg",root).onclick=e=>{ if(e.target.classList.contains("lgmenu-bg")) close(); };
+  $$("[data-switch]",root).forEach(b=>b.onclick=()=>{ close(); switchLeague(b.dataset.switch); });
+  $$("[data-copycode]",root).forEach(b=>b.onclick=()=>copyText(b.dataset.copycode));
+  $$("[data-copylink]",root).forEach(b=>b.onclick=()=>copyText(inviteLink(b.dataset.copylink)));
   const nl=$("[data-newleague]",root); if(nl) nl.onclick=()=>openLeagueForm("create");
   const jl=$("[data-joinleague]",root); if(jl) jl.onclick=()=>openLeagueForm("join");
 }
