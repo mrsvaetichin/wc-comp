@@ -75,13 +75,13 @@ Admin is gated by a password — **no special account needed**.
 
 Inside Admin:
 
-- **Results** — after each match, type the final score and hit *Finalize*. Everyone's points
-  and coins recompute instantly, standings update, and completed groups auto-score the
-  "who advances" picks.
-- **Settle props** — pick the correct answer for a prop (champion, Golden Boot total, etc.) and
-  settle; points and coin payouts go out automatically.
-- **Settings** — buy-in amount, currency, payout split (default 50/30/20), pool name, and
-  whether final payouts rank by points or coins. Flip who's paid in the 💰 Pool tab.
+- **Results** — scores normally sync in **automatically** from a live feed. You can also type a
+  final score and hit *Finalize* (or **🔄 Sync now**); everyone's points recompute instantly,
+  standings update, and completed groups auto-score the "who advances" picks.
+- **Settle props** — pick the correct answer for a prop (champion, Golden Boot total, etc.) and settle.
+- **Knockouts** — mark which teams reached the QF / SF / Final to score everyone's knockout picks.
+- **Settings** — buy-in amount, currency, payout split (default 50/30/20), pool name. Flip who's
+  paid in the 💰 Pool tab.
 
 > In live mode, entering the admin password also flags your account as admin in the database so
 > your result entries actually save. Anyone who knows the password becomes admin — it's a
@@ -91,28 +91,25 @@ Inside Admin:
 
 ## How scoring works
 
+It's **one simple Points pool** — no coins, no virtual currency. Most points wins.
+
 - **Blind & one-shot:** you can't see anyone else's pick for a game until you've **locked yours**
-  (or it kicks off), and once locked a pick **can't be changed**. This is enforced both in the app
-  and in the database rules.
+  (or it kicks off), and once locked a pick **can't be changed**. Enforced in the app and in the DB.
 - **Exact scoreline:** +5 points. **Correct result** (right winner/draw, wrong score): +2.
-- **⭐ Banker:** mark one active pick as your Banker for **double** match points. You can have one
-  going at a time; it frees up once that match finishes.
-- **Group survivors:** +4 for each team you correctly tip to escape a group (auto-scored when
-  the group finishes).
-- **🏆 Knockout run:** in the Groups tab, pick the teams you think reach the Quarter-finals (+3
-  each), Semi-finals (+5) and Final (+8). The commissioner marks who actually reached each stage
-  in **Admin → Knockouts** and everyone scores instantly.
+- **⭐ Banker:** mark one active pick as your Banker for **double** match points (one at a time;
+  frees up once that match finishes).
+- **🔁 Half-time re-pick:** 3 times all tournament you can change a pick on a **live** match,
+  for **−3 points** each. Otherwise picks are final.
+- **Group survivors:** +4 for each team you correctly tip to escape a group.
+- **🏆 Knockout run:** pick the teams you think reach the Quarter-finals (+3 each), Semi-finals (+5)
+  and Final (+8). The commissioner marks who reached each stage in **Admin → Knockouts**.
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
-- **💸 Buy-in:** it's **50 GEL to play** — paid to the commissioner; the top 3 split the pot.
-  Change the amount/currency in **Admin → Settings**.
+- **💸 Buy-in:** **50 GEL to play** — paid to the commissioner; the top 3 split the pot.
 - **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
-- **🔥 Streaks & badges:** consecutive correct results light a streak flame, and you earn badges
-  (Sniper, Giant Slayer, On Fire, High Roller, Banker Boss) shown on the leaderboard + podium.
-- **Coins** 🪙: everyone starts with 1,000. On matches and some props you can stake coins at
-  auto-generated odds — underdogs pay more (winning it all as Haiti pays 300×). Coins drive a
-  second leaderboard for bragging rights.
-- **The pot** 💰: real-money buy-ins are tracked and projected payouts map to current standings.
-  All values are adjustable in Admin.
+- **🔥 Streaks & badges:** correct-result streaks light a flame; badges (Sniper, Giant Slayer,
+  On Fire, Banker Boss) show on the leaderboard + podium.
+- **📡 Live results:** scores sync automatically from a third-party feed, so usually nobody types
+  anything — the commissioner can still correct a result by hand.
 
 ---
 

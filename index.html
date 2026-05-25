@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   /* ============================================================
-     GOALPOST — World Cup 2026 friends' prediction pool
+     THE MASK — World Cup 2026 friends' prediction pool
      Playful / meme-y theme. Mobile-first, works on desktop too.
      ============================================================ */
   :root{
@@ -296,6 +296,7 @@ const DEFAULTS = {
 const KO_PTS={qf:3,sf:5,final:8}; // points per correct knockout-stage team
 const KO_LIM={qf:8,sf:4,final:2};
 const KO_LABEL={qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
+const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
 function money(n){ const c=DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
@@ -351,7 +352,7 @@ const MASK_SVG=`<svg viewBox="0 0 200 210" xmlns="http://www.w3.org/2000/svg">
 function party(){if(window.confetti){confetti({particleCount:130,spread:85,origin:{y:.4},colors:["#0b6fb3","#ffd02e","#5cc8ff","#ffffff","#06325e"]});}}
 function celebrate(msg){horn();const c=$("#celebrate");if(!c){party();return;}c.innerHTML=`<div class="cele-card">${MASK_SVG}<div class="cele-msg">${msg||"GOAAAL!"}</div><div class="cele-sub">Do the Gyökeres! 🦇</div></div>`;c.classList.add("show");party();clearTimeout(c._t);c._t=setTimeout(()=>c.classList.remove("show"),1500);}
 /* ---------- goal horn (Web Audio) + mute ---------- */
-let MUTED=(typeof localStorage!=="undefined"&&localStorage.getItem("goalpost_muted")==="1");
+let MUTED=(typeof localStorage!=="undefined"&&localStorage.getItem("themask_muted")==="1");
 let _actx=null;
 function horn(){ if(MUTED)return; try{
   _actx=_actx||new (window.AudioContext||window.webkitAudioContext)(); const c=_actx,t0=c.currentTime;
@@ -360,11 +361,11 @@ function horn(){ if(MUTED)return; try{
     g.gain.setValueAtTime(0.0001,t0+t);g.gain.exponentialRampToValueAtTime(0.22,t0+t+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t0+t+0.5);
     o.start(t0+t);o.stop(t0+t+0.55); });
 }catch(e){} }
-function toggleMute(){ MUTED=!MUTED; try{localStorage.setItem("goalpost_muted",MUTED?"1":"0");}catch(e){} }
+function toggleMute(){ MUTED=!MUTED; try{localStorage.setItem("themask_muted",MUTED?"1":"0");}catch(e){} }
 // deterministic seeded RNG (so the demo looks the same each load)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-const DB = { settings:{}, teams:[], matches:[], props:[], predictions:[], propAnswers:[], profiles:[] };
+const DB = { settings:{}, teams:[], matches:[], props:[], predictions:[], propAnswers:[], profiles:[], repicks:[] };
 let ME = null;        // current profile object
 let MODE = "demo";    // 'demo' | 'live'
 let supa = null;
@@ -374,12 +375,12 @@ let VIEW = "picks";
    Note: this is a friendly client-side UI gate. In LIVE mode, actually saving
    admin changes also requires your Supabase account to be is_admin (RLS). ----- */
 const ADMIN_PASSWORD = "1234";
-let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("goalpost_admin")==="1");
+let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
-function adminUnlock(pw){ if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("goalpost_admin","1");}catch(e){}
+function adminUnlock(pw){ if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("themask_admin","1");}catch(e){}
   if(MODE==="live" && ME && supa){ ME.is_admin=true; sbUpsert("profiles",{id:ME.id,is_admin:true}); } // lets RLS accept admin writes
   return true; } return false; }
-function adminLock(){ ADMIN_UNLOCKED=false; try{localStorage.removeItem("goalpost_admin");}catch(e){} }
+function adminLock(){ ADMIN_UNLOCKED=false; try{localStorage.removeItem("themask_admin");}catch(e){} }
 function isAdminRoute(){ try{ const l=(typeof location!=="undefined")?location:{}; return /admin/i.test((l.pathname||"")+(l.hash||"")+(l.search||"")); }catch(e){ return false; } }
 
 /* ---------- odds engine ---------- */
@@ -480,6 +481,7 @@ function seedDemo(){
   DB.profiles=[];
   DB.predictions=[];
   DB.propAnswers=[];
+  DB.repicks=[];
 
   // you + friends
   DB.profiles.push({id:"me", name:"You", emoji:"🫵", email:"you@demo", is_admin:true, paid:true});
@@ -525,7 +527,7 @@ function seedDemo(){
 /* ============================================================================
    💾  PERSISTENCE (demo = localStorage, live = Supabase)
    ============================================================================ */
-const LS_KEY="goalpost_demo_v1";
+const LS_KEY="themask_demo_v1";
 function saveLocal(){ if(MODE==="demo") localStorage.setItem(LS_KEY, JSON.stringify({DB, meId:ME?ME.id:"me"})); }
 function loadLocal(){
   const raw=localStorage.getItem(LS_KEY);
@@ -551,63 +553,49 @@ function groupStandings(g){
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
 function scoreFor(profileId){
-  const s=DB.settings; let pts=0, coins=s.starting_coins;
-  const preds=DB.predictions.filter(p=>p.user===profileId);
-  // match score predictions
-  preds.forEach(pr=>{
-    const m=DB.matches.find(x=>x.id===pr.match);
-    if(!m||m.status!=="finished") return;
-    if(pr.hp==null||pr.ap==null) return;
+  const s=DB.settings; let pts=0;
+  // match score predictions (uses your latest pick: a half-time re-pick overrides the original)
+  DB.matches.filter(m=>m.status==="finished").forEach(m=>{
+    const pr=effectivePick(profileId,m.id);
+    if(!pr||pr.hp==null||pr.ap==null) return;
     const exact = pr.hp===m.hs && pr.ap===m.as;
     const outcome = Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
     let add = exact?s.pts_exact : outcome?s.pts_result : 0;
     if(pr.banker) add*=2;   // ⭐ Banker doubles the match points
     pts+=add;
-    // coin wager on outcome
-    if(pr.wager>0 && pr.pick){
-      const odds=matchOdds(teamById(m.home).name,teamById(m.away).name);
-      const won=(pr.pick==="home"&&m.hs>m.as)||(pr.pick==="away"&&m.as>m.hs)||(pr.pick==="draw"&&m.hs===m.as);
-      coins += won ? Math.round(pr.wager*(odds[pr.pick]-1)) : -pr.wager;
-    }
   });
-  // group advance predictions (stored in ADV, refreshed each render)
+  // group advance predictions
   ADV.filter(a=>a.user===profileId).forEach(a=>{
     if(!groupComplete(a.grp)) return;
     const st=groupStandings(a.grp);
-    const top2=[st[0].id,st[1].id];
-    if(top2.includes(a.team)) pts+=s.pts_advance;
+    if([st[0].id,st[1].id].includes(a.team)) pts+=s.pts_advance;
   });
   // props
   DB.propAnswers.filter(a=>a.user===profileId).forEach(a=>{
     const pr=DB.props.find(x=>x.id===a.prop);
     if(!pr||pr.status!=="settled") return;
-    const won = String(a.answer)===String(pr.correct);
-    if(won) pts+=pr.pts;
-    if(pr.allow_coins && a.wager>0){
-      let odds=2.0;
-      if(pr.type==="team") odds=championOdds(teamById(a.answer)?teamById(a.answer).name:"");
-      else if(pr.type==="yesno") odds=1.9; else odds=1.95;
-      coins += won ? Math.round(a.wager*(odds-1)) : -a.wager;
-    }
+    if(String(a.answer)===String(pr.correct)) pts+=pr.pts;
   });
-  // knockout futures: each correctly predicted team to reach a stage
+  // knockout futures
   ["qf","sf","final"].forEach(stage=>{
     const reached=koReached(stage);
     DB.predictions.filter(p=>p.user===profileId&&p.ko&&p.stage===stage).forEach(p=>{ if(reached.has(p.team)) pts+=KO_PTS[stage]; });
   });
-  return {pts, coins};
+  // half-time re-pick penalty
+  pts -= REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
+  return {pts};
 }
 // advance picks stored separately for clarity
 let ADV=[]; // {user, grp, team}
 function loadAdv(){ ADV = DB.predictions.filter(p=>p.advance).map(p=>({user:p.user,grp:p.grp,team:p.team})); }
 
-function leaderboard(basis="points"){
-  const rows=DB.profiles.map(p=>{const sc=scoreFor(p.id);return {...p, pts:sc.pts, coins:sc.coins};});
-  rows.sort((a,b)=> basis==="coins" ? b.coins-a.coins : (b.pts-a.pts||b.coins-a.coins));
+function leaderboard(){
+  const rows=DB.profiles.map(p=>({...p, pts:scoreFor(p.id).pts}));
+  rows.sort((a,b)=> b.pts-a.pts || a.name.localeCompare(b.name));
   rows.forEach((r,i)=>r.rank=i+1);
   return rows;
 }
-function myRank(basis="points"){const lb=leaderboard(basis);const r=lb.find(x=>x.id===ME.id);return {rank:r.rank,total:lb.length,me:r};}
+function myRank(){const lb=leaderboard();const r=lb.find(x=>x.id===ME.id);return {rank:r.rank,total:lb.length,me:r};}
 
 /* ---------- reveal gating + fun stats ---------- */
 function profileById(id){return DB.profiles.find(p=>p.id===id);}
@@ -615,6 +603,16 @@ function profileById(id){return DB.profiles.find(p=>p.id===id);}
 function avatarInner(p){ return (p&&p.avatar) ? `<img class="avimg" src="${p.avatar}" alt=""/>` : (p?(p.emoji||"🙂"):"❓"); }
 function myPick(matchId){return DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);}
 function hasPicked(matchId){return !!myPick(matchId);}
+// the live/effective pick = your latest half-time re-pick if any, else your original
+function effectivePick(userId,matchId){
+  const reps=(DB.repicks||[]).filter(r=>r.user===userId&&r.match===matchId);
+  const base=DB.predictions.find(p=>p.user===userId&&p.match===matchId&&!p.advance)||null;
+  if(reps.length){ const r=reps[reps.length-1]; return {hp:r.hp,ap:r.ap,banker:base?base.banker:false,repick:true}; }
+  return base;
+}
+function inPlay(m){ return m.status!=="finished" && new Date(m.kickoff)<=Date.now(); }
+function repicksUsed(userId){ return (DB.repicks||[]).filter(r=>r.user===userId).length; }
+function repicksLeft(userId){ return Math.max(0, REPICK_MAX - repicksUsed(userId)); }
 function othersFor(matchId){return DB.predictions.filter(p=>p.match===matchId&&!p.advance&&p.user!==ME.id&&p.hp!=null);}
 function myAnswer(propId){return DB.propAnswers.find(a=>a.user===ME.id&&a.prop===propId);}
 function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.user!==ME.id);}
@@ -642,12 +640,11 @@ function statsFor(profileId){
   return {streak,best,exacts,upsets,hits,played};
 }
 function badgesFor(profileId){
-  const st=statsFor(profileId), sc=scoreFor(profileId), b=[];
+  const st=statsFor(profileId), b=[];
   if(st.exacts>=1)b.push(["🎯","Sniper","Nailed an exact scoreline"]);
   if(st.streak>=3)b.push(["🔥","On Fire","3+ correct results in a row"]);
   if(st.upsets>=1)b.push(["🐉","Giant Slayer","Correctly called an upset"]);
-  if(sc.coins>=1500)b.push(["💰","High Roller","Sitting on 1,500+ coins"]);
-  const bankerHit=DB.predictions.some(p=>{ if(p.user!==profileId||!p.banker)return false; const m=DB.matches.find(x=>x.id===p.match); return m&&m.status==="finished"&&p.hp!=null&&Math.sign(p.hp-p.ap)===Math.sign(m.hs-m.as);});
+  const bankerHit=DB.predictions.some(p=>{ if(p.user!==profileId||!p.banker)return false; const m=DB.matches.find(x=>x.id===p.match); const eff=effectivePick(profileId,p.match); return m&&m.status==="finished"&&eff&&eff.hp!=null&&Math.sign(eff.hp-eff.ap)===Math.sign(m.hs-m.as);});
   if(bankerHit)b.push(["⭐","Banker Boss","Cashed in a Banker pick"]);
   return b;
 }
@@ -671,19 +668,28 @@ async function reloadPredictions(){ if(MODE!=="live"||!supa)return;
     .concat((a||[]).map(x=>({id:x.id,user:x.user_id,advance:true,grp:x.grp,team:x.team})))
     .concat((k||[]).map(x=>({id:x.id,user:x.user_id,ko:true,stage:x.stage,team:x.team}))); loadAdv(); }
 async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("prop_answers").select("*"); DB.propAnswers=(data||[]).map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager})); }
-async function lockPick(matchId, hp, ap, pick, wager, banker){
+async function lockPick(matchId, hp, ap, banker){
   if(hasPicked(matchId))return;
-  const pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,wager:wager||0,pick:pick||null,banker:!!banker};
+  const pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,banker:!!banker};
   DB.predictions.push(pr);
-  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,wager:pr.wager,pick:pr.pick,banker:pr.banker}); await reloadPredictions(); }
+  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }
   delete DRAFT[matchId]; saveLocal();
 }
-async function lockProp(propId, answer, wager){
+async function lockProp(propId, answer){
   if(myAnswer(propId))return;
-  const a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer,wager:wager||0};
+  const a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer};
   DB.propAnswers.push(a);
-  if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer,wager:a.wager}); await reloadProps(); }
+  if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer}); await reloadProps(); }
   delete PDRAFT[propId]; saveLocal();
+}
+async function reloadRepicks(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("repicks").select("*"); DB.repicks=(data||[]).map(r=>({id:r.id,user:r.user_id,match:r.match_id,hp:r.hp,ap:r.ap})); }
+async function saveRepick(matchId, hp, ap){
+  if(repicksLeft(ME.id)<=0){ toast("No re-picks left"); return; }
+  const m=DB.matches.find(x=>x.id===matchId); if(!m||!inPlay(m)){ toast("Re-picks only while a match is live"); return; }
+  const r={id:`${ME.id}-rp-${matchId}-${Date.now()}`,user:ME.id,match:matchId,hp,ap};
+  DB.repicks.push(r);
+  if(MODE==="live"){ await sbInsert("repicks",{id:r.id,user_id:ME.id,match_id:matchId,hp,ap}); await reloadRepicks(); }
+  delete DRAFT[matchId]; saveLocal();
 }
 async function saveKO(stage, teamId){
   const mine=myKO(stage);
@@ -705,6 +711,33 @@ async function saveAdvance(grp, slot, teamId){
   if(MODE==="live") await sbInsert("advances",{id:pr.id,user_id:ME.id,grp,slot,team:teamId});
   loadAdv();saveLocal();
 }
+/* ---------- live results auto-sync (TheSportsDB free API) ---------- */
+const SPORTSDB_KEY="3", SPORTSDB_LEAGUE="4429", SPORTSDB_SEASON="2026"; // 4429 = FIFA World Cup
+const TEAM_ALIASES={"united states":"usa","korea republic":"south korea","czech republic":"czechia","ivory coast":"côte d'ivoire","cote d'ivoire":"côte d'ivoire","turkey":"türkiye","cape verde":"cabo verde","cape verde islands":"cabo verde","congo dr":"dr congo","democratic republic of congo":"dr congo","dr congo":"dr congo","bosnia and herzegovina":"bosnia & herz","bosnia-herzegovina":"bosnia & herz"};
+function nrm(n){ n=(n||"").toLowerCase().replace(/[.&]/g,"").replace(/\s+/g," ").trim(); return TEAM_ALIASES[n]||n; }
+let _lastSync=0;
+async function syncResults(manual){
+  if(typeof fetch!=="function"){ if(manual)toast("Live sync not available here"); return; }
+  if(!manual && Date.now()-_lastSync<120000) return; // throttle auto-sync to ~2 min
+  _lastSync=Date.now();
+  try{
+    const r=await fetch(`https://www.thesportsdb.com/api/v1/json/${SPORTSDB_KEY}/eventsseason.php?id=${SPORTSDB_LEAGUE}&s=${SPORTSDB_SEASON}`);
+    const data=await r.json(); const evs=(data&&data.events)||[]; let n=0;
+    evs.forEach(e=>{
+      if(e.intHomeScore==null||e.intHomeScore===""||e.intAwayScore==null||e.intAwayScore==="") return;
+      const eh=nrm(e.strHomeTeam), ea=nrm(e.strAwayTeam);
+      const m=DB.matches.find(x=>{const h=nrm(teamById(x.home).name),a=nrm(teamById(x.away).name);return (h===eh&&a===ea)||(h===ea&&a===eh);});
+      if(!m) return;
+      const hHome=nrm(teamById(m.home).name)===eh;
+      const hs=hHome?+e.intHomeScore:+e.intAwayScore, as=hHome?+e.intAwayScore:+e.intHomeScore;
+      if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; n++;
+        if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
+    });
+    if(n){ saveLocal(); render(); }
+    if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:"No new results yet — check back after kickoff");
+  }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
+}
+
 // admin writes
 async function adminScore(matchId,hs,as){
   const m=DB.matches.find(x=>x.id===matchId);m.hs=hs;m.as=as;m.status="finished";
@@ -762,6 +795,7 @@ function header(){
       <div class="whoami">
         ${(function(){const s=statsFor(ME.id);return s.streak>=2?`<span class="hstreak" title="${s.streak} correct in a row">🔥${s.streak}</span>`:'';})()}
         ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
+        <button class="lockbtn" data-rules title="How to play">ℹ️</button>
         <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
         <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
         <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
@@ -770,7 +804,7 @@ function header(){
     <div class="statpills">
       <div class="pill rank"><div class="k">Rank</div><div class="v">#${r.rank}<span class="muted" style="font-size:11px">/${r.total}</span></div></div>
       <div class="pill points"><div class="k">Points</div><div class="v">${sc.pts}</div></div>
-      <div class="pill coins"><div class="k">Coins</div><div class="v">${sc.coins.toLocaleString()}</div></div>
+      <div class="pill coins"><div class="k">Re-picks</div><div class="v">${repicksLeft(ME.id)}</div></div>
     </div>
   </header>`;
 }
@@ -788,11 +822,11 @@ function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
   let list=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
   const groupsSel=["all",...Object.keys(GROUPS)];
-  if(pickFilter==="upcoming") list=list.filter(m=>!isLocked(m));
+  if(pickFilter==="upcoming") list=list.filter(m=>m.status!=="finished"); // open + live
   else if(pickFilter==="finished") list=list.filter(m=>m.status==="finished");
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
-  const segs=[["upcoming","🔮 Upcoming"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
+  const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
   let html="";
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
@@ -817,33 +851,40 @@ function revealBlock(m){
   if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else has locked this one in yet.</div>`;
   let h=`<div class="reveal"><div class="revhead">👀 The crowd locked in (${others.length})</div>`;
   others.forEach(p=>{ const u=profileById(p.user);
-    h+=`<div class="revrow"><span class="re">${u?u.emoji:"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${p.hp}–${p.ap}</b>${p.banker?' <span title="Banker">⭐</span>':''}${p.wager>0?`<span class="tiny muted">🪙${p.wager}</span>`:''}</div>`; });
+    h+=`<div class="revrow"><span class="re">${u?(u.avatar?`<img class="avimg" style="width:18px;height:18px" src="${u.avatar}"/>`:u.emoji):"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${p.hp}–${p.ap}</b>${p.banker?' <span title="Banker">⭐</span>':''}</div>`; });
   return h+`</div>`;
 }
 function matchCard(m){
   const h=teamById(m.home),a=teamById(m.away);
-  const pred=myPick(m.id);
-  const odds=matchOdds(h.name,a.name);
+  const base=myPick(m.id);
+  const eff=effectivePick(ME.id,m.id);
   const cd=countdown(m.kickoff);
-  const teams=`<div class="mteams">
-      <div class="mt"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
-      <span class="mvs">vs</span>
-      <div class="mt away"><span class="tname">${a.name}</span><span class="flag">${a.flag}</span></div>
-    </div>`;
+  const teams=`<div class="mteams"><div class="mt"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div><span class="mvs">vs</span><div class="mt away"><span class="tname">${a.name}</span><span class="flag">${a.flag}</span></div></div>`;
   let inner="";
   if(m.status==="finished"){
     let earn="";
-    if(pred&&pred.hp!=null){
-      const exact=pred.hp===m.hs&&pred.ap===m.as, out=Math.sign(pred.hp-pred.ap)===Math.sign(m.hs-m.as);
-      let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(pred.banker)got*=2;
-      earn=`<div class="small center ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${pred.hp}–${pred.ap}${pred.banker?' ⭐2×':''} · +${got} pts</div>`;
+    if(eff&&eff.hp!=null){
+      const exact=eff.hp===m.hs&&eff.ap===m.as, out=Math.sign(eff.hp-eff.ap)===Math.sign(m.hs-m.as);
+      let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(eff.banker)got*=2;
+      earn=`<div class="small center ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${eff.hp}–${eff.ap}${eff.banker?' ⭐2×':''}${eff.repick?' 🔁':''} · +${got} pts</div>`;
     } else earn=`<div class="small muted center">You didn't pick this one</div>`;
     inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${revealBlock(m)}`;
-  } else if(pred){   // you've locked in → reveal the crowd
-    inner=`${teams}<div class="scorerow"><span class="lockedpick">${pred.hp} – ${pred.ap}${pred.banker?' <span title="Banker (2×)">⭐</span>':''}</span></div>
-      <div class="small muted center">🔒 Locked${pred.pick&&pred.wager?` · 🪙${pred.wager} on ${pred.pick} @ ${odds[pred.pick].toFixed(2)}×`:''}${cd?` · in ${cd}`:''}</div>
-      ${revealBlock(m)}`;
-  } else if(isLocked(m)){   // kickoff passed, you never picked
+  } else if(base){   // you've locked in → reveal the crowd (+ re-pick if live)
+    const live=inPlay(m);
+    inner=`${teams}<div class="scorerow"><span class="lockedpick">${eff.hp} – ${eff.ap}${eff.banker?' <span title="Banker (2×)">⭐</span>':''}${eff.repick?' <span title="Re-picked">🔁</span>':''}</span></div>
+      <div class="small muted center">${live?'🟢 LIVE — in play':'🔒 Locked'}${(!live&&cd)?` · in ${cd}`:''}</div>`;
+    if(live && repicksLeft(ME.id)>0){
+      const d=draft(m.id);
+      inner+=`<div class="reveal"><div class="revhead">🔁 Half-time re-pick · −${REPICK_COST} pts · ${repicksLeft(ME.id)} left</div>
+        <div class="scorerow">
+          <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${d.hp??eff.hp}" maxlength="2"/>
+          <span class="colon">:</span>
+          <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??eff.ap}" maxlength="2"/>
+        </div>
+        <button class="btn gold block" data-repick="${m.id}">Change my pick (−${REPICK_COST} pts)</button></div>`;
+    } else if(live){ inner+=`<div class="small muted center" style="margin-top:6px">No re-picks left</div>`; }
+    inner+=revealBlock(m);
+  } else if(isLocked(m)){   // kicked off, you never picked
     inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 kicked off</span></div><div class="small muted center">You didn't lock a pick.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form (nothing saved until you Lock In)
     const d=draft(m.id), canBank=!myActiveBanker();
@@ -853,19 +894,13 @@ function matchCard(m){
         <span class="colon">:</span>
         <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??""}" placeholder="–" maxlength="2"/>
       </div>
-      <div class="small muted">Optional 🪙 side bet on the winner:</div>
-      <div class="odds">
-        ${["home","draw","away"].map(k=>{const sel=d.pick===k?"sel":"";const lab=k==="home"?h.flag+" "+h.name.split(" ")[0]:k==="draw"?"Draw":a.flag+" "+a.name.split(" ")[0];
-          return `<button class="oddbtn ${sel}" data-odd="${k}" data-m="${m.id}"><span>${lab}</span><b>${odds[k].toFixed(2)}×</b></button>`;}).join("")}
-      </div>
-      ${d.pick?`<div class="row" style="margin-top:6px;gap:6px">${[0,50,100,250].map(w=>`<button class="btn ${d.wager===w?'gold':''}" style="flex:1;padding:6px" data-wg="${w}" data-m="${m.id}">${w===0?'No bet':'🪙'+w}</button>`).join("")}</div>`:''}
       <div class="row" style="margin-top:8px;gap:8px">
         ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker in use</span>`}
         <button class="btn lime" style="flex:1" data-lock="${m.id}">🔒 Lock it in</button>
       </div>
-      <div class="tiny muted" style="margin-top:6px">⚠️ One shot — no edits, and locking reveals everyone's picks 👀${cd?` · ⏱ ${cd}`:''}</div>`;
+      <div class="tiny muted" style="margin-top:6px">⚠️ One shot — locking reveals everyone's picks 👀${cd?` · ⏱ ${cd}`:''}</div>`;
   }
-  const tag = m.status==="finished"?'<span class="chip done">FT</span>': pred?'<span class="chip done">🔒 Locked</span>': isLocked(m)?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
+  const tag = m.status==="finished"?'<span class="chip done">FT</span>': (base&&inPlay(m))?'<span class="chip live">🟢 LIVE</span>': base?'<span class="chip done">🔒 Locked</span>': isLocked(m)?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
   return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
 }
 
@@ -920,12 +955,12 @@ function revealPropBlock(pr){
   if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else has answered yet.</div>`;
   let h=`<div class="reveal"><div class="revhead">👀 The crowd (${others.length})</div>`;
   others.forEach(o=>{ const u=profileById(o.user);
-    h+=`<div class="revrow"><span class="re">${u?u.emoji:"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${labelFor(pr,o.answer)}</b>${o.wager>0?`<span class="tiny muted">🪙${o.wager}</span>`:''}</div>`; });
+    h+=`<div class="revrow"><span class="re">${u?(u.avatar?`<img class="avimg" style="width:18px;height:18px" src="${u.avatar}"/>`:u.emoji):"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${labelFor(pr,o.answer)}</b></div>`; });
   return h+`</div>`;
 }
 function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}"><span class="rd"></span><span>${label}</span></div>`; }
 function viewProps(){
-  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀. Some let you throw coins for bonus payouts (longshots pay big).</div></div>`;
+  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀.</div></div>`;
   DB.props.forEach(pr=>{
     const a=myAnswer(pr.id);
     const settled=pr.status==="settled";
@@ -935,16 +970,15 @@ function viewProps(){
       let res="";
       if(settled){ const won=a&&String(a.answer)===String(pr.correct);
         res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You nailed it! +'+pr.pts+' pts':'❌ Settled · correct: '+labelFor(pr,pr.correct)}</div>`; }
-      body=`<div class="small" style="margin-top:6px">🔒 Your answer: <b>${a?labelFor(pr,a.answer):'—'}</b>${a&&a.wager>0?` · 🪙${a.wager}`:''}</div>${res}${revealPropBlock(pr)}`;
+      body=`<div class="small" style="margin-top:6px">🔒 Your answer: <b>${a?labelFor(pr,a.answer):'—'}</b></div>${res}${revealPropBlock(pr)}`;
     } else {
       let opts="";
       if(pr.type==="yesno") opts=["yes","no"].map(v=>pOpt(pr,v,v==="yes"?"✅ Yes":"❌ No",d)).join("");
       else if(pr.type==="ou") opts=["over","under"].map(v=>pOpt(pr,v,(v==="over"?"⬆️ Over ":"⬇️ Under ")+pr.line,d)).join("");
       else if(pr.type==="team"){ const cur=d.answer?teamById(d.answer):null;
-        opts=`<button class="opt ${d.answer?'sel':''}" data-teamprop="${pr.id}"><span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span>${d.answer?`<span style="margin-left:auto;color:var(--gold)" class="small">${championOdds(cur?cur.name:"").toFixed(1)}×</span>`:''}</button>`; }
+        opts=`<button class="opt ${d.answer?'sel':''}" data-teamprop="${pr.id}"><span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span></button>`; }
       else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
-      const wagerUI=(pr.allow_coins)?`<div class="small muted" style="margin-top:8px">🪙 Optional bonus bet:<div class="row" style="gap:6px;margin-top:6px">${[0,50,100,200].map(w=>`<button class="btn ${d.wager===w?'gold':''}" style="flex:1;padding:6px" data-propwg="${w}" data-prop="${pr.id}" ${d.answer?'':'disabled'}>${w===0?'None':'🪙'+w}</button>`).join("")}</div></div>`:'';
-      body=`${opts}${wagerUI}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
+      body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
     }
     html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.pts} pts</span></div>${body}</div>`;
   });
@@ -954,33 +988,30 @@ function viewProps(){
 /* ---------- LEADERBOARD ---------- */
 let boardBasis="points";
 function viewBoard(){
-  const lb=leaderboard(boardBasis);
+  const lb=leaderboard();
   lb.forEach(r=>{ r.st=statsFor(r.id); r.badges=badgesFor(r.id); });
   const top=lb[0], last=lb[lb.length-1];
   const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them! 🏃`][top.rank%3];
   const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
-  let html=`<div class="card center"><h3>📊 The Table</h3>
-      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Points pool</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Coin barons</button></div></div>`;
+  let html=`<div class="card center"><h3>📊 The Table</h3><div class="small muted">Most points takes the pot.</div>
+      <button class="btn block" data-sync style="margin-top:8px">🔄 Sync live results</button></div>`;
   // 🏆 podium of the top 3
   if(lb.length>=3){
     const order=[1,0,2]; // render 2nd, 1st, 3rd
     html+=`<div class="card"><div class="podium">`+order.map(i=>{const r=lb[i];const place=i+1;const hgt=place===1?98:place===2?74:60;
-      const sc=boardBasis==='coins'?'🪙'+r.coins.toLocaleString():r.pts+'p';
-      return `<div class="pod p${place}"><div class="podav">${r.emoji}</div><div class="podname">${r.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">${sc}</div></div></div>`;}).join("")+`</div>
+      return `<div class="pod p${place}"><div class="podav">${r.emoji}</div><div class="podname">${r.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">${r.pts}p</div></div></div>`;}).join("")+`</div>
       <div class="trash center">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div></div>`;
   }
   lb.forEach(r=>{
     const me=r.id===ME.id?'me':'';
     const medal=r.rank===1?'🥇':r.rank===2?'🥈':r.rank===3?'🥉':`<span class="muted">${r.rank}</span>`;
-    const val= boardBasis==="coins"? `🪙 ${r.coins.toLocaleString()}` : `${r.pts} pts`;
-    const sub= boardBasis==="coins"? `${r.pts} pts` : `🪙 ${r.coins.toLocaleString()}`;
     const fire=r.st.streak>=2?`<span class="fire">🔥${r.st.streak}</span>`:'';
-    const badges=r.badges.length?`<span class="badges"> ${r.badges.map(b=>`<span title="${b[1]}: ${b[2]}">${b[0]}</span>`).join("")}</span>`:'';
+    const badges=r.badges.map(b=>`<span title="${b[1]}: ${b[2]}">${b[0]}</span>`).join("");
     html+=`<div class="lbrow ${me}">
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
-      <div class="nm">${r.name}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small>${sub}${badges}</small></div>
-      <div class="sc">${val}</div>
+      <div class="nm">${r.name}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small class="badges">${badges||'&nbsp;'}</small></div>
+      <div class="sc">${r.pts} pts</div>
     </div>`;
   });
   html+=`<div class="card small muted center">🪦 ${last.emoji} <b>${last.name}</b> ${trashLast}</div>`;
@@ -992,13 +1023,13 @@ function viewPool(){
   const s=DB.settings;
   const paid=DB.profiles.filter(p=>p.paid);
   const pot=paid.length*s.buy_in;
-  const lb=leaderboard(s.bet_basis);
+  const lb=leaderboard();
   const splits=s.payout_split;
   const buyin=money(s.buy_in);
   let html=`<div class="card center">
       <h3>💰 The Pot</h3>
       <div class="display" style="font-size:40px;color:var(--gold);margin:6px 0">${money(pot)}</div>
-      <div class="small muted">${paid.length} of ${DB.profiles.length} paid in · ${buyin} each · ranked by ${s.bet_basis}</div>
+      <div class="small muted">${paid.length} of ${DB.profiles.length} paid in · ${buyin} each · ranked by points</div>
     </div>
     <div class="banner demo">💸 <b>It's ${buyin} to play.</b> Everyone puts in ${buyin} — that's the prize pot. Pay the commissioner (cash / bank transfer) and you're in. At the end, the top 3 split the pot ${splits.join("/")}%.</div>`;
   html+=`<div class="card"><h3>🏆 Projected payouts</h3><div class="small muted">If the tournament ended right now:</div>`;
@@ -1072,10 +1103,10 @@ function viewAdmin(){
         <input data-split="1" inputmode="numeric" value="${s.payout_split[1]}"/>
         <input data-split="2" inputmode="numeric" value="${s.payout_split[2]}"/>
       </div>
-      <label class="fld">Rank payouts by</label>
-      <div class="toggle"><button class="${s.bet_basis==='points'?'on':''}" data-betbasis="points">Points</button><button class="${s.bet_basis==='coins'?'on':''}" data-betbasis="coins">Coins</button></div>
       <button class="btn primary block" style="margin-top:12px" data-savesettings>Save settings</button>
     </div>
+    <div class="card"><h3>🔄 Live results</h3><div class="small muted">Scores pull in automatically from a live feed. Tap to force a sync now.</div>
+      <button class="btn block" data-sync style="margin-top:8px">🔄 Sync now</button></div>
     ${MODE==="demo"?`<div class="card"><h3>⚠️ Danger zone</h3>
       <button class="btn block" data-resetdemo style="border-color:var(--red);color:#ffb3b3">Reset demo data</button></div>`:""}`;
   }
@@ -1109,9 +1140,7 @@ function wire(){
   $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
   // score inputs → live into the draft (no save yet, no re-render so the cursor stays)
   $$("[data-sc]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.m,d=draft(id); const v=inp.value===""?null:clamp(parseInt(inp.value)||0,0,30); if(inp.dataset.sc==="home")d.hp=v; else d.ap=v; });
-  // side-bet outcome + amount + banker (all draft-only until lock)
-  $$("[data-odd]").forEach(b=>b.onclick=()=>{ const id=b.dataset.m,d=draft(id); d.pick=b.dataset.odd; if(!d.wager)d.wager=50; render(); });
-  $$("[data-wg]").forEach(b=>b.onclick=()=>{ const id=b.dataset.m,d=draft(id); d.wager=parseInt(b.dataset.wg); render(); });
+  // banker toggle (draft-only) + lock-in
   $$("[data-bank]").forEach(b=>b.onclick=()=>{ const id=b.dataset.bank,d=draft(id); d.banker=!d.banker; render(); });
   $$("[data-lock]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.lock;
@@ -1121,10 +1150,19 @@ function wire(){
     if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
     const d=draft(id), m=DB.matches.find(x=>x.id===id), vs=`${teamById(m.home).flag} ${teamById(m.home).name} vs ${teamById(m.away).name} ${teamById(m.away).flag}`;
     confirmModal(`<div class="center"><div class="big2">${hp}–${ap}</div><div class="small muted">${vs}</div>
-      ${d.pick&&d.wager?`<div class="small" style="margin-top:6px">🪙 ${d.wager} coins on <b>${d.pick}</b></div>`:''}
       ${d.banker?'<div class="small" style="color:var(--gold);margin-top:4px">⭐ Banker — double points!</div>':''}
-      <div class="small" style="margin-top:8px">You can't change this once it's locked.</div></div>`,
-      async()=>{ await lockPick(id,hp,ap,d.pick,d.wager,d.banker); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
+      <div class="small" style="margin-top:8px">You can't change this once it's locked (unless you spend a half-time re-pick).</div></div>`,
+      async()=>{ await lockPick(id,hp,ap,d.banker); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
+  });
+  // half-time re-pick (in-play, costs points)
+  $$("[data-repick]").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.repick;
+    const hi=$(`[data-sc="home"][data-m="${id}"]`),ai=$(`[data-sc="away"][data-m="${id}"]`);
+    const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
+    const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
+    if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
+    confirmModal(`<div class="center"><div class="big2">${hp}–${ap}</div><div class="small" style="margin-top:6px;color:var(--gold)">Half-time re-pick · costs ${REPICK_COST} points</div><div class="small muted" style="margin-top:6px">${Math.max(0,repicksLeft(ME.id)-1)} re-picks left after this.</div></div>`,
+      async()=>{ await saveRepick(id,hp,ap); celebrate("RE-PICK!"); render(); }, `Change it (−${REPICK_COST} pts)`);
   });
   // advance picks (one-shot)
   $$("[data-advslot]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveAdvance(b.dataset.advgrp,parseInt(b.dataset.advslot),t.id).then(render);}, b.dataset.advgrp));
@@ -1136,19 +1174,18 @@ function wire(){
   // props (draft → lock)
   $$("[data-propopt]").forEach(b=>b.onclick=()=>{ pdraft(b.dataset.prop).answer=b.dataset.propopt; render(); });
   $$("[data-teamprop]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{ pdraft(b.dataset.teamprop).answer=t.id; render(); }));
-  $$("[data-propwg]").forEach(b=>b.onclick=()=>{ const d=pdraft(b.dataset.prop); if(d.answer==null){toast("Pick an answer first");return;} d.wager=parseInt(b.dataset.propwg); render(); });
   $$("[data-plock]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.plock, d=pdraft(id);
     if(d.answer==null){toast("Choose an answer first ⚽");return;}
     const pr=DB.props.find(x=>x.id===id);
     confirmModal(`<div class="center"><div style="font-size:30px">${pr.icon}</div><div class="small muted">${pr.q}</div>
       <div class="big2" style="font-size:20px;margin-top:4px">${labelFor(pr,d.answer)}</div>
-      ${d.wager?`<div class="small">🪙 ${d.wager} coins</div>`:''}
       <div class="small" style="margin-top:8px">Locks your answer and reveals the crowd 👀</div></div>`,
-      async()=>{ await lockProp(id,d.answer,d.wager); celebrate("LOCKED IN!"); render(); }, "Lock answer 🔒");
+      async()=>{ await lockProp(id,d.answer); celebrate("LOCKED IN!"); render(); }, "Lock answer 🔒");
   });
-  // board
-  $$("[data-basis]").forEach(b=>b.onclick=()=>{boardBasis=b.dataset.basis;render();});
+  // live results sync + rules
+  $$("[data-sync]").forEach(b=>b.onclick=()=>syncResults(true));
+  const rl=$("[data-rules]"); if(rl) rl.onclick=openRules;
   // pool
   $$("[data-paid]").forEach(b=>b.onclick=async()=>{await adminTogglePaid(b.dataset.paid);render();});
   // admin
@@ -1175,7 +1212,6 @@ function wire(){
     await adminSetting("payout_split",sp);
     toast("Settings saved ⚙️");render();
   };
-  $$("[data-betbasis]").forEach(b=>b.onclick=async()=>{await adminSetting("bet_basis",b.dataset.betbasis);render();});
   const reset=$("[data-resetdemo]");
   if(reset) reset.onclick=()=>{if(confirm("Wipe demo data and reseed?")){localStorage.removeItem(LS_KEY);seedDemo();ME=DB.profiles.find(p=>p.id==="me");render();}};
 }
@@ -1256,6 +1292,35 @@ function openProfile(){
   draw();
 }
 
+/* ---------- rules / how-it-works ---------- */
+function rulesHTML(){
+  const s=DB.settings, buyin=money(s.buy_in||50);
+  return `<div class="small" style="line-height:1.55">
+    <p style="margin:0 0 8px"><b>THE MASK</b> is a friendly World Cup '26 prediction game — just for our crew. Call the scores, talk trash, top the table, win the pot.</p>
+    <b>How to play</b>
+    <ul style="margin:4px 0 8px;padding-left:18px">
+      <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
+      <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
+      <li><b>⭐ Banker</b> — one live pick at a time scores double.</li>
+      <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
+      <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}) and who reaches the QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
+      <li><b>🃏 Props</b> — fun side bets, including who wins it all.</li>
+      <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
+    </ul>
+    <b>The money</b>
+    <p style="margin:4px 0 8px">It's <b>${buyin} to play</b>, paid to the commissioner. The pot is split by the top 3 (${(s.payout_split||[50,30,20]).join("/")}%). Results sync in live, so nobody has to type scores.</p>
+    <b>Terms (the friendly kind)</b>
+    <p class="muted" style="margin:4px 0 0">A private game among friends, for fun and bragging rights — not a commercial gambling service. Buy-ins and payouts are settled between players offline; the app only keeps score. Play responsibly, only with people you trust, and follow the rules where you live. Live scores are best-effort from a third-party feed and the commissioner can correct any result.</p>
+  </div>`;
+}
+function openRules(){
+  const root=$("#modal-root");
+  root.innerHTML=`<div class="modal-bg"><div class="modal"><div class="mhead"><b>ℹ️ How it works</b><button class="x" data-close>×</button></div><div class="mbody">${rulesHTML()}<button class="btn primary block" data-close style="margin-top:12px">Got it ⚽</button></div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $$("[data-close]",root).forEach(b=>b.onclick=close);
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+}
+
 /* ---------- admin password gate ---------- */
 function promptAdmin(){
   const root=$("#modal-root");
@@ -1300,7 +1365,9 @@ function loginScreen(extra=""){
     <button class="btn primary block" id="loginbtn" style="margin-top:14px">Join the pool ⚽</button>
     <div class="small center" style="margin-top:10px">💸 <b>${money(DB.settings.buy_in||50)} to play</b> · the winners split the pot</div>
     <div class="tiny muted center" style="margin-top:4px">No email, no password — just a name. Add a photo once you're in.${MODE==="demo"?' (Demo mode.)':''}</div>
-  </div></div>`;
+  </div>
+  <div class="card"><h3 style="font-size:16px">📖 What this is & the rules</h3>${rulesHTML()}</div>
+  </div>`;
   $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; $$("[data-ep]").forEach(x=>x.classList.remove("on")); b.classList.add("on"); });
   $("#loginbtn").onclick=doLogin;
   $("#email").onkeydown=e=>{if(e.key==="Enter")doLogin();};
@@ -1371,8 +1438,9 @@ async function boot(){
 async function liveLoad(user){
   // pull everything into the same shape the UI expects
   const tbl=async n=>{const {data}=await supa.from(n).select("*");return data||[];};
-  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks]=await Promise.all(
-    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks"].map(tbl));
+  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks"].map(tbl));
+  DB.repicks=(reps||[]).map(r=>({id:r.id,user:r.user_id,match:r.match_id,hp:r.hp,ap:r.ap}));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
   if(!DB.settings.ko) DB.settings.ko={qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
@@ -1392,6 +1460,7 @@ async function liveLoad(user){
     await sbUpsert("profiles",{id:user.id,email:user.email,display_name:mine.name,emoji:mine.emoji,is_admin:isAdmin,paid:false});
   }
   ME=mine;
+  syncResults(false); // pull any live scores (throttled, non-blocking)
 }
 function normalizeProp(p){return {id:p.id,icon:p.icon,q:p.q,type:p.type,options:p.options,line:p.line,pts:p.pts,status:p.status,correct:p.correct,allow_coins:p.allow_coins};}
 

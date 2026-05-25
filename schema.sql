@@ -29,6 +29,8 @@ create table if not exists advances (id text primary key,
   user_id uuid references auth.users(id) on delete cascade, grp text, slot int, team text);
 create table if not exists ko_picks (id text primary key,
   user_id uuid references auth.users(id) on delete cascade, stage text, team text);
+create table if not exists repicks (id text primary key,
+  user_id uuid references auth.users(id) on delete cascade, match_id text, hp int, ap int, created_at timestamptz default now());
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
@@ -48,6 +50,7 @@ alter table predictions enable row level security;
 alter table prop_answers enable row level security;
 alter table advances enable row level security;
 alter table ko_picks enable row level security;
+alter table repicks enable row level security;
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
@@ -86,6 +89,8 @@ drop policy if exists adv_insert on advances; create policy adv_insert on advanc
 
 drop policy if exists ko_read on ko_picks;    create policy ko_read on ko_picks for select to authenticated using (true);
 drop policy if exists ko_insert on ko_picks;  create policy ko_insert on ko_picks for insert to authenticated with check (user_id = auth.uid());
+drop policy if exists rp_read on repicks;     create policy rp_read on repicks for select to authenticated using (true);
+drop policy if exists rp_insert on repicks;   create policy rp_insert on repicks for insert to authenticated with check (user_id = auth.uid());
 
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw, official matchday dates, props)
