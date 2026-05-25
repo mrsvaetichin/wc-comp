@@ -674,13 +674,15 @@ function labelFor(pr,val){ if(val==null||val==="")return "—"; if(pr.type==="te
 // ⛔ IMMUTABLE: one shot, no edits. Reveal others only after you've committed.
 async function sbInsert(table,row){ try{ const {error}=await supa.from(table).insert(row); if(error) throw error; }catch(e){ console.error(e); toast("Couldn't save (already locked?)"); } }
 async function reloadPredictions(){ if(MODE!=="live"||!supa)return;
-  const {data:p}=await supa.from("predictions").select("*");
-  const {data:a}=await supa.from("advances").select("*");
-  const {data:k}=await supa.from("ko_picks").select("*");
-  DB.predictions=(p||[]).map(x=>({id:x.id,user:x.user_id,match:x.match_id,hp:x.hp,ap:x.ap,wager:x.wager,pick:x.pick,banker:x.banker}))
-    .concat((a||[]).map(x=>({id:x.id,user:x.user_id,advance:true,grp:x.grp,team:x.team})))
-    .concat((k||[]).map(x=>({id:x.id,user:x.user_id,ko:true,stage:x.stage,team:x.team}))); loadAdv(); }
-async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("prop_answers").select("*"); DB.propAnswers=(data||[]).map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager})); }
+  const {data:p,error:pe}=await supa.from("predictions").select("*");
+  const {data:a,error:ae}=await supa.from("advances").select("*");
+  const {data:k,error:ke}=await supa.from("ko_picks").select("*");
+  // if a read fails, keep what we already have for that kind rather than wiping the UI
+  const match = pe ? DB.predictions.filter(x=>!x.advance&&!x.ko) : (p||[]).map(x=>({id:x.id,user:x.user_id,match:x.match_id,hp:x.hp,ap:x.ap,wager:x.wager,pick:x.pick,banker:x.banker}));
+  const adv   = ae ? DB.predictions.filter(x=>x.advance) : (a||[]).map(x=>({id:x.id,user:x.user_id,advance:true,grp:x.grp,team:x.team}));
+  const ko    = ke ? DB.predictions.filter(x=>x.ko)      : (k||[]).map(x=>({id:x.id,user:x.user_id,ko:true,stage:x.stage,team:x.team}));
+  DB.predictions = match.concat(adv).concat(ko); loadAdv(); }
+async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}=await supa.from("prop_answers").select("*"); if(error)return; DB.propAnswers=(data||[]).map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager})); }
 async function lockPick(matchId, hp, ap, banker){
   if(hasPicked(matchId))return;
   const pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,banker:!!banker};

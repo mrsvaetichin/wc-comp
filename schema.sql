@@ -65,11 +65,21 @@ drop policy if exists m_admin on matches;   create policy m_admin on matches for
 drop policy if exists pr_read on props;     create policy pr_read on props for select to authenticated using (true);
 drop policy if exists pr_admin on props;    create policy pr_admin on props for all to authenticated using (is_admin()) with check (is_admin());
 
+-- Helper fns are SECURITY DEFINER so their internal lookups run as the owner and DON'T re-trigger
+-- the table's own RLS — this is what prevents the "infinite recursion in policy" 500 errors.
+create or replace function public.has_pick(mid text) returns boolean
+  language sql security definer stable set search_path = public as $$
+  select exists(select 1 from predictions where match_id = mid and user_id = auth.uid()); $$;
+create or replace function public.has_answer(pid text) returns boolean
+  language sql security definer stable set search_path = public as $$
+  select exists(select 1 from prop_answers where prop_id = pid and user_id = auth.uid()); $$;
+grant execute on function public.has_pick(text), public.has_answer(text) to authenticated, anon;
+
 -- PICKS ARE BLIND + IMMUTABLE: read only if yours, you've picked the same match, or it kicked off.
 drop policy if exists pred_read on predictions;
 create policy pred_read on predictions for select to authenticated using (
   user_id = auth.uid()
-  or exists (select 1 from predictions mine where mine.match_id = predictions.match_id and mine.user_id = auth.uid())
+  or public.has_pick(match_id)
   or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now())));
 drop policy if exists pred_own on predictions;
 drop policy if exists pred_insert on predictions;
@@ -78,7 +88,7 @@ create policy pred_insert on predictions for insert to authenticated with check 
 drop policy if exists pa_read on prop_answers;
 create policy pa_read on prop_answers for select to authenticated using (
   user_id = auth.uid()
-  or exists (select 1 from prop_answers mine where mine.prop_id = prop_answers.prop_id and mine.user_id = auth.uid())
+  or public.has_answer(prop_id)
   or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled'));
 drop policy if exists pa_own on prop_answers;
 drop policy if exists pa_insert on prop_answers;
