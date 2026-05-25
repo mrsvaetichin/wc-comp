@@ -241,6 +241,9 @@
   .emojipick{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
   .emojipick .ep{width:38px;height:38px;border-radius:11px;background:var(--bg);border:1px solid var(--line);font-size:19px;line-height:1;transition:transform .08s}
   .emojipick .ep.on{border-color:var(--gold);background:rgba(255,208,46,.16);transform:scale(1.1)}
+  .step{display:flex;align-items:center;gap:8px;margin:16px 0 7px;font-size:15px}
+  .step .stepn{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--gold);color:#06325e;font-weight:800;font-size:12px;font-family:'Fredoka';flex:none}
+  .btn[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(.35)}
   /* ---- login readability: bump the small text on the welcome screen ---- */
   .login .hero .muted{font-size:16.5px;line-height:1.55;max-width:430px;margin-left:auto;margin-right:auto}
   .login .hero .big{font-size:36px}
@@ -1276,18 +1279,9 @@ function viewAdmin(){
   } else {
     const s=DB.settings;
     html+=`<div class="card">
-      <label class="fld">Pool name</label><input data-set="app_title" value="${s.app_title}"/>
-      <div class="grid2">
-        <div><label class="fld">Buy-in (${s.currency})</label><input data-set="buy_in" inputmode="numeric" value="${s.buy_in}"/></div>
-        <div><label class="fld">Currency</label><input data-set="currency" value="${s.currency}"/></div>
-      </div>
-      <label class="fld">Payout split % (1st / 2nd / 3rd)</label>
-      <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
-        <input data-split="0" inputmode="numeric" value="${s.payout_split[0]}"/>
-        <input data-split="1" inputmode="numeric" value="${s.payout_split[1]}"/>
-        <input data-split="2" inputmode="numeric" value="${s.payout_split[2]}"/>
-      </div>
-      <button class="btn primary block" style="margin-top:12px" data-savesettings>Save settings</button>
+      <label class="fld">App name (shown top-left)</label><input data-set="app_title" value="${s.app_title}"/>
+      <button class="btn primary block" style="margin-top:12px" data-savesettings>Save</button>
+      <div class="small muted" style="margin-top:10px">💡 Buy-in, currency & payout split are set <b>per league</b> by whoever creates it — and locked once the league exists. They're not edited here.</div>
     </div>
     <div class="card"><h3>🔄 Live results</h3><div class="small muted">Scores pull in automatically from a live feed. Tap to force a sync now.</div>
       <button class="btn block" data-sync style="margin-top:8px">🔄 Sync now</button></div>
@@ -1395,11 +1389,7 @@ function wire(){
   const saveBtn=$("[data-savesettings]");
   if(saveBtn) saveBtn.onclick=async()=>{
     await adminSetting("app_title",$('[data-set="app_title"]').value||"THE MASK");
-    await adminSetting("buy_in",parseInt($('[data-set="buy_in"]').value)||0);
-    await adminSetting("currency",$('[data-set="currency"]').value||"$");
-    const sp=[0,1,2].map(i=>parseInt($(`[data-split="${i}"]`).value)||0);
-    await adminSetting("payout_split",sp);
-    toast("Settings saved ⚙️");render();
+    toast("Saved ⚙️");render();
   };
   const reset=$("[data-resetdemo]");
   if(reset) reset.onclick=()=>{if(confirm("Wipe demo data and reseed?")){localStorage.removeItem(LS_KEY);seedDemo();ME=DB.profiles.find(p=>p.id==="me");render();}};
@@ -1651,32 +1641,40 @@ const EMOJIS=["🦇","🦁","🐉","🐙","🦄","🐺","🌶️","👽","🤡",
 let pendingEmoji=null, pendingTeam=null;
 function loginScreen(extra=""){
   if(!pendingEmoji) pendingEmoji=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+  const teamLabel = pendingTeam&&teamById(pendingTeam) ? `${teamById(pendingTeam).flag} ${teamById(pendingTeam).name} ✓` : '🌍 Tap to choose your nation…';
   $("#app").innerHTML=`<div class="app login"><div class="hero">
     <div class="herophoto"><img src="gyok.jpg" alt="Do the Gyökeres"/></div>
     <div class="big">Welcome to <b>${DB.settings.app_title||"THE MASK"}</b></div>
-    <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot. Do the Gyökeres! 🦇⚽</div>
+    <div class="muted">The World Cup '26 prediction game for you and your crew. Predict scores, call upsets, talk trash, win the pot. 🦇⚽</div>
   </div>
   <div class="card">${extra}
-    <label class="fld">Your name</label>
+    <div class="step"><span class="stepn">1</span><b>Your name</b></div>
     <input id="email" placeholder="What should we call you?" autocomplete="off"/>
-    <label class="fld">Pick your badge</label>
+    <div class="step"><span class="stepn">2</span><b>Pick your badge</b></div>
     <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
-    <label class="fld">⚽ Who do you support? <span class="muted tiny">(+${FAN_BONUS} pt per win — locked in)</span></label>
-    <button class="btn block" id="favteam" type="button">${pendingTeam&&teamById(pendingTeam)?`${teamById(pendingTeam).flag} ${teamById(pendingTeam).name}`:'🌍 Tap to choose your team'}</button>
-    <button class="btn primary block" id="loginbtn" style="margin-top:14px">Join the pool ⚽</button>
-    <div class="small center" style="margin-top:10px">🏆 <b>Next: create or join your private league</b> · set your own buy-in</div>
-    <div class="tiny muted center" style="margin-top:4px">No email, no password — just a name. Add a photo once you're in.${MODE==="demo"?' (Demo mode.)':''}</div>
+    <div class="step"><span class="stepn">3</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
+    <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
+    <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Continue →</button>
+    <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter a name and pick your nation to continue.</div>
   </div>
   <div class="card"><h3 style="font-size:16px">📖 What this is & the rules</h3>${rulesHTML()}</div>
   </div>`;
   $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; $$("[data-ep]").forEach(x=>x.classList.remove("on")); b.classList.add("on"); });
-  const fav=$("#favteam"); if(fav) fav.onclick=()=>openTeamPicker(t=>{ pendingTeam=t.id; const b=$("#favteam"); if(b) b.innerHTML=`${t.flag} ${t.name}`; });
+  const fav=$("#favteam"); if(fav) fav.onclick=()=>openTeamPicker(t=>{ pendingTeam=t.id; const b=$("#favteam"); if(b){ b.innerHTML=`${t.flag} ${t.name} ✓`; b.classList.add("gold"); } updateLoginBtn(); });
+  const em=$("#email"); if(em){ em.oninput=updateLoginBtn; em.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
   $("#loginbtn").onclick=doLogin;
-  $("#email").onkeydown=e=>{if(e.key==="Enter")doLogin();};
+  updateLoginBtn();
+}
+function updateLoginBtn(){
+  const em=$("#email"), btn=$("#loginbtn"); if(!btn) return;
+  const ok = em && em.value.trim().length>0 && !!pendingTeam;
+  btn.disabled = !ok;
+  const hint=$("#loginhint"); if(hint) hint.textContent = ok ? "Next: join or create a league to play 🏆" : (em&&em.value.trim()? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
 }
 async function doLogin(){
   const val=$("#email").value.trim();
   if(!val){toast("Type your name first 🙂");return;}
+  if(!pendingTeam){toast("Pick your nation first 🌍");return;}
   const emoji=pendingEmoji||"🫵";
   if(MODE==="live"){
     try{
