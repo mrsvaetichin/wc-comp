@@ -28,7 +28,8 @@ You're using **Supabase** (database + login) and **Vercel** (hosting). Here's th
 ### Step 1 — Create the tables
 In your Supabase project: **SQL Editor → New query**, paste all of **`schema.sql`**, click
 **Run**. This builds every table, the security rules, and seeds all 48 teams + 72 fixtures +
-the prop bets. (Safe to re-run.)
+the prop bets. (Safe to re-run — and you **must** re-run it after any update, e.g. to apply the
+blind-pick / immutable-pick rules and the Banker column.)
 
 ### Step 2 — Turn on name-only login
 In Supabase: **Authentication → Sign In / Providers** → enable **"Allow anonymous sign-ins."**
@@ -90,10 +91,17 @@ Inside Admin:
 
 ## How scoring works
 
+- **Blind & one-shot:** you can't see anyone else's pick for a game until you've **locked yours**
+  (or it kicks off), and once locked a pick **can't be changed**. This is enforced both in the app
+  and in the database rules.
 - **Exact scoreline:** +5 points. **Correct result** (right winner/draw, wrong score): +2.
+- **⭐ Banker:** mark one active pick as your Banker for **double** match points. You can have one
+  going at a time; it frees up once that match finishes.
 - **Group survivors:** +4 for each team you correctly tip to escape a group (auto-scored when
   the group finishes).
 - **Prop bets:** each is worth its own points (the champion pick is a big 30).
+- **🔥 Streaks & badges:** consecutive correct results light a streak flame, and you earn badges
+  (Sniper, Giant Slayer, On Fire, High Roller, Banker Boss) shown on the leaderboard + podium.
 - **Coins** 🪙: everyone starts with 1,000. On matches and some props you can stake coins at
   auto-generated odds — underdogs pay more (winning it all as Haiti pays 300×). Coins drive a
   second leaderboard for bragging rights.
@@ -117,8 +125,8 @@ After editing `index.html`, redeploy to Vercel.
 
 ## Good to know
 
-- **Picks are visible to all members** — intentional, it fuels the trash talk. Can be hidden
-  until kickoff if you want; just ask.
+- **Picks are blind until you commit** — you only see the crowd's picks for a game after you've
+  locked your own (or after kickoff). Then it's a fun reveal of who said what.
 - **Reload to see others' latest** picks/results — the app loads fresh data on open.
 - **Anonymous logins** are per-device: if someone clears their browser data they'll start a new
   identity. Fine for a casual pool.

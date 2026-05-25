@@ -109,21 +109,41 @@ create policy pr_read on props for select to authenticated using (true);
 drop policy if exists pr_admin on props;
 create policy pr_admin on props for all to authenticated using (is_admin()) with check (is_admin());
 
--- Picks: everyone can READ (powers the leaderboard + trash talk), only owner can WRITE.
+-- Banker flag (re-runnable for existing databases)
+alter table predictions add column if not exists banker boolean default false;
+
+-- PICKS ARE BLIND + IMMUTABLE.
+-- Read a prediction only if: it's yours, OR you've already picked the same match,
+-- OR the match has kicked off/finished. (Leaderboard stays correct because only
+-- finished matches score, and those are always revealed.)
 drop policy if exists pred_read on predictions;
-create policy pred_read on predictions for select to authenticated using (true);
+create policy pred_read on predictions for select to authenticated using (
+  user_id = auth.uid()
+  or exists (select 1 from predictions mine where mine.match_id = predictions.match_id and mine.user_id = auth.uid())
+  or exists (select 1 from matches m where m.id = predictions.match_id and (m.status = 'finished' or m.kickoff <= now()))
+);
+-- insert-only: once written it can never be updated or deleted
 drop policy if exists pred_own on predictions;
-create policy pred_own on predictions for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists pred_insert on predictions;
+create policy pred_insert on predictions for insert to authenticated with check (user_id = auth.uid());
 
+-- Prop answers: blind until you answer or the prop is settled; immutable.
 drop policy if exists pa_read on prop_answers;
-create policy pa_read on prop_answers for select to authenticated using (true);
+create policy pa_read on prop_answers for select to authenticated using (
+  user_id = auth.uid()
+  or exists (select 1 from prop_answers mine where mine.prop_id = prop_answers.prop_id and mine.user_id = auth.uid())
+  or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status = 'settled')
+);
 drop policy if exists pa_own on prop_answers;
-create policy pa_own on prop_answers for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists pa_insert on prop_answers;
+create policy pa_insert on prop_answers for insert to authenticated with check (user_id = auth.uid());
 
+-- Advances (group survivors): readable by all, but immutable once set.
 drop policy if exists adv_read on advances;
 create policy adv_read on advances for select to authenticated using (true);
 drop policy if exists adv_own on advances;
-create policy adv_own on advances for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists adv_insert on advances;
+create policy adv_insert on advances for insert to authenticated with check (user_id = auth.uid());
 
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw + fixtures + prop bets + settings)

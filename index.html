@@ -217,6 +217,29 @@
   .emojipick{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
   .emojipick .ep{width:38px;height:38px;border-radius:11px;background:var(--bg);border:1px solid var(--line);font-size:19px;line-height:1;transition:transform .08s}
   .emojipick .ep.on{border-color:var(--gold);background:rgba(255,208,46,.16);transform:scale(1.1)}
+  /* ---------- reveal / banker / podium / streak / countdown ---------- */
+  .reveal{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .revhead{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:4px}
+  .revrow{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
+  .revrow .re{font-size:16px}
+  .revrow .nm{flex:1;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .revrow b{font-family:'Fredoka'}
+  .lockedpick{font-family:'Fredoka';font-size:22px;color:var(--gold);text-align:center}
+  .fire{color:#ff8a3d;font-weight:700;font-size:12px;margin-left:4px}
+  .hstreak{font-size:12px;font-weight:700;color:#ff8a3d;background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:2px 7px}
+  .podium{display:flex;align-items:flex-end;justify-content:center;gap:8px;margin:6px 0 12px}
+  .pod{flex:1;max-width:118px;text-align:center}
+  .podav{font-size:26px;line-height:1}
+  .podname{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .podbar{margin-top:4px;border-radius:12px 12px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:6px;font-size:20px;color:#06325e;font-weight:700}
+  .pod.p1 .podbar{background:linear-gradient(180deg,#ffd02e,#ff9f1c)}
+  .pod.p2 .podbar{background:linear-gradient(180deg,#cfe0f0,#9fb6cc)}
+  .pod.p3 .podbar{background:linear-gradient(180deg,#e6a86b,#c47f3d)}
+  .podsc{font-family:'Fredoka';font-size:13px;margin-top:2px}
+  .cdcard{background:linear-gradient(135deg,var(--pink),var(--purple))!important;border:none!important}
+  .cdbig{font-family:'Fredoka';font-size:30px;color:#fff;margin:2px 0;letter-spacing:.5px}
+  .big2{font-family:'Fredoka';font-size:30px;color:var(--gold)}
+  .badges span{cursor:default}
 </style>
 </head>
 <body>
@@ -300,7 +323,18 @@ const MASK_SVG=`<svg viewBox="0 0 200 210" xmlns="http://www.w3.org/2000/svg">
   <circle cx="118" cy="92" r="6.5" fill="#fff"/>
 </svg>`;
 function party(){if(window.confetti){confetti({particleCount:130,spread:85,origin:{y:.4},colors:["#0b6fb3","#ffd02e","#5cc8ff","#ffffff","#06325e"]});}}
-function celebrate(msg){const c=$("#celebrate");if(!c){party();return;}c.innerHTML=`<div class="cele-card">${MASK_SVG}<div class="cele-msg">${msg||"GOAAAL!"}</div><div class="cele-sub">Do the Gyökeres! 🦇</div></div>`;c.classList.add("show");party();clearTimeout(c._t);c._t=setTimeout(()=>c.classList.remove("show"),1500);}
+function celebrate(msg){horn();const c=$("#celebrate");if(!c){party();return;}c.innerHTML=`<div class="cele-card">${MASK_SVG}<div class="cele-msg">${msg||"GOAAAL!"}</div><div class="cele-sub">Do the Gyökeres! 🦇</div></div>`;c.classList.add("show");party();clearTimeout(c._t);c._t=setTimeout(()=>c.classList.remove("show"),1500);}
+/* ---------- goal horn (Web Audio) + mute ---------- */
+let MUTED=(typeof localStorage!=="undefined"&&localStorage.getItem("goalpost_muted")==="1");
+let _actx=null;
+function horn(){ if(MUTED)return; try{
+  _actx=_actx||new (window.AudioContext||window.webkitAudioContext)(); const c=_actx,t0=c.currentTime;
+  [[262,0],[392,0.13],[523,0.26]].forEach(([f,t])=>{ const o=c.createOscillator(),g=c.createGain();
+    o.type="sawtooth";o.frequency.value=f;o.connect(g);g.connect(c.destination);
+    g.gain.setValueAtTime(0.0001,t0+t);g.gain.exponentialRampToValueAtTime(0.22,t0+t+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t0+t+0.5);
+    o.start(t0+t);o.stop(t0+t+0.55); });
+}catch(e){} }
+function toggleMute(){ MUTED=!MUTED; try{localStorage.setItem("goalpost_muted",MUTED?"1":"0");}catch(e){} }
 // deterministic seeded RNG (so the demo looks the same each load)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
@@ -494,8 +528,9 @@ function scoreFor(profileId){
     if(pr.hp==null||pr.ap==null) return;
     const exact = pr.hp===m.hs && pr.ap===m.as;
     const outcome = Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
-    if(exact) pts+=s.pts_exact;
-    else if(outcome) pts+=s.pts_result;
+    let add = exact?s.pts_exact : outcome?s.pts_result : 0;
+    if(pr.banker) add*=2;   // ⭐ Banker doubles the match points
+    pts+=add;
     // coin wager on outcome
     if(pr.wager>0 && pr.pick){
       const odds=matchOdds(teamById(m.home).name,teamById(m.away).name);
@@ -537,39 +572,80 @@ function leaderboard(basis="points"){
 }
 function myRank(basis="points"){const lb=leaderboard(basis);const r=lb.find(x=>x.id===ME.id);return {rank:r.rank,total:lb.length,me:r};}
 
+/* ---------- reveal gating + fun stats ---------- */
+function profileById(id){return DB.profiles.find(p=>p.id===id);}
+function myPick(matchId){return DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);}
+function hasPicked(matchId){return !!myPick(matchId);}
+function othersFor(matchId){return DB.predictions.filter(p=>p.match===matchId&&!p.advance&&p.user!==ME.id&&p.hp!=null);}
+function myAnswer(propId){return DB.propAnswers.find(a=>a.user===ME.id&&a.prop===propId);}
+function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.user!==ME.id);}
+function myActiveBanker(){return DB.predictions.find(p=>p.user===ME.id&&p.banker&&!p.advance&&((DB.matches.find(m=>m.id===p.match)||{}).status!=="finished"));}
+function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
+
+function statsFor(profileId){
+  const finished=DB.matches.filter(m=>m.status==="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+  let streak=0,best=0,exacts=0,upsets=0,hits=0,played=0;
+  finished.forEach(m=>{
+    const pr=DB.predictions.find(p=>p.user===profileId&&p.match===m.id&&!p.advance);
+    if(!pr||pr.hp==null){streak=0;return;}
+    played++;
+    const exact=pr.hp===m.hs&&pr.ap===m.as, out=Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
+    if(exact)exacts++;
+    if(out){hits++;streak++;best=Math.max(best,streak);
+      const w=m.hs>m.as?m.home:(m.hs<m.as?m.away:null);
+      if(w){const l=w===m.home?m.away:m.home; if(teamPower(teamById(w).name)<teamPower(teamById(l).name)-6)upsets++;}
+    } else streak=0;
+  });
+  return {streak,best,exacts,upsets,hits,played};
+}
+function badgesFor(profileId){
+  const st=statsFor(profileId), sc=scoreFor(profileId), b=[];
+  if(st.exacts>=1)b.push(["🎯","Sniper","Nailed an exact scoreline"]);
+  if(st.streak>=3)b.push(["🔥","On Fire","3+ correct results in a row"]);
+  if(st.upsets>=1)b.push(["🐉","Giant Slayer","Correctly called an upset"]);
+  if(sc.coins>=1500)b.push(["💰","High Roller","Sitting on 1,500+ coins"]);
+  const bankerHit=DB.predictions.some(p=>{ if(p.user!==profileId||!p.banker)return false; const m=DB.matches.find(x=>x.id===p.match); return m&&m.status==="finished"&&p.hp!=null&&Math.sign(p.hp-p.ap)===Math.sign(m.hs-m.as);});
+  if(bankerHit)b.push(["⭐","Banker Boss","Cashed in a Banker pick"]);
+  return b;
+}
+
+/* ---------- transient drafts: nothing is saved until you Lock In ---------- */
+let DRAFT={}, PDRAFT={};
+function draft(id){ if(!DRAFT[id])DRAFT[id]={hp:null,ap:null,pick:null,wager:0,banker:false}; return DRAFT[id]; }
+function pdraft(id){ if(!PDRAFT[id])PDRAFT[id]={answer:null,wager:0}; return PDRAFT[id]; }
+function labelFor(pr,val){ if(val==null||val==="")return "—"; if(pr.type==="team"){const t=teamById(val);return t?`${t.flag} ${t.name}`:val;} if(pr.type==="yesno")return val==="yes"?"Yes":"No"; if(pr.type==="ou")return (val==="over"?"Over ":"Under ")+pr.line; const o=(pr.options||[]).find(o=>o.v==val); return o?o.label:val; }
+
 /* ============================================================================
    🔌  DATA WRITES (work in both modes)
    ============================================================================ */
-async function savePrediction(matchId, hp, ap){
-  let pr=DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);
-  if(!pr){pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,wager:0,pick:null};DB.predictions.push(pr);}
-  else {pr.hp=hp;pr.ap=ap;}
-  if(MODE==="live") await sbUpsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,wager:pr.wager,pick:pr.pick});
-  saveLocal();
+// ⛔ IMMUTABLE: one shot, no edits. Reveal others only after you've committed.
+async function sbInsert(table,row){ try{ const {error}=await supa.from(table).insert(row); if(error) throw error; }catch(e){ console.error(e); toast("Couldn't save (already locked?)"); } }
+async function reloadPredictions(){ if(MODE!=="live"||!supa)return; const {data:p}=await supa.from("predictions").select("*"); const {data:a}=await supa.from("advances").select("*");
+  DB.predictions=(p||[]).map(x=>({id:x.id,user:x.user_id,match:x.match_id,hp:x.hp,ap:x.ap,wager:x.wager,pick:x.pick,banker:x.banker}))
+    .concat((a||[]).map(x=>({id:x.id,user:x.user_id,advance:true,grp:x.grp,team:x.team}))); loadAdv(); }
+async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data}=await supa.from("prop_answers").select("*"); DB.propAnswers=(data||[]).map(a=>({id:a.id,user:a.user_id,prop:a.prop_id,answer:a.answer,wager:a.wager})); }
+async function lockPick(matchId, hp, ap, pick, wager, banker){
+  if(hasPicked(matchId))return;
+  const pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp,ap,wager:wager||0,pick:pick||null,banker:!!banker};
+  DB.predictions.push(pr);
+  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp,ap,wager:pr.wager,pick:pr.pick,banker:pr.banker}); await reloadPredictions(); }
+  delete DRAFT[matchId]; saveLocal();
 }
-async function saveWager(matchId, pick, wager){
-  let pr=DB.predictions.find(p=>p.user===ME.id&&p.match===matchId&&!p.advance);
-  if(!pr){pr={id:`${ME.id}-${matchId}`,user:ME.id,match:matchId,hp:null,ap:null,wager,pick};DB.predictions.push(pr);}
-  else {pr.pick=pick;pr.wager=wager;}
-  if(MODE==="live") await sbUpsert("predictions",{id:pr.id,user_id:ME.id,match_id:matchId,hp:pr.hp,ap:pr.ap,wager,pick});
-  saveLocal();
+async function lockProp(propId, answer, wager){
+  if(myAnswer(propId))return;
+  const a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer,wager:wager||0};
+  DB.propAnswers.push(a);
+  if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer,wager:a.wager}); await reloadProps(); }
+  delete PDRAFT[propId]; saveLocal();
 }
 async function saveAdvance(grp, slot, teamId){
-  // slot 0/1; we store up to 2 advance picks per group
   const mine=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===grp);
-  // remove if same team already in other slot
-  let pr=mine[slot];
-  if(!pr){pr={id:`${ME.id}-adv-${grp}-${slot}`,user:ME.id,advance:true,grp,team:teamId};DB.predictions.push(pr);}
-  else pr.team=teamId;
-  if(MODE==="live") await sbUpsert("advances",{id:pr.id,user_id:ME.id,grp,slot,team:teamId});
+  if(mine[slot]) return;                                  // immutable once set
+  if(mine.some(p=>p.team===teamId)){ toast("You already picked that team"); return; }
+  const pr={id:`${ME.id}-adv-${grp}-${slot}`,user:ME.id,advance:true,grp,team:teamId};
+  DB.predictions.push(pr);
+  if(MODE==="live") await sbInsert("advances",{id:pr.id,user_id:ME.id,grp,slot,team:teamId});
   loadAdv();saveLocal();
-}
-async function saveProp(propId, answer, wager){
-  let a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===propId);
-  if(!a){a={id:`${ME.id}-${propId}`,user:ME.id,prop:propId,answer,wager:wager||0};DB.propAnswers.push(a);}
-  else {a.answer=answer; if(wager!=null)a.wager=wager;}
-  if(MODE==="live") await sbUpsert("prop_answers",{id:a.id,user_id:ME.id,prop_id:propId,answer:a.answer,wager:a.wager});
-  saveLocal();
 }
 // admin writes
 async function adminScore(matchId,hs,as){
@@ -625,7 +701,9 @@ function header(){
     <div class="brandrow">
       <div class="brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
       <div class="whoami">
+        ${(function(){const s=statsFor(ME.id);return s.streak>=2?`<span class="hstreak" title="${s.streak} correct in a row">🔥${s.streak}</span>`:'';})()}
         ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
+        <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
         <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
         <div class="avatar">${ME.emoji||"🙂"}</div>
       </div>
@@ -656,63 +734,88 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 Upcoming"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html=`<div class="card"><h3>⚽ Make your picks</h3>
-    <div class="small muted">Predict the exact scoreline for points (${DB.settings.pts_exact} for spot-on, ${DB.settings.pts_result} for the right result). Optionally throw coins on a winner for bonus riches. Picks lock at kickoff.</div></div>
+  let html="";
+  const nm=nextMatch();
+  if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
+    html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
+      <div class="cdbig">${countdown(nm.kickoff)||"KICKOFF!"}</div>
+      <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div></div>`;
+  }
+  // pick progress for the next matchday's open games
+  const openAll=DB.matches.filter(m=>m.status!=="finished"&&!isLocked(m));
+  const pickedOpen=openAll.filter(m=>hasPicked(m.id)).length;
+  html+=`<div class="card"><h3>⚽ Make your picks</h3>
+    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Add a 🪙 side bet or make it your ⭐ <b>Banker</b> for double points. <b>One shot — no edits</b>, and locking reveals everyone else's picks 👀.</div>
+    ${openAll.length?`<div class="small" style="margin-top:8px">🔒 You've locked <b>${pickedOpen}</b> / ${openAll.length} open games</div>`:''}</div>
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
   if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
-  list.forEach(m=>{ html+=matchCard(m,mine[m.id]); });
+  list.forEach(m=>{ html+=matchCard(m); });
   return html;
 }
-function matchCard(m,pred){
+function revealBlock(m){
+  const others=othersFor(m.id);
+  if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else has locked this one in yet.</div>`;
+  let h=`<div class="reveal"><div class="revhead">👀 The crowd locked in (${others.length})</div>`;
+  others.forEach(p=>{ const u=profileById(p.user);
+    h+=`<div class="revrow"><span class="re">${u?u.emoji:"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${p.hp}–${p.ap}</b>${p.banker?' <span title="Banker">⭐</span>':''}${p.wager>0?`<span class="tiny muted">🪙${p.wager}</span>`:''}</div>`; });
+  return h+`</div>`;
+}
+function matchCard(m){
   const h=teamById(m.home),a=teamById(m.away);
-  const locked=isLocked(m);
+  const pred=myPick(m.id);
   const odds=matchOdds(h.name,a.name);
   const cd=countdown(m.kickoff);
   let inner="";
   if(m.status==="finished"){
-    // result + your outcome
     let earn="";
     if(pred&&pred.hp!=null){
-      const exact=pred.hp===m.hs&&pred.ap===m.as;
-      const out=Math.sign(pred.hp-pred.ap)===Math.sign(m.hs-m.as);
-      const got = exact?DB.settings.pts_exact: out?DB.settings.pts_result:0;
-      earn=`<div class="small ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you picked ${pred.hp}–${pred.ap} · +${got} pts</div>`;
+      const exact=pred.hp===m.hs&&pred.ap===m.as, out=Math.sign(pred.hp-pred.ap)===Math.sign(m.hs-m.as);
+      let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(pred.banker)got*=2;
+      earn=`<div class="small ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${pred.hp}–${pred.ap}${pred.banker?' ⭐2×':''} · +${got} pts</div>`;
     } else earn=`<div class="small muted">You didn't pick this one</div>`;
     inner=`<div class="vs">
         <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
         <div class="result-score">${m.hs}–${m.as}</div>
         <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
-      </div>${earn}`;
-  } else if(locked){
+      </div>${earn}${revealBlock(m)}`;
+  } else if(pred){   // you've locked in → reveal the crowd
     inner=`<div class="vs">
         <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
-        <div class="vsmid">🔒 LOCKED</div>
+        <div class="lockedpick">${pred.hp}–${pred.ap}${pred.banker?' <span title="Banker (2×)">⭐</span>':''}</div>
         <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
-      </div><div class="small muted">${pred&&pred.hp!=null?`Your pick: ${pred.hp}–${pred.ap}`:"No pick — kickoff passed"}</div>`;
-  } else {
-    const hv=pred&&pred.hp!=null?pred.hp:"";
-    const av=pred&&pred.ap!=null?pred.ap:"";
+      </div>
+      <div class="small muted">🔒 Locked${pred.pick&&pred.wager?` · 🪙${pred.wager} on ${pred.pick} @ ${odds[pred.pick].toFixed(2)}×`:''}${cd?` · kicks off in ${cd}`:''}</div>
+      ${revealBlock(m)}`;
+  } else if(isLocked(m)){   // kickoff passed, you never picked
     inner=`<div class="vs">
         <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
-        <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${hv}" placeholder="–" maxlength="2"/>
+        <div class="vsmid">🔒</div>
+        <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
+      </div><div class="small muted">Kickoff passed — you didn't lock a pick.</div>${revealBlock(m)}`;
+  } else {   // OPEN — draft form (nothing saved until you Lock In)
+    const d=draft(m.id);
+    const canBank=!myActiveBanker();
+    inner=`<div class="vs">
+        <div class="side"><span class="flag">${h.flag}</span><span class="tname">${h.name}</span></div>
+        <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${d.hp??""}" placeholder="–" maxlength="2"/>
         <div class="vsmid">:</div>
-        <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${av}" placeholder="–" maxlength="2"/>
+        <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??""}" placeholder="–" maxlength="2"/>
         <div class="side away"><span class="flag">${a.flag}</span><span class="tname">${a.name}</span></div>
       </div>
+      <div class="small muted" style="margin-top:6px">Optional 🪙 side bet on the winner:</div>
       <div class="odds">
-        ${["home","draw","away"].map(k=>{
-          const sel=pred&&pred.pick===k?"sel":"";
-          const lab=k==="home"?h.flag+" "+h.name.split(" ")[0]:k==="draw"?"Draw":a.flag+" "+a.name.split(" ")[0];
-          return `<button class="oddbtn ${sel}" data-odd="${k}" data-m="${m.id}"><span>${lab}</span><b>${odds[k].toFixed(2)}×</b></button>`;
-        }).join("")}
+        ${["home","draw","away"].map(k=>{const sel=d.pick===k?"sel":"";const lab=k==="home"?h.flag+" "+h.name.split(" ")[0]:k==="draw"?"Draw":a.flag+" "+a.name.split(" ")[0];
+          return `<button class="oddbtn ${sel}" data-odd="${k}" data-m="${m.id}"><span>${lab}</span><b>${odds[k].toFixed(2)}×</b></button>`;}).join("")}
       </div>
-      ${pred&&pred.pick?`<div class="small muted" style="margin-top:6px">🪙 ${pred.wager||0} coins on <b>${pred.pick}</b> · tap a coin amount:
-        <div class="row" style="margin-top:6px;gap:6px">${[0,50,100,250].map(w=>`<button class="btn ${pred.wager===w?'gold':''}" style="flex:1;padding:6px" data-wg="${w}" data-m="${m.id}">${w===0?'No bet':w}</button>`).join("")}</div></div>`:''}
-      <div class="pickbar"><button class="btn lime" data-save="${m.id}">Save pick</button>
-      ${cd?`<span class="small countdown">⏱ ${cd}</span>`:''}</div>`;
+      ${d.pick?`<div class="row" style="margin-top:6px;gap:6px">${[0,50,100,250].map(w=>`<button class="btn ${d.wager===w?'gold':''}" style="flex:1;padding:6px" data-wg="${w}" data-m="${m.id}">${w===0?'No bet':'🪙'+w}</button>`).join("")}</div>`:''}
+      <div class="row" style="margin-top:8px;gap:8px">
+        ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker in use elsewhere</span>`}
+        <button class="btn lime" style="flex:1" data-lock="${m.id}">🔒 Lock it in</button>
+      </div>
+      <div class="tiny muted" style="margin-top:6px">⚠️ One shot — no changes after, and locking reveals everyone's picks 👀${cd?` · ⏱ ${cd}`:''}</div>`;
   }
-  const tag = m.status==="finished"?'<span class="chip done">FT</span>': locked?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
+  const tag = m.status==="finished"?'<span class="chip done">FT</span>': pred?'<span class="chip done">🔒 Locked</span>': isLocked(m)?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
   return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
 }
 
@@ -720,7 +823,7 @@ function matchCard(m,pred){
 let grpSel="A";
 function viewBracket(){
   let html=`<div class="card"><h3>🏆 Group predictions</h3>
-    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. Pick your tournament winner over in the 🃏 Props tab for big points.</div></div>
+    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. <b>Picks lock the instant you choose 🔒.</b> Pick your tournament winner in the 🃏 Props tab for big points.</div></div>
     <div class="seg">${Object.keys(GROUPS).map(g=>`<button class="${grpSel===g?'on':''}" data-grp="${g}">Group ${g}</button>`).join("")}</div>`;
   const g=grpSel;
   const st=groupStandings(g);
@@ -738,8 +841,8 @@ function viewBracket(){
     const cls=slot===0?"q1":"q2";
     const cur=myAdv[slot];
     const t=cur?teamById(cur):null;
-    html+=`<button class="tg ${cls}" data-advslot="${slot}" data-advgrp="${g}" ${complete?'disabled':''}>
-      <span>${slot===0?'🥇':'🥈'}</span>${t?`${t.flag} ${t.name}`:`<span class="muted">Pick #${slot+1}…</span>`}</button>`;
+    html+=`<button class="tg ${cls}" data-advslot="${slot}" data-advgrp="${g}" ${(complete||cur)?'disabled':''}>
+      <span>${slot===0?'🥇':'🥈'}</span>${t?`${t.flag} ${t.name} 🔒`:`<span class="muted">Pick #${slot+1}…</span>`}</button>`;
   });
   html+=`</div>`;
   if(complete){
@@ -751,64 +854,71 @@ function viewBracket(){
 }
 
 /* ---------- PROPS ---------- */
+function revealPropBlock(pr){
+  const others=othersProp(pr.id);
+  if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else has answered yet.</div>`;
+  let h=`<div class="reveal"><div class="revhead">👀 The crowd (${others.length})</div>`;
+  others.forEach(o=>{ const u=profileById(o.user);
+    h+=`<div class="revrow"><span class="re">${u?u.emoji:"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${labelFor(pr,o.answer)}</b>${o.wager>0?`<span class="tiny muted">🪙${o.wager}</span>`:''}</div>`; });
+  return h+`</div>`;
+}
+function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}"><span class="rd"></span><span>${label}</span></div>`; }
 function viewProps(){
-  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">The fun stuff. Answer for points; some let you throw coins for bonus payouts (longshots pay big).</div></div>`;
+  let html=`<div class="card"><h3>🃏 Prop bets & chaos</h3><div class="small muted">Answer to <b>lock it in</b> (one shot!). Once locked, you'll see what everyone else guessed 👀. Some let you throw coins for bonus payouts (longshots pay big).</div></div>`;
   DB.props.forEach(pr=>{
-    const a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===pr.id);
+    const a=myAnswer(pr.id);
     const settled=pr.status==="settled";
-    let opts="";
-    if(pr.type==="yesno"){
-      opts=["yes","no"].map(v=>optRow(pr,v,v==="yes"?"✅ Yes":"❌ No",a)).join("");
-    } else if(pr.type==="ou"){
-      opts=["over","under"].map(v=>optRow(pr,v,(v==="over"?"⬆️ Over ":"⬇️ Under ")+pr.line,a)).join("");
-    } else if(pr.type==="team"){
-      const cur=a?teamById(a.answer):null;
-      opts=`<button class="opt ${a?'sel':''}" data-teamprop="${pr.id}" ${settled?'disabled':''}>
-        <span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span>
-        ${a?`<span style="margin-left:auto;color:var(--gold)" class="small">${championOdds(cur?cur.name:"").toFixed(1)}×</span>`:''}</button>`;
+    const d=pdraft(pr.id);
+    let body="";
+    if(a||settled){
+      let res="";
+      if(settled){ const won=a&&String(a.answer)===String(pr.correct);
+        res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You nailed it! +'+pr.pts+' pts':'❌ Settled · correct: '+labelFor(pr,pr.correct)}</div>`; }
+      body=`<div class="small" style="margin-top:6px">🔒 Your answer: <b>${a?labelFor(pr,a.answer):'—'}</b>${a&&a.wager>0?` · 🪙${a.wager}`:''}</div>${res}${revealPropBlock(pr)}`;
     } else {
-      opts=pr.options.map(o=>optRow(pr,o.v,o.label,a)).join("");
+      let opts="";
+      if(pr.type==="yesno") opts=["yes","no"].map(v=>pOpt(pr,v,v==="yes"?"✅ Yes":"❌ No",d)).join("");
+      else if(pr.type==="ou") opts=["over","under"].map(v=>pOpt(pr,v,(v==="over"?"⬆️ Over ":"⬇️ Under ")+pr.line,d)).join("");
+      else if(pr.type==="team"){ const cur=d.answer?teamById(d.answer):null;
+        opts=`<button class="opt ${d.answer?'sel':''}" data-teamprop="${pr.id}"><span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span>${d.answer?`<span style="margin-left:auto;color:var(--gold)" class="small">${championOdds(cur?cur.name:"").toFixed(1)}×</span>`:''}</button>`; }
+      else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
+      const wagerUI=(pr.allow_coins)?`<div class="small muted" style="margin-top:8px">🪙 Optional bonus bet:<div class="row" style="gap:6px;margin-top:6px">${[0,50,100,200].map(w=>`<button class="btn ${d.wager===w?'gold':''}" style="flex:1;padding:6px" data-propwg="${w}" data-prop="${pr.id}" ${d.answer?'':'disabled'}>${w===0?'None':'🪙'+w}</button>`).join("")}</div></div>`:'';
+      body=`${opts}${wagerUI}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
     }
-    let res="";
-    if(settled){
-      const won=a&&String(a.answer)===String(pr.correct);
-      const corLabel = pr.options? (pr.options.find(o=>o.v==pr.correct)||{}).label||pr.correct : pr.correct;
-      res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You got it! +'+pr.pts+' pts':'❌ Settled — '+(corLabel)}</div>`;
-    }
-    const wagerUI = (pr.allow_coins && !settled) ? `<div class="small muted" style="margin-top:8px">🪙 Bonus coin bet:
-        <div class="row" style="gap:6px;margin-top:6px">${[0,50,100,200].map(w=>`<button class="btn ${a&&a.wager===w?'gold':''}" style="flex:1;padding:6px" data-propwg="${w}" data-prop="${pr.id}" ${a?'':'disabled'}>${w===0?'None':w}</button>`).join("")}</div>
-        ${a?'':'<div class="tiny" style="margin-top:4px">Pick an answer first to bet coins</div>'}</div>` : '';
-    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.pts} pts</span></div>
-      ${opts}${wagerUI}${res}</div>`;
+    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.pts} pts</span></div>${body}</div>`;
   });
   return html;
-}
-function optRow(pr,v,label,a){
-  const sel=a&&String(a.answer)===String(v)?"sel":"";
-  const dis=pr.status==="settled"?'style="pointer-events:none;opacity:.7"':'';
-  return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}" ${dis}><span class="rd"></span><span>${label}</span></div>`;
 }
 
 /* ---------- LEADERBOARD ---------- */
 let boardBasis="points";
 function viewBoard(){
   const lb=leaderboard(boardBasis);
+  lb.forEach(r=>{ r.st=statsFor(r.id); r.badges=badgesFor(r.id); });
   const top=lb[0], last=lb[lb.length-1];
   const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them! 🏃`][top.rank%3];
   const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
   let html=`<div class="card center"><h3>📊 The Table</h3>
-      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Points pool</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Coin barons</button></div>
-      <div class="trash">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div>
-    </div>`;
+      <div class="toggle" style="margin-top:8px"><button class="${boardBasis==='points'?'on':''}" data-basis="points">🏅 Points pool</button><button class="${boardBasis==='coins'?'on':''}" data-basis="coins">🪙 Coin barons</button></div></div>`;
+  // 🏆 podium of the top 3
+  if(lb.length>=3){
+    const order=[1,0,2]; // render 2nd, 1st, 3rd
+    html+=`<div class="card"><div class="podium">`+order.map(i=>{const r=lb[i];const place=i+1;const hgt=place===1?98:place===2?74:60;
+      const sc=boardBasis==='coins'?'🪙'+r.coins.toLocaleString():r.pts+'p';
+      return `<div class="pod p${place}"><div class="podav">${r.emoji}</div><div class="podname">${r.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">${sc}</div></div></div>`;}).join("")+`</div>
+      <div class="trash center">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div></div>`;
+  }
   lb.forEach(r=>{
     const me=r.id===ME.id?'me':'';
     const medal=r.rank===1?'🥇':r.rank===2?'🥈':r.rank===3?'🥉':`<span class="muted">${r.rank}</span>`;
     const val= boardBasis==="coins"? `🪙 ${r.coins.toLocaleString()}` : `${r.pts} pts`;
     const sub= boardBasis==="coins"? `${r.pts} pts` : `🪙 ${r.coins.toLocaleString()}`;
+    const fire=r.st.streak>=2?`<span class="fire">🔥${r.st.streak}</span>`:'';
+    const badges=r.badges.length?`<span class="badges"> ${r.badges.map(b=>`<span title="${b[1]}: ${b[2]}">${b[0]}</span>`).join("")}</span>`:'';
     html+=`<div class="lbrow ${me}">
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${r.emoji}</div>
-      <div class="nm">${r.name}${me?' <span class="tiny" style="color:var(--purple)">(you)</span>':''}<small>${sub}</small></div>
+      <div class="nm">${r.name}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small>${sub}${badges}</small></div>
       <div class="sc">${val}</div>
     </div>`;
   });
@@ -926,38 +1036,45 @@ function wire(){
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Admin locked 🔒"); VIEW="picks"; render(); };
+  // sound
+  const mt=$("[data-mute]"); if(mt) mt.onclick=()=>{ toggleMute(); if(!MUTED)horn(); render(); };
   // picks filters
   $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
-  // score inputs (just store in DOM; saved on Save)
-  $$("[data-save]").forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.save;
+  // score inputs → live into the draft (no save yet, no re-render so the cursor stays)
+  $$("[data-sc]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.m,d=draft(id); const v=inp.value===""?null:clamp(parseInt(inp.value)||0,0,30); if(inp.dataset.sc==="home")d.hp=v; else d.ap=v; });
+  // side-bet outcome + amount + banker (all draft-only until lock)
+  $$("[data-odd]").forEach(b=>b.onclick=()=>{ const id=b.dataset.m,d=draft(id); d.pick=b.dataset.odd; if(!d.wager)d.wager=50; render(); });
+  $$("[data-wg]").forEach(b=>b.onclick=()=>{ const id=b.dataset.m,d=draft(id); d.wager=parseInt(b.dataset.wg); render(); });
+  $$("[data-bank]").forEach(b=>b.onclick=()=>{ const id=b.dataset.bank,d=draft(id); d.banker=!d.banker; render(); });
+  $$("[data-lock]").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.lock;
     const hi=$(`[data-sc="home"][data-m="${id}"]`),ai=$(`[data-sc="away"][data-m="${id}"]`);
     const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
     const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
     if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
-    await savePrediction(id,hp,ap);celebrate("LOCKED IN!");toast("Saved! 🔥");render();
+    const d=draft(id), m=DB.matches.find(x=>x.id===id), vs=`${teamById(m.home).flag} ${teamById(m.home).name} vs ${teamById(m.away).name} ${teamById(m.away).flag}`;
+    confirmModal(`<div class="center"><div class="big2">${hp}–${ap}</div><div class="small muted">${vs}</div>
+      ${d.pick&&d.wager?`<div class="small" style="margin-top:6px">🪙 ${d.wager} coins on <b>${d.pick}</b></div>`:''}
+      ${d.banker?'<div class="small" style="color:var(--gold);margin-top:4px">⭐ Banker — double points!</div>':''}
+      <div class="small" style="margin-top:8px">You can't change this once it's locked.</div></div>`,
+      async()=>{ await lockPick(id,hp,ap,d.pick,d.wager,d.banker); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
   });
-  $$("[data-odd]").forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.m,k=b.dataset.odd;
-    const pr=DB.predictions.find(p=>p.user===ME.id&&p.match===id&&!p.advance);
-    const wager=pr&&pr.wager?pr.wager:50;
-    await saveWager(id,k,wager);render();
-  });
-  $$("[data-wg]").forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.m,w=parseInt(b.dataset.wg);
-    const pr=DB.predictions.find(p=>p.user===ME.id&&p.match===id&&!p.advance);
-    await saveWager(id,pr?pr.pick:"home",w);toast(w?`🪙 ${w} coins down`:"Bet cleared");render();
-  });
-  // advance picks
+  // advance picks (one-shot)
   $$("[data-advslot]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveAdvance(b.dataset.advgrp,parseInt(b.dataset.advslot),t.id).then(render);}, b.dataset.advgrp));
   $$("[data-grp]").forEach(b=>b.onclick=()=>{grpSel=b.dataset.grp;render();});
-  // props
-  $$("[data-propopt]").forEach(b=>b.onclick=async()=>{await saveProp(b.dataset.prop,b.dataset.propopt);party();render();});
-  $$("[data-teamprop]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveProp(b.dataset.teamprop,t.id).then(render);}));
-  $$("[data-propwg]").forEach(b=>b.onclick=async()=>{
-    const a=DB.propAnswers.find(x=>x.user===ME.id&&x.prop===b.dataset.prop);
-    if(!a){toast("Pick an answer first");return;}
-    await saveProp(b.dataset.prop,a.answer,parseInt(b.dataset.propwg));toast("Bonus bet set 🪙");render();
+  // props (draft → lock)
+  $$("[data-propopt]").forEach(b=>b.onclick=()=>{ pdraft(b.dataset.prop).answer=b.dataset.propopt; render(); });
+  $$("[data-teamprop]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{ pdraft(b.dataset.teamprop).answer=t.id; render(); }));
+  $$("[data-propwg]").forEach(b=>b.onclick=()=>{ const d=pdraft(b.dataset.prop); if(d.answer==null){toast("Pick an answer first");return;} d.wager=parseInt(b.dataset.propwg); render(); });
+  $$("[data-plock]").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.plock, d=pdraft(id);
+    if(d.answer==null){toast("Choose an answer first ⚽");return;}
+    const pr=DB.props.find(x=>x.id===id);
+    confirmModal(`<div class="center"><div style="font-size:30px">${pr.icon}</div><div class="small muted">${pr.q}</div>
+      <div class="big2" style="font-size:20px;margin-top:4px">${labelFor(pr,d.answer)}</div>
+      ${d.wager?`<div class="small">🪙 ${d.wager} coins</div>`:''}
+      <div class="small" style="margin-top:8px">Locks your answer and reveals the crowd 👀</div></div>`,
+      async()=>{ await lockProp(id,d.answer,d.wager); celebrate("LOCKED IN!"); render(); }, "Lock answer 🔒");
   });
   // board
   $$("[data-basis]").forEach(b=>b.onclick=()=>{boardBasis=b.dataset.basis;render();});
@@ -980,7 +1097,7 @@ function wire(){
   });
   const saveBtn=$("[data-savesettings]");
   if(saveBtn) saveBtn.onclick=async()=>{
-    await adminSetting("app_title",$('[data-set="app_title"]').value||"GOALPOST");
+    await adminSetting("app_title",$('[data-set="app_title"]').value||"THE MASK");
     await adminSetting("buy_in",parseInt($('[data-set="buy_in"]').value)||0);
     await adminSetting("currency",$('[data-set="currency"]').value||"$");
     const sp=[0,1,2].map(i=>parseInt($(`[data-split="${i}"]`).value)||0);
@@ -1008,6 +1125,20 @@ function openTeamPicker(cb, onlyGrp){
   $$("[data-pick]",root).forEach(b=>b.onclick=()=>{cb(teamById(b.dataset.pick));close();});
   const srch=$("#tsearch",root);
   if(srch) srch.oninput=()=>{const q=srch.value.toLowerCase();$$("[data-pick]",root).forEach(d=>{d.style.display=d.textContent.toLowerCase().includes(q)?"":"none";});};
+}
+
+/* ---------- generic confirm modal (used for one-shot Lock In) ---------- */
+function confirmModal(bodyHTML, onYes, yesLabel){
+  const root=$("#modal-root");
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b>Lock it in? 🔒</b><button class="x" data-close>×</button></div>
+    <div class="mbody">${bodyHTML}
+      <div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" style="flex:1" data-close>Cancel</button><button class="btn lime" style="flex:1" data-yes>${yesLabel||'Lock it 🔒'}</button></div>
+    </div></div></div>`;
+  const close=()=>root.innerHTML="";
+  $$("[data-close]",root).forEach(b=>b.onclick=close);
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  $("[data-yes]",root).onclick=()=>{ close(); onYes(); };
 }
 
 /* ---------- admin password gate ---------- */
