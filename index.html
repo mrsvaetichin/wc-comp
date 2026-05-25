@@ -166,6 +166,17 @@
   .hlb-pts{font-family:'Fredoka';font-weight:700;color:var(--lime);white-space:nowrap}
   .hlb-link{background:transparent;border:none;color:var(--cyan);font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
   .bbonus{display:inline-block;background:var(--lime);color:#0c2a08;font-family:'Fredoka';font-weight:700;font-size:12px;border-radius:999px;padding:1px 7px;margin-right:6px}
+  /* leaderboard bar charts on the dashboard */
+  .bchart{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+  .bcrow{display:grid;grid-template-columns:92px 1fr 40px;align-items:center;gap:8px;font-size:13px}
+  .bcnm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+  .bctrack{height:15px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .bcfill{display:block;height:100%;border-radius:8px;min-width:3px;transition:width .5s ease}
+  .bcfill.pts{background:linear-gradient(90deg,var(--cyan),var(--lime))}
+  .bcfill.ban{background:linear-gradient(90deg,var(--gold),var(--red))}
+  .bcval{text-align:right;font-family:'Fredoka';font-weight:700;font-size:12px;color:var(--ink)}
+  .bcrow.me .bcnm{color:var(--cyan)}
+  .bcrow.me .bctrack{box-shadow:0 0 0 1px var(--cyan)}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -1137,6 +1148,33 @@ function heroLeaderboard(){
   }
   return `<div class="herogrid">${standings}${banter}</div>`;
 }
+// horizontal bar chart: items=[{name,value,valLabel,medal,me}], fillClass = bar gradient
+function barChart(items, fillClass){
+  if(!items.length) return `<div class="small muted" style="padding:8px 2px">Nothing to chart yet.</div>`;
+  const max=Math.max(1, ...items.map(i=>i.value));
+  return `<div class="bchart">`+items.map(i=>{
+    const w=i.value>0 ? Math.max(3, Math.round(i.value/max*100)) : 0;
+    return `<div class="bcrow ${i.me?'me':''}"><span class="bcnm">${i.medal||''} ${escapeHtml(i.name)}</span><span class="bctrack"><span class="bcfill ${fillClass}" style="width:${w}%"></span></span><span class="bcval">${i.valLabel}</span></div>`;
+  }).join("")+`</div>`;
+}
+function medalFor(rank){ return rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">${rank}</span>`; }
+function leagueCharts(){
+  const lg=curLeague(); if(!lg) return '';
+  // Points chart — everyone, top 10
+  const lb=leaderboard(); if(!lb.length) return '';
+  const pItems=lb.slice(0,10).map(r=>({name:r.name.split(" ")[0], value:r.pts, valLabel:`${r.pts}`, medal:medalFor(r.rank), me:r.id===ME.id}));
+  const pCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">📊 Points race</h3><div class="tiny muted">Total standings points</div>${barChart(pItems,'pts')}</div>`;
+  // Banter chart — by ❤️ likes, only those with likes, top 10
+  const bb=banterBoard().filter(r=>r.likes>0).slice(0,10);
+  let bCard;
+  if(bb.length){
+    const bItems=bb.map((r,i)=>({name:(profileById(r.user)||{name:'?'}).name.split(" ")[0], value:r.likes, valLabel:`❤️ ${r.likes}`, medal:medalFor(i+1), me:r.user===ME.id}));
+    bCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="tiny muted">Likes on your posts · top 3 bank bonus pts</div>${barChart(bItems,'ban')}</div>`;
+  } else {
+    bCard=`<div class="card herolb"><h3 style="font-size:15px;margin:0 0 2px">💬 Banter race</h3><div class="small muted" style="padding:8px 2px">No likes yet — get some laughs in the 💬 Banter tab.</div></div>`;
+  }
+  return `<div class="herogrid">${pCard}${bCard}</div>`;
+}
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
   let list=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
@@ -1146,7 +1184,7 @@ function viewPicks(){
   else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
 
   const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
-  let html=heroLeaderboard();
+  let html=heroLeaderboard()+leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
