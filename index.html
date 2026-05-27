@@ -809,7 +809,9 @@ function repicksLeft(userId){ return Math.max(0, REPICK_MAX - repicksUsed(userId
 function othersFor(matchId){return DB.predictions.filter(p=>p.match===matchId&&!p.advance&&p.user!==ME.id&&p.hp!=null);}
 function myAnswer(propId){return DB.propAnswers.find(a=>a.user===ME.id&&a.prop===propId);}
 function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.user!==ME.id);}
-function myActiveBanker(){return DB.predictions.find(p=>p.user===ME.id&&p.banker&&!p.advance&&((DB.matches.find(m=>m.id===p.match)||{}).status!=="finished"));}
+// ⭐ One Banker per matchday (the calendar day of kickoff) — resets each day.
+function bankerLockedOnDay(dayKey){ return DB.predictions.find(p=>{ if(p.user!==ME.id||!p.banker||p.advance||p.ko) return false; const m=DB.matches.find(x=>x.id===p.match); return m && dateKey(m.kickoff)===dayKey; }); }
+function canBankMatch(m){ if(!m) return false; const b=bankerLockedOnDay(dateKey(m.kickoff)); return !b || b.match===m.id; }
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
 function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
@@ -1276,7 +1278,7 @@ function viewPicks(){
   const openAll=DB.matches.filter(m=>m.status!=="finished"&&!isLocked(m));
   const pickedOpen=openAll.filter(m=>hasPicked(m.id)).length;
   html+=`<div class="card"><h3>⚽ Make your picks</h3>
-    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Make it your ⭐ <b>Banker</b> for double points. <b>One shot — no edits</b> (unless you spend a 🔁 half-time re-pick), and locking reveals everyone else's picks 👀.</div>
+    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Make one pick a day your ⭐ <b>Banker</b> for double points (resets each matchday). <b>One shot — no edits</b> (unless you spend a 🔁 half-time re-pick), and locking reveals everyone else's picks 👀.</div>
     ${openAll.length?`<div class="small" style="margin-top:8px">🔒 You've locked <b>${pickedOpen}</b> / ${openAll.length} open games</div>`:''}</div>
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
@@ -1325,7 +1327,7 @@ function matchCard(m){
   } else if(isLocked(m)){   // kicked off, you never picked
     inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 kicked off</span></div><div class="small muted center">You didn't lock a pick.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form (nothing saved until you Lock In)
-    const d=draft(m.id), canBank=!myActiveBanker();
+    const d=draft(m.id), canBank=canBankMatch(m);
     inner=`${teams}
       <div class="scorerow">
         <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${d.hp??""}" placeholder="–" maxlength="2"/>
@@ -1333,7 +1335,7 @@ function matchCard(m){
         <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??""}" placeholder="–" maxlength="2"/>
       </div>
       <div class="row" style="margin-top:8px;gap:8px">
-        ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker in use</span>`}
+        ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker used today</span>`}
         <button class="btn lime" style="flex:1" data-lock="${m.id}">🔒 Lock it in</button>
       </div>
       <div class="tiny muted" style="margin-top:6px">⚠️ One shot — locking reveals everyone's picks 👀${cd?` · ⏱ ${cd}`:''}</div>`;
@@ -1683,11 +1685,11 @@ function wire(){
     const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
     const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
     if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
-    const d=draft(id), m=DB.matches.find(x=>x.id===id), vs=`${teamById(m.home).flag} ${teamById(m.home).name} vs ${teamById(m.away).name} ${teamById(m.away).flag}`;
+    const d=draft(id), m=DB.matches.find(x=>x.id===id), useBank=d.banker&&canBankMatch(m), vs=`${teamById(m.home).flag} ${teamById(m.home).name} vs ${teamById(m.away).name} ${teamById(m.away).flag}`;
     confirmModal(`<div class="center"><div class="big2">${hp}–${ap}</div><div class="small muted">${vs}</div>
-      ${d.banker?'<div class="small" style="color:var(--gold);margin-top:4px">⭐ Banker — double points!</div>':''}
+      ${useBank?'<div class="small" style="color:var(--gold);margin-top:4px">⭐ Banker — double points!</div>':''}
       <div class="small" style="margin-top:8px">You can't change this once it's locked (unless you spend a half-time re-pick).</div></div>`,
-      async()=>{ await lockPick(id,hp,ap,d.banker); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
+      async()=>{ await lockPick(id,hp,ap,useBank); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
   });
   // half-time re-pick (in-play, costs points)
   $$("[data-repick]").forEach(b=>b.onclick=()=>{
@@ -1866,7 +1868,7 @@ function rulesHTML(){
       <li><b>🏆 Private leagues</b> — play in your own league(s). Create one and share the invite code/link, or join with a code. Your picks &amp; standings are separate in each league; switch any time via the 🏆 chip up top.</li>
       <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
       <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
-      <li><b>⭐ Banker</b> — one live pick at a time scores double.</li>
+      <li><b>⭐ Banker</b> — double points on one pick each matchday (resets daily).</li>
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
       <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}), then which teams reach the Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
