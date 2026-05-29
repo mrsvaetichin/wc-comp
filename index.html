@@ -331,14 +331,23 @@
   .login .card .small{font-size:14.5px;line-height:1.5}
   .login .card .tiny{font-size:12.5px}
   .login .card input{font-size:16px}
-  /* desktop: center the login flow in a comfy column instead of stretching edge-to-edge */
-  @media(min-width:760px){
-    .app.login{max-width:620px;margin:0 auto;padding:36px 24px 48px}
-    .login .hero{padding:36px 18px 18px}
-    .login .hero .big{font-size:42px}
-    .login .herophoto{max-width:380px;margin:0 auto}
-    .login .card{padding:24px 22px}
-    .login .card h3{font-size:20px}
+  /* desktop: use a full-width layout — wide hero across the top, signup card + rules side-by-side below */
+  .login .loginrow{display:flex;flex-direction:column;gap:14px}
+  @media(min-width:880px){
+    .app.login{max-width:1240px;margin:0 auto;padding:34px 28px 56px}
+    .login .hero{padding:32px 18px 20px}
+    .login .hero .big{font-size:48px}
+    .login .hero .muted{font-size:18px;max-width:680px}
+    .login .herophoto{max-width:440px;margin:0 auto}
+    .login .loginrow{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:24px;align-items:start}
+    .login .card{padding:26px 24px}
+    .login .card h3{font-size:21px}
+    .login .rules{font-size:15px}
+    .login .rules .rrow{padding:8px 0}
+  }
+  @media(min-width:1200px){
+    .app.login{max-width:1320px}
+    .login .loginrow{grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:32px}
   }
   /* the readable-rules layout */
   .rules{font-size:14.5px;line-height:1.6}
@@ -2434,6 +2443,7 @@ function loginScreen(extra=""){
     <div class="big">Welcome to <b>${DB.settings.app_title||"THE MASK"}</b></div>
     <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot. 🦇⚽</div>
   </div>
+  <div class="loginrow">
   <div class="card">${extra}
     ${showAuthTabs?`<div class="authtabs"><button class="${isSignup?'':'on'}" data-authtab="signin">Sign in</button><button class="${isSignup?'on':''}" data-authtab="signup">Create account</button></div>`:''}
     ${isSignup?`
@@ -2465,6 +2475,7 @@ function loginScreen(extra=""){
     `}
   </div>
   <div class="card"><h3 style="font-size:16px">📖 How it works</h3>${rulesHTML()}</div>
+  </div>
   </div>`;
   $$("[data-authtab]").forEach(b=>b.onclick=()=>{ authMode=b.dataset.authtab; loginScreen(extra); });
   $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; pendingAvatar=null; loginScreen(extra); });
