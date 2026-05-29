@@ -331,6 +331,35 @@
   .login .card .small{font-size:14.5px;line-height:1.5}
   .login .card .tiny{font-size:12.5px}
   .login .card input{font-size:16px}
+  /* desktop: center the login flow in a comfy column instead of stretching edge-to-edge */
+  @media(min-width:760px){
+    .app.login{max-width:620px;margin:0 auto;padding:36px 24px 48px}
+    .login .hero{padding:36px 18px 18px}
+    .login .hero .big{font-size:42px}
+    .login .herophoto{max-width:380px;margin:0 auto}
+    .login .card{padding:24px 22px}
+    .login .card h3{font-size:20px}
+  }
+  /* the readable-rules layout */
+  .rules{font-size:14.5px;line-height:1.6}
+  .rules .lead{margin:0 0 14px;color:var(--ink)}
+  .rules h4{font-family:'Fredoka';font-size:15px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:1.3px;margin:16px 0 6px}
+  .rules .rrow{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+  .rules .rrow:first-of-type{border-top:none}
+  .rules .ric{flex:none;width:24px;text-align:center;font-size:18px}
+  .rules .rtx{flex:1}
+  .rules .rtx b{color:var(--ink)}
+  .rules .terms{color:var(--muted);font-size:12.5px;line-height:1.5;border-top:1px solid var(--line);padding-top:10px;margin-top:14px}
+  /* the photo-upload tile on signup */
+  .photopick{display:flex;align-items:center;gap:14px;margin-top:6px}
+  .photopick .photoavatar{width:78px;height:78px;border-radius:50%;background:var(--card2);border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:36px;flex:none}
+  .photopick .photoavatar img{width:100%;height:100%;object-fit:cover}
+  .photopick .photobtns{flex:1;display:flex;flex-direction:column;gap:6px}
+  .photopick label.upbtn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer;text-align:center}
+  /* login mode tabs */
+  .authtabs{display:flex;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;margin:0 0 14px}
+  .authtabs button{flex:1;background:transparent;color:var(--muted);border:none;border-radius:10px;padding:9px;font-weight:600;font-size:14px;cursor:pointer}
+  .authtabs button.on{background:var(--card2);color:var(--ink)}
   /* ---------- reveal / banker / podium / streak / countdown ---------- */
   .reveal{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
   .revhead{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:4px}
@@ -2235,26 +2264,38 @@ function openProfile(){
 /* ---------- rules / how-it-works ---------- */
 function rulesHTML(){
   const s=DB.settings, buyin=money((curLeague()&&curLeague().buy_in)||s.buy_in||50);
-  return `<div style="font-size:14px;line-height:1.55">
-    <p style="margin:0 0 8px"><b>THE MASK</b> is a friendly World Cup '26 prediction game — just for our crew. Call the scores, talk trash, top the table, win the pot.</p>
-    <b>How to play</b>
-    <ul style="margin:4px 0 8px;padding-left:18px">
-      <li><b>🏆 Private leagues</b> — play in your own league(s). Create one and share the invite code/link, or join with a code. Your picks &amp; standings are separate in each league; switch any time via the 🏆 chip up top.</li>
-      <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
-      <li><b>Edit freely until the round locks</b> — save and unlock picks as you like. Each round-stage round (MD1/MD2/MD3) freezes 30 min before its first kickoff. After that, only a 🔁 half-time re-pick can change anything.</li>
-      <li><b>Blind reveal</b> — nobody sees anyone's picks until the round locks (or a specific match kicks off). Then the crowd's picks unlock together.</li>
-      <li><b>⭐ Banker</b> — each round (MD1/MD2/MD3 + each knockout round), tag <b>one</b> pick as your Banker to score <b>double</b> on it (exact ${s.pts_exact*2}, right result ${s.pts_result*2}). No penalty if it misses, and you get a fresh Banker every round.</li>
-      <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
-      <li><b>🏆 Groups & knockouts</b> — pick scorelines for all group matches and your top-2 per group is <b>computed automatically</b> from your picks (+${s.pts_advance} per correct survivor). Then play the knockouts in the 🏆 Bracket tab — Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
-      <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
-      <li><b>🃏 Extras</b> — tournament-wide predictions: who wins it all (worth 30!), top scorer & fun calls.</li>
-      <li><b>💬 Banter bonus</b> — the 3 funniest (most ❤️ likes on your posts) bank bonus points: 🥇 +${BANTER_BONUS[0]} · 🥈 +${BANTER_BONUS[1]} · 🥉 +${BANTER_BONUS[2]}.</li>
-      <li><b>🔥 Streaks & badges</b> for bragging rights.</li>
-    </ul>
-    <b>The money</b>
-    <p style="margin:4px 0 8px">Every league sets its own buy-in (this one's <b>${buyin}</b>), paid to the league organiser. The pot is split by the top 3 (${((curLeague()&&curLeague().payout_split)||s.payout_split||[50,30,20]).join("/")}%). Results sync in live, so nobody has to type scores.</p>
-    <b>Terms (the friendly kind)</b>
-    <p class="muted" style="margin:4px 0 0">A private game among friends, for fun and bragging rights — not a commercial gambling service. Buy-ins and payouts are settled between players offline; the app only keeps score. Play responsibly, only with people you trust, and follow the rules where you live. Live scores are best-effort from a third-party feed and the commissioner can correct any result.</p>
+  const split=((curLeague()&&curLeague().payout_split)||s.payout_split||[50,30,20]).join("/");
+  const row=(ic,html)=>`<div class="rrow"><span class="ric">${ic}</span><span class="rtx">${html}</span></div>`;
+  return `<div class="rules">
+    <p class="lead"><b>THE MASK</b> is a friendly World Cup '26 prediction pool. Call the scores, top the table, talk trash, win the pot.</p>
+
+    <h4>The basics</h4>
+    ${row("🏆",`<b>Private leagues.</b> Create one and share the invite code, or join with a code. You can be in several at once and switch any time via the 🏆 chip up top.`)}
+    ${row("⚽",`<b>Predict every match.</b> <b>${s.pts_exact} pts</b> for the exact score, <b>${s.pts_result} pts</b> for the right result.`)}
+    ${row("🌍",`<b>Pick your nation.</b> Locked in when you sign up. Bag <b>+${FAN_BONUS} pt</b> every time they win.`)}
+
+    <h4>Rounds &amp; lock-in</h4>
+    ${row("✏️",`<b>Edit freely until 30 min before each round kicks off.</b> Save, unlock, and tweak picks as much as you like.`)}
+    ${row("🔒",`<b>Then the whole round freezes.</b> No more changes — except a 🔁 half-time re-pick during a live match.`)}
+    ${row("👀",`<b>Blind reveal.</b> Nobody sees anyone's picks until the round locks. Then everyone's choices unlock together.`)}
+
+    <h4>The Banker ⭐</h4>
+    ${row("⭐",`<b>One Banker per round</b> (MD1/MD2/MD3 + each knockout round). Tag one pick to score <b>double</b> — exact <b>${s.pts_exact*2}</b>, right result <b>${s.pts_result*2}</b>. No penalty if it misses.`)}
+
+    <h4>Group stage → Knockouts</h4>
+    ${row("📊",`<b>Group survivors are computed automatically</b> from your scoreline picks. Each correct top-2 = <b>+${s.pts_advance} pts</b>.`)}
+    ${row("🏆",`<b>Knockout rounds unlock after Round 3.</b> Predict scorelines for R32, R16, QF, SF and the Final. Each correct winner: R32 <b>+${KO_PTS.r16}</b>, R16 <b>+${KO_PTS.qf}</b>, QF <b>+${KO_PTS.sf}</b>, SF <b>+${KO_PTS.final}</b>.`)}
+
+    <h4>Extras &amp; bonuses</h4>
+    ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
+    ${row("🔁",`<b>Half-time re-picks:</b> ${REPICK_MAX}× all tournament, change a pick mid-match for <b>−${REPICK_COST} pts</b> each.`)}
+    ${row("💬",`<b>Banter bonus:</b> 3 funniest people (most ❤️ likes on their posts) bank 🥇 <b>+${BANTER_BONUS[0]}</b> · 🥈 <b>+${BANTER_BONUS[1]}</b> · 🥉 <b>+${BANTER_BONUS[2]}</b>.`)}
+    ${row("🔥",`<b>Streaks &amp; badges</b> for bragging rights.`)}
+
+    <h4>The money 💰</h4>
+    ${row("💸",`<b>Buy-in:</b> ${buyin} per player, paid to the league organiser. <b>Top ${split.split('/').length}</b> split the pot (${split}%). Results sync in live — nobody has to type scores.`)}
+
+    <div class="terms"><b>The friendly bit.</b> THE MASK is a private game among friends — for fun and bragging rights, not a commercial gambling service. Buy-ins are settled between you offline; the app only keeps score. Play responsibly and follow the rules where you live. Live scores are best-effort and the commissioner can correct any result.</div>
   </div>`;
 }
 function openRules(){
@@ -2378,64 +2419,132 @@ function promptAdmin(){
    🔐  AUTH + BOOT
    ============================================================================ */
 const EMOJIS=["🦇","🦁","🐉","🐙","🦄","🐺","🌶️","👽","🤡","🐸","🦊","🐯","🦅","🐝","💀","🤖","🦖","👻","🧛","🐳"];
-let pendingEmoji=null, pendingTeam=null;
+let pendingEmoji=null, pendingTeam=null, pendingAvatar=null;
+// Auth state for the login form: 'signin' = returning user, 'signup' = first-time
+let authMode = "signup";
 function loginScreen(extra=""){
   if(!pendingEmoji) pendingEmoji=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
   const teamLabel = pendingTeam&&teamById(pendingTeam) ? `${teamById(pendingTeam).flag} ${teamById(pendingTeam).name} ✓` : '🌍 Tap to choose your nation…';
+  const isLive = MODE==="live";
+  const isSignup = authMode==="signup";
+  const showAuthTabs = isLive;     // demo mode is just "type a name"
+  const av = pendingAvatar ? `<img src="${pendingAvatar}" alt=""/>` : pendingEmoji;
   $("#app").innerHTML=`<div class="app login"><div class="hero">
     <div class="herophoto"><img src="gyok.jpg" alt="Do the Gyökeres"/></div>
     <div class="big">Welcome to <b>${DB.settings.app_title||"THE MASK"}</b></div>
-    <div class="muted">The World Cup '26 prediction game for you and your crew. Predict scores, call upsets, talk trash, win the pot. 🦇⚽</div>
+    <div class="muted">The World Cup '26 prediction pool for you and your crew. Predict scores, call upsets, talk trash, win the pot. 🦇⚽</div>
   </div>
   <div class="card">${extra}
-    <div class="step"><span class="stepn">1</span><b>Your name</b></div>
-    <input id="email" placeholder="What should we call you?" autocomplete="off"/>
-    <div class="step"><span class="stepn">2</span><b>Pick your badge</b></div>
-    <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
-    <div class="step"><span class="stepn">3</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
-    <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
-    <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Continue →</button>
-    <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter a name and pick your nation to continue.</div>
+    ${showAuthTabs?`<div class="authtabs"><button class="${isSignup?'':'on'}" data-authtab="signin">Sign in</button><button class="${isSignup?'on':''}" data-authtab="signup">Create account</button></div>`:''}
+    ${isSignup?`
+      <div class="step"><span class="stepn">1</span><b>Your profile photo</b> <span class="muted tiny">— optional, you can also pick an emoji below</span></div>
+      <div class="photopick">
+        <div class="photoavatar" id="pvprev">${av}</div>
+        <div class="photobtns">
+          <label class="upbtn">📷 Upload a photo<input id="pvfile" type="file" accept="image/*" style="display:none"/></label>
+          ${pendingAvatar?`<button class="btn ghost" id="pvclear" style="padding:6px 10px;font-size:12px">Remove photo, use emoji</button>`:''}
+        </div>
+      </div>
+      <div class="step"><span class="stepn">2</span><b>${isLive?'Username':'Your name'}</b> <span class="muted tiny">— ${isLive?'how friends find you':'what we call you'}</span></div>
+      <input id="email" placeholder="${isLive?'pick a username':'what should we call you?'}" autocomplete="off"/>
+      ${isLive?`<div class="step"><span class="stepn">3</span><b>Password</b> <span class="muted tiny">— at least 6 characters, no email needed</span></div>
+      <input id="pw" type="password" placeholder="choose a password" autocomplete="new-password"/>`:''}
+      <div class="step"><span class="stepn">${isLive?'4':'3'}</span><b>Pick an emoji badge</b></div>
+      <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji&&!pendingAvatar?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
+      <div class="step"><span class="stepn">${isLive?'5':'4'}</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
+      <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
+      <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>${isLive?'Create my account →':'Continue →'}</button>
+      <div class="tiny muted center" id="loginhint" style="margin-top:6px">Fill the steps above to continue.</div>
+    `:`
+      <div class="step"><span class="stepn">1</span><b>Username</b></div>
+      <input id="email" placeholder="your username" autocomplete="username"/>
+      <div class="step"><span class="stepn">2</span><b>Password</b></div>
+      <input id="pw" type="password" placeholder="your password" autocomplete="current-password"/>
+      <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Sign in →</button>
+      <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter your username and password to sign in.</div>
+    `}
   </div>
-  <div class="card"><h3 style="font-size:16px">📖 What this is & the rules</h3>${rulesHTML()}</div>
+  <div class="card"><h3 style="font-size:16px">📖 How it works</h3>${rulesHTML()}</div>
   </div>`;
-  $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; $$("[data-ep]").forEach(x=>x.classList.remove("on")); b.classList.add("on"); });
+  $$("[data-authtab]").forEach(b=>b.onclick=()=>{ authMode=b.dataset.authtab; loginScreen(extra); });
+  $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; pendingAvatar=null; loginScreen(extra); });
   const fav=$("#favteam"); if(fav) fav.onclick=()=>openTeamPicker(t=>{ pendingTeam=t.id; const b=$("#favteam"); if(b){ b.innerHTML=`${t.flag} ${t.name} ✓`; b.classList.add("gold"); } updateLoginBtn(); });
+  const pvf=$("#pvfile"); if(pvf) pvf.onchange=e=>{ readImageFile(e.target.files[0], url=>{ pendingAvatar=url; loginScreen(extra); }); };
+  const pvc=$("#pvclear"); if(pvc) pvc.onclick=()=>{ pendingAvatar=null; loginScreen(extra); };
   const em=$("#email"); if(em){ em.oninput=updateLoginBtn; em.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
+  const pw=$("#pw"); if(pw){ pw.oninput=updateLoginBtn; pw.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
   $("#loginbtn").onclick=doLogin;
   updateLoginBtn();
 }
 function updateLoginBtn(){
-  const em=$("#email"), btn=$("#loginbtn"); if(!btn) return;
-  const ok = em && em.value.trim().length>0 && !!pendingTeam;
+  const em=$("#email"), pw=$("#pw"), btn=$("#loginbtn"); if(!btn) return;
+  const isLive = MODE==="live";
+  const isSignup = authMode==="signup";
+  let ok=false, hint="";
+  if(isLive && !isSignup){ // sign-in
+    ok = em && em.value.trim().length>0 && pw && pw.value.length>=6;
+    hint = ok ? "Tap Sign in 🚪" : "Enter your username and password to sign in.";
+  } else if(isLive && isSignup){ // create account
+    ok = em && em.value.trim().length>=2 && pw && pw.value.length>=6 && !!pendingTeam;
+    hint = !em||em.value.trim().length<2 ? "Pick a username (2+ chars)" : !pw||pw.value.length<6 ? "Choose a password (6+ chars)" : !pendingTeam ? "Pick your nation to continue 🌍" : "All set — tap Create my account 🎉";
+  } else { // demo
+    ok = em && em.value.trim().length>0 && !!pendingTeam;
+    hint = ok ? "Next: join or create a league to play 🏆" : (em&&em.value.trim()? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
+  }
   btn.disabled = !ok;
-  const hint=$("#loginhint"); if(hint) hint.textContent = ok ? "Next: join or create a league to play 🏆" : (em&&em.value.trim()? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
+  const h=$("#loginhint"); if(h) h.textContent = hint;
 }
+// Build a deterministic placeholder email under a local-only domain (Supabase wants an email field).
+// Username-only login: the email is never used, never displayed, and never confirmed.
+function pseudoEmail(username){ return String(username||"").toLowerCase().replace(/[^a-z0-9._-]/g,"")+"@themask.local"; }
 async function doLogin(){
-  const val=$("#email").value.trim();
-  if(!val){toast("Type your name first 🙂");return;}
-  if(!pendingTeam){toast("Pick your nation first 🌍");return;}
+  const isLive = MODE==="live";
+  const username = ($("#email")&&$("#email").value.trim())||"";
+  const password = ($("#pw")&&$("#pw").value)||"";
+  if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
+  if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
+  const isSignup = authMode==="signup";
+  if(isSignup && !pendingTeam){ toast("Pick your nation first 🌍"); return; }
   const emoji=pendingEmoji||"🫵";
-  if(MODE==="live"){
+  if(isLive){
+    const email = pseudoEmail(username);
     try{
-      let {data:sess}=await supa.auth.getSession();
-      if(!sess||!sess.session){ const {error}=await supa.auth.signInAnonymously(); if(error) throw error; }
+      if(isSignup){
+        const {data, error} = await supa.auth.signUp({ email, password, options:{ data:{ display_name:username } } });
+        if(error){
+          if(/registered|exists/i.test(error.message)) toast("Username already taken — pick another, or use Sign in");
+          else toast("Sign up failed: "+error.message);
+          return;
+        }
+        // If the project still requires email confirmation, the session will be null and we can't proceed.
+        if(!data.session){
+          // try signing in (works if "Confirm email" is OFF in the Supabase project)
+          const {error:siErr} = await supa.auth.signInWithPassword({ email, password });
+          if(siErr){ toast("Disable 'Confirm email' in Supabase Auth → see SETUP"); console.error(siErr); return; }
+        }
+      } else {
+        const {error} = await supa.auth.signInWithPassword({ email, password });
+        if(error){ toast(/credentials/i.test(error.message)?"Wrong username or password 🤔":"Sign in failed: "+error.message); return; }
+      }
       const {data:u}=await supa.auth.getUser();
       const uid=u.user.id;
-      await sbUpsert("profiles",{id:uid,display_name:val,emoji,is_admin:false,paid:false,fav_team:pendingTeam||null});
+      const profileFields = {id:uid, display_name:username, emoji, is_admin:false, paid:false};
+      if(pendingTeam) profileFields.fav_team = pendingTeam;
+      if(pendingAvatar) profileFields.avatar = pendingAvatar;
+      await sbUpsert("profiles", profileFields);
       await liveLoad(u.user);
-      if(ME){ ME.name=val; ME.emoji=emoji; if(pendingTeam&&!ME.team) ME.team=pendingTeam; }
+      if(ME){ ME.name=username; ME.emoji=emoji; if(pendingAvatar) ME.avatar=pendingAvatar; if(pendingTeam&&!ME.team) ME.team=pendingTeam; }
       await applyPendingJoin();
-      celebrate("LET'S GO!");VIEW="picks";render();
-    }catch(e){ toast("Couldn't sign in — enable Anonymous sign-ins in Supabase (see SETUP)"); console.error(e); }
+      celebrate(isSignup?"WELCOME!":"LET'S GO!"); VIEW="picks"; render();
+    }catch(e){ toast("Auth error — check your Supabase settings"); console.error(e); }
     return;
   }
-  // demo: create/use a profile by the typed name
-  let p=DB.profiles.find(x=>x.name.toLowerCase()===val.toLowerCase());
-  if(!p){ p={id:"me",name:val,emoji,email:val+"@demo",is_admin:false,paid:true,team:pendingTeam||null};
+  // demo: create/use a profile by the typed name (no password needed)
+  let p=DB.profiles.find(x=>x.name.toLowerCase()===username.toLowerCase());
+  if(!p){ p={id:"me",name:username,emoji,email:username+"@demo",is_admin:false,paid:true,team:pendingTeam||null,avatar:pendingAvatar||null};
     DB.profiles=DB.profiles.filter(x=>x.id!=="me"); DB.profiles.unshift(p); }
-  else { p.emoji=emoji; if(pendingTeam&&!p.team) p.team=pendingTeam; }
-  ME=p;saveLocal();celebrate("LET'S GO!");VIEW="picks";render();
+  else { p.emoji=emoji; if(pendingAvatar) p.avatar=pendingAvatar; if(pendingTeam&&!p.team) p.team=pendingTeam; }
+  ME=p; saveLocal(); celebrate("LET'S GO!"); VIEW="picks"; render();
 }
 
 function loadError(msg){

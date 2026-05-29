@@ -37,10 +37,18 @@ In your Supabase project: **SQL Editor → New query**, paste all of **`schema.s
 the prop bets. (Safe to re-run — and you **must** re-run it after any update, e.g. to apply the
 blind-pick / immutable-pick rules and the Banker column.)
 
-### Step 2 — Turn on name-only login
-In Supabase: **Authentication → Sign In / Providers** → enable **"Allow anonymous sign-ins."**
-That's what lets each friend join with just a name (the app creates an anonymous identity
-behind the scenes, so the leaderboard and security rules still work — no email required).
+### Step 2 — Turn on username + password login (no email)
+THE MASK uses username + password — friends never have to give an email address. Behind the
+scenes the app uses Supabase's Email provider, but generates a fake `username@themask.local`
+email that's never sent to or seen by anyone. For this to work you need two settings:
+
+1. In Supabase: **Authentication → Providers → Email** — make sure **Email** is enabled, then
+   **uncheck "Confirm email"** (so Supabase doesn't try to send a confirmation email to the
+   fake address). Save.
+2. In Supabase: **Authentication → Providers → Email** — keep the default "Enable email +
+   password" on. Nothing else needs touching.
+
+(You can leave "Allow anonymous sign-ins" OFF — the new flow doesn't use it.)
 
 ### Step 3 — Your keys are already in
 `index.html` already has your Project URL and anon public key filled in near the top:
