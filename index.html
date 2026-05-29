@@ -289,6 +289,8 @@
   .seg::-webkit-scrollbar{display:none}
   .seg button{white-space:nowrap;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:600}
   .seg button.on{background:var(--card2);color:var(--ink);border-color:var(--purple)}
+  .seg button.locked{opacity:.5;cursor:not-allowed}
+  .seg-rounds{flex-wrap:wrap;justify-content:center}
   .countdown{font-family:'Fredoka';color:var(--cyan)}
 
   /* ---------- 🇸🇪 SWEDISH / GYÖKERES MAKEOVER ---------- */
@@ -958,24 +960,25 @@ function repicksLeft(userId){ return Math.max(0, REPICK_MAX - repicksUsed(userId
 function othersFor(matchId){return DB.predictions.filter(p=>p.match===matchId&&!p.advance&&p.user!==ME.id&&p.hp!=null);}
 function myAnswer(propId){return DB.propAnswers.find(a=>a.user===ME.id&&a.prop===propId);}
 function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.user!==ME.id);}
-// ⭐ One Banker per matchday (the calendar day of kickoff) — resets each day.
-// Blocked by BOTH already-locked Bankers on that day AND a Banker currently toggled on
-// another draft for the same day (so the moment you tap Banker on one pick, the others lock out).
-function bankerLockedOnDay(dayKey){ return DB.predictions.find(p=>{ if(p.user!==ME.id||!p.banker||p.advance||p.ko) return false; const m=DB.matches.find(x=>x.id===p.match); return m && dateKey(m.kickoff)===dayKey; }); }
-function draftBankerOnDay(dayKey, exceptMatchId){
+// ⭐ One Banker per ROUND (a round = matchday MD1/MD2/MD3 for groups, then R32/R16/QF/SF/F).
+// You only get ONE 2× multiplier per round, not one per calendar day. Blocked by BOTH already-saved
+// Bankers in that round AND a Banker currently toggled on another draft in the same round.
+function bankerLockedInRound(md){ return DB.predictions.find(p=>{ if(p.user!==ME.id||!p.banker||p.advance||p.ko) return false; const m=DB.matches.find(x=>x.id===p.match); return m && m.md===md; }); }
+function draftBankerInRound(md, exceptMatchId){
   for(const id in DRAFT){ if(id===exceptMatchId) continue; if(!DRAFT[id]||!DRAFT[id].banker) continue;
-    const m=DB.matches.find(x=>x.id===id); if(m && dateKey(m.kickoff)===dayKey) return {match:id};
+    const m=DB.matches.find(x=>x.id===id); if(m && m.md===md) return {match:id};
   }
   return null;
 }
 function canBankMatch(m){
   if(!m) return false;
-  const day=dateKey(m.kickoff);
-  const locked=bankerLockedOnDay(day);
+  const locked=bankerLockedInRound(m.md);
   if(locked && locked.match!==m.id) return false;
-  if(draftBankerOnDay(day, m.id)) return false;
+  if(draftBankerInRound(m.md, m.id)) return false;
   return true;
 }
+// Group stage is "finished" when every Round-3 match has finished — gates the projected R32 reveal and the KO rounds.
+function groupStageFinished(){ const md3=DB.matches.filter(m=>m.md===3); return md3.length>0 && md3.every(m=>m.status==="finished"); }
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
 function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
@@ -1337,7 +1340,7 @@ function header(){
 }
 
 function navTabs(){
-  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Bracket"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
+  const tabs=[["picks","⚽","Picks"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
   if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
   return tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("");
 }
@@ -1346,7 +1349,9 @@ function nav(){
 }
 
 /* ---------- PICKS ---------- */
-let pickFilter="md1"; // 'md1'|'md2'|'md3' — picks are now organised by group-stage rounds
+let pickFilter="md1"; // 'md1'|'md2'|'md3'|'r32'|'r16'|'qf'|'sf'|'f'  — group rounds + knockout rounds
+const KO_ROUND_LABEL = { r32:"Round of 32", r16:"Round of 16", qf:"Quarter-finals", sf:"Semi-finals", f:"Final" };
+const KO_ROUND_ORDER = ["r32","r16","qf","sf","f"];
 function heroLeaderboard(){
   const lg=curLeague(); if(!lg) return '';
   const lb=leaderboard(); if(!lb.length) return '';
@@ -1489,16 +1494,19 @@ function projectedSurvivorsCard(){
 }
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance&&!p.ko).map(p=>[p.match,p]));
-  // Picks are organised by group-stage round (matchday). On first render, default to the next live one.
-  if(!/^md[123]$/.test(pickFilter)) pickFilter="md"+currentMD();
-  const round=+pickFilter.slice(2);                           // 1, 2 or 3
-  let list=[...DB.matches].filter(m=>m.md===round).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
-  // Round picker (12 matches per round across all 12 groups).
-  const segs=[1,2,3].map(n=>{
-    const ms=DB.matches.filter(m=>m.md===n);
-    const picked=ms.filter(m=>mine[m.id]).length;
-    return ["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`];
-  });
+  // Picks are organised by round: group stage MD1/MD2/MD3, then knockouts R32/R16/QF/SF/F.
+  if(!/^(md[123]|r32|r16|qf|sf|f)$/.test(pickFilter)) pickFilter="md"+currentMD();
+  const isGroupRound = /^md[123]$/.test(pickFilter);
+  const round = isGroupRound ? +pickFilter.slice(2) : null;
+  const koStage = isGroupRound ? null : pickFilter;
+  let list = isGroupRound ? [...DB.matches].filter(m=>m.md===round).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)) : [];
+  // Build the segments: 3 group rounds + 5 knockout rounds. Group rounds show "X/24" pick count.
+  // KO rounds are locked (🔒 padlock) until the group stage actually finishes.
+  const groupDone = groupStageFinished();
+  const segs = [];
+  [1,2,3].forEach(n=>{ const ms=DB.matches.filter(m=>m.md===n); const picked=ms.filter(m=>mine[m.id]).length;
+    segs.push(["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`, false]); });
+  KO_ROUND_ORDER.forEach(stg=>{ segs.push([stg, KO_ROUND_LABEL[stg], !groupDone]); });
   let html=heroLeaderboard()+leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
@@ -1506,22 +1514,39 @@ function viewPicks(){
       <div class="cdbig">${countdown(nm.kickoff)||"KICKOFF!"}</div>
       <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div></div>`;
   }
-  // pick progress for the currently-viewed round
-  const roundMatches=DB.matches.filter(m=>m.md===round);
-  const pickedRound=roundMatches.filter(m=>hasPicked(m.id)).length;
-  const rdc=roundCountdown(round), rdLocked=roundLocked(round);
-  html+=`<div class="card"><h3>⚽ Make your picks</h3>
-    <div class="small muted">Predict a scoreline for <b>every match in the round</b> (${DB.settings.pts_exact} pts spot-on, ${DB.settings.pts_result} for the right result). Make one pick a day your ⭐ <b>Banker</b> for double points (resets each matchday). <b>Edit freely until 30 min before the round's first kickoff</b> — then everything in that round freezes.</div>
-    <div class="small" style="margin-top:6px;color:var(--cyan)">📊 Your picks here also <b>build your bracket</b>: top-2 in each group (based on your scorelines) become your projected R32 line-up.</div>
-    <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>
-    <div class="card center cdcard ${rdLocked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
-      <div class="cdbig">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
-      <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>
-    ${projectedSurvivorsCard()}
-    <div class="seg">${segs.map(s=>{ const md=+s[0].slice(2); const lk=roundLocked(md); return `<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}${lk?' 🔒':''}</button>`; }).join("")}</div>`;
-
-  if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
-  else html+=`<div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
+  // pick progress + round countdown (group rounds only — KO rounds get their own block below)
+  if(isGroupRound){
+    const roundMatches=DB.matches.filter(m=>m.md===round);
+    const pickedRound=roundMatches.filter(m=>hasPicked(m.id)).length;
+    const rdc=roundCountdown(round), rdLocked=roundLocked(round);
+    html+=`<div class="card"><h3>⚽ Make your picks</h3>
+      <div class="small muted">Predict a scoreline for <b>every match in the round</b> (${DB.settings.pts_exact} pts spot-on, ${DB.settings.pts_result} for the right result). Pick <b>one match per round</b> as your ⭐ <b>Banker</b> for double points. <b>Edit freely until 30 min before the round's first kickoff</b> — then everything in that round freezes.</div>
+      <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>
+      <div class="card center cdcard ${rdLocked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
+        <div class="cdbig">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+        <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
+  }
+  // Tab strip — group rounds first, knockout rounds after (locked with 🔒 until group stage ends)
+  html+=`<div class="seg seg-rounds">${segs.map(s=>{
+      const locked = s[2];
+      return `<button class="${pickFilter===s[0]?'on':''} ${locked?'locked':''}" data-pf="${s[0]}">${s[1]}${locked?' 🔒':''}</button>`;
+    }).join("")}</div>`;
+  // Body
+  if(isGroupRound){
+    if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
+    else html+=`<div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
+  } else {
+    // Knockout round view
+    const stageLabel = KO_ROUND_LABEL[koStage];
+    if(!groupDone){
+      html+=`<div class="card center" style="padding:24px 14px"><div style="font-size:42px">🔒</div>
+        <h3 style="margin:8px 0 4px">${stageLabel}</h3>
+        <div class="small muted">Knockout picks unlock once <b>Round 3</b> of the group stage is finished. Until then we don't know who's in this round — the matchups will appear here as soon as the groups are done.</div></div>`;
+    } else {
+      html+=`<div class="card center" style="padding:18px 14px"><h3 style="margin:0 0 4px">${stageLabel}</h3>
+        <div class="small muted">The group stage is done — KO matchups will appear here. (Match fixtures will be wired in shortly.)</div></div>`;
+    }
+  }
   return html;
 }
 // The blind-pick reveal — only shows once the round has locked or the match has actually kicked off.
@@ -1574,16 +1599,15 @@ function matchCard(m){
     inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 ${roundLocked(m.md)&&!isLocked(m)?'round locked':'kicked off'}</span></div><div class="small muted center">You didn't save a pick for this one.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form, freely editable until the round deadline
     const d=draft(m.id), canBank=canBankMatch(m);
-    const dayKey=dateKey(m.kickoff);
-    const blockedByDraft = !canBank && !bankerLockedOnDay(dayKey) && draftBankerOnDay(dayKey, m.id);
+    const blockedByDraft = !canBank && !bankerLockedInRound(m.md) && draftBankerInRound(m.md, m.id);
     const bx=DB.settings.pts_exact*2, br=DB.settings.pts_result*2;
     const bankerHint = !canBank
       ? blockedByDraft
-        ? `⭐ You already picked your Banker on another pick today. Tap it off there to bank this one instead — one Banker per matchday.`
-        : `⭐ You've already locked your Banker for this day. A fresh one unlocks on the next matchday.`
+        ? `⭐ You already picked your Banker on another match in Round ${m.md}. Tap it off there to bank this one instead — one Banker per round.`
+        : `⭐ You've already saved your Banker for Round ${m.md}. A fresh one unlocks in the next round.`
       : d.banker
-        ? `⭐ Banker ON — if this pick lands you score DOUBLE (exact ${bx} pts, right result ${br} pts). One Banker per matchday · no penalty if it misses.`
-        : `⭐ Tap Banker to DOUBLE this match (exact ${bx} pts, right result ${br} pts). You get one Banker each matchday — spend it on the game you're surest of.`;
+        ? `⭐ Banker ON — if this pick lands you score DOUBLE (exact ${bx} pts, right result ${br} pts). One Banker per round · no penalty if it misses.`
+        : `⭐ Tap Banker to DOUBLE this match (exact ${bx} pts, right result ${br} pts). You get one Banker each round — spend it on the game you're surest of.`;
     const rdc=roundCountdown(m.md);
     inner=`${teams}
       <div class="scorerow">
@@ -1592,7 +1616,7 @@ function matchCard(m){
         <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??""}" placeholder="–" maxlength="2"/>
       </div>
       <div class="row" style="margin-top:8px;gap:8px">
-        ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker used today</span>`}
+        ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker used this round</span>`}
         <button class="btn lime" style="flex:1" data-lock="${m.id}">💾 Save pick</button>
       </div>
       <div class="tiny" style="margin-top:6px;color:${canBank&&d.banker?'var(--gold)':'var(--muted)'}">${bankerHint}</div>
@@ -2219,7 +2243,7 @@ function rulesHTML(){
       <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
       <li><b>Edit freely until the round locks</b> — save and unlock picks as you like. Each round-stage round (MD1/MD2/MD3) freezes 30 min before its first kickoff. After that, only a 🔁 half-time re-pick can change anything.</li>
       <li><b>Blind reveal</b> — nobody sees anyone's picks until the round locks (or a specific match kicks off). Then the crowd's picks unlock together.</li>
-      <li><b>⭐ Banker</b> — each matchday, tag <b>one</b> pick as your Banker to score <b>double</b> on it (exact ${s.pts_exact*2}, right result ${s.pts_result*2}). No penalty if it misses, and you get a fresh Banker every day of fixtures.</li>
+      <li><b>⭐ Banker</b> — each round (MD1/MD2/MD3 + each knockout round), tag <b>one</b> pick as your Banker to score <b>double</b> on it (exact ${s.pts_exact*2}, right result ${s.pts_result*2}). No penalty if it misses, and you get a fresh Banker every round.</li>
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
       <li><b>🏆 Groups & knockouts</b> — pick scorelines for all group matches and your top-2 per group is <b>computed automatically</b> from your picks (+${s.pts_advance} per correct survivor). Then play the knockouts in the 🏆 Bracket tab — Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>

@@ -102,8 +102,8 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
 - **Blind & one-shot:** you can't see anyone else's pick for a game until you've **locked yours**
   (or it kicks off), and once locked a pick **can't be changed**. Enforced in the app and in the DB.
 - **Exact scoreline:** +5 points. **Correct result** (right winner/draw, wrong score): +2.
-- **⭐ Banker:** mark one pick each matchday as your Banker for **double** match points. You get a
-  fresh Banker every calendar day of fixtures, so confident calls always have a multiplier ready.
+- **⭐ Banker:** mark one pick each round (MD1/MD2/MD3 of group stage + each knockout round) as
+  your Banker for **double** match points. A fresh Banker every round, with no penalty if it misses.
 - **🔁 Half-time re-pick:** 3 times all tournament you can change a pick on a **live** match,
   for **−3 points** each. Otherwise picks are final.
 - **Group survivors:** +4 for each team you correctly tip to escape a group.
