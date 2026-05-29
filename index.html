@@ -184,6 +184,12 @@
   .lc-leg{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
   .lc-leg.me{font-weight:700;color:var(--ink)}
   .lc-sw{width:14px;height:4px;border-radius:2px;display:inline-block;flex:none}
+  /* projected survivors grid */
+  .survgrid{display:grid;grid-template-columns:1fr;gap:4px}
+  @media(min-width:760px){ .survgrid{grid-template-columns:1fr 1fr} }
+  .survrow{display:grid;grid-template-columns:22px 1fr 1fr 60px;gap:8px;align-items:center;padding:4px 6px;border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:12px}
+  .survg{font-family:'Fredoka';font-size:14px;color:var(--cyan);text-align:center}
+  .survteam{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -722,6 +728,30 @@ function groupStandings(g){
   tt.sort((x,y)=>y.Pts-x.Pts||y.GD-x.GD||y.GF-x.GF||x.name.localeCompare(y.name));
   return tt;
 }
+// ── Derived standings from a user's scoreline predictions (one of the big shifts:
+//    no more "tap to send through" — your group survivors are computed from your picks).
+function predictedGroupStandings(uid, g){
+  const tt=DB.teams.filter(t=>t.grp===g).map(t=>({id:t.id,name:t.name,flag:t.flag,P:0,W:0,D:0,L:0,GF:0,GA:0,GD:0,Pts:0}));
+  const map=Object.fromEntries(tt.map(t=>[t.id,t]));
+  const matches=DB.matches.filter(m=>m.grp===g);
+  let predicted=0;
+  matches.forEach(m=>{
+    const pr=DB.predictions.find(p=>p.user===uid && p.match===m.id && !p.advance && !p.ko);
+    if(!pr || pr.hp==null || pr.ap==null) return;
+    predicted++;
+    const h=map[m.home],a=map[m.away]; if(!h||!a) return;
+    h.P++; a.P++; h.GF+=pr.hp; h.GA+=pr.ap; a.GF+=pr.ap; a.GA+=pr.hp;
+    if(pr.hp>pr.ap){ h.W++; a.L++; h.Pts+=3; }
+    else if(pr.hp<pr.ap){ a.W++; h.L++; a.Pts+=3; }
+    else { h.D++; a.D++; h.Pts++; a.Pts++; }
+  });
+  tt.forEach(t=>t.GD=t.GF-t.GA);
+  tt.sort((x,y)=>y.Pts-x.Pts||y.GD-x.GD||y.GF-x.GF||x.name.localeCompare(y.name));
+  return {std:tt, predicted, total:matches.length};
+}
+function derivedSurvivors(uid, g){ return predictedGroupStandings(uid, g).std.slice(0,2); }
+// what's the next un-finished matchday for the picks page default
+function currentMD(){ for(const md of [1,2,3]) if(DB.matches.some(m=>m.md===md && m.status!=="finished")) return md; return 3; }
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
 // 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+5 🥈+3 🥉+1).
@@ -741,11 +771,13 @@ function scoreFor(profileId){
     if(pr.banker) add*=2;   // ⭐ Banker doubles the match points
     pts+=add;
   });
-  // group advance predictions
-  ADV.filter(a=>a.user===profileId).forEach(a=>{
-    if(!groupComplete(a.grp)) return;
-    const st=groupStandings(a.grp);
-    if([st[0].id,st[1].id].includes(a.team)) pts+=s.pts_advance;
+  // group survivors — DERIVED from your scoreline predictions (no explicit "tap to send through" any more).
+  // For each finished group, your projected top-2 are compared against the real top-2; +pts_advance per match.
+  Object.keys(GROUPS).forEach(g=>{
+    if(!groupComplete(g)) return;
+    const real=groupStandings(g);
+    const realTop2=new Set([real[0].id, real[1].id]);
+    derivedSurvivors(profileId, g).forEach(t=>{ if(realTop2.has(t.id)) pts+=s.pts_advance; });
   });
   // props
   DB.propAnswers.filter(a=>a.user===profileId).forEach(a=>{
@@ -1168,7 +1200,7 @@ function header(){
 }
 
 function navTabs(){
-  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Groups"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
+  const tabs=[["picks","⚽","Picks"],["bracket","🏆","Bracket"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
   if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
   return tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("");
 }
@@ -1177,7 +1209,7 @@ function nav(){
 }
 
 /* ---------- PICKS ---------- */
-let pickFilter="upcoming";
+let pickFilter="md1"; // 'md1'|'md2'|'md3' — picks are now organised by group-stage rounds
 function heroLeaderboard(){
   const lg=curLeague(); if(!lg) return '';
   const lb=leaderboard(); if(!lb.length) return '';
@@ -1301,15 +1333,35 @@ function leagueCharts(){
   if(!leaderboard().length) return '';
   return `<div class="herogrid">${pointsLineCard()}${banterLineCard()}</div>`;
 }
+// Projected survivors card — your top-2 in each group derived live from the scorelines you've locked.
+function projectedSurvivorsCard(){
+  const groups=Object.keys(GROUPS);
+  let totalP=0,totalT=0;
+  const rows=groups.map(g=>{
+    const {std, predicted, total}=predictedGroupStandings(ME.id, g);
+    totalP+=predicted; totalT+=total;
+    const a=std[0], b=std[1];
+    const status = predicted===0 ? `<span class="tiny muted">no picks</span>`
+      : predicted<total ? `<span class="tiny" style="color:var(--gold)">${predicted}/${total}</span>`
+      : `<span class="tiny" style="color:var(--lime)">✓ all in</span>`;
+    return `<div class="survrow"><b class="survg">${g}</b><span class="survteam">${a.flag} ${escapeHtml(a.name)}</span><span class="survteam">${b.flag} ${escapeHtml(b.name)}</span>${status}</div>`;
+  }).join("");
+  return `<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">📊 Your projected R32 line-up</h3><span class="tiny muted">${totalP}/${totalT} matches predicted</span></div>
+    <div class="tiny muted" style="margin:2px 0 8px">No more "tap to send through" — your top-2 in each group are <b>computed automatically</b> from the scorelines you lock. The more matches you predict, the firmer your bracket gets. Each correct survivor when the group ends = <b>+${DB.settings.pts_advance} pts</b>.</div>
+    <div class="survgrid">${rows}</div></div>`;
+}
 function viewPicks(){
-  const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance).map(p=>[p.match,p]));
-  let list=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
-  const groupsSel=["all",...Object.keys(GROUPS)];
-  if(pickFilter==="upcoming") list=list.filter(m=>m.status!=="finished"); // open + live
-  else if(pickFilter==="finished") list=list.filter(m=>m.status==="finished");
-  else if(groupsSel.includes(pickFilter)) list=list.filter(m=>m.grp===pickFilter);
-
-  const segs=[["upcoming","🔮 To play"],["finished","✅ Results"],...Object.keys(GROUPS).map(g=>[g,"Grp "+g])];
+  const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance&&!p.ko).map(p=>[p.match,p]));
+  // Picks are organised by group-stage round (matchday). On first render, default to the next live one.
+  if(!/^md[123]$/.test(pickFilter)) pickFilter="md"+currentMD();
+  const round=+pickFilter.slice(2);                           // 1, 2 or 3
+  let list=[...DB.matches].filter(m=>m.md===round).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+  // Round picker (12 matches per round across all 12 groups).
+  const segs=[1,2,3].map(n=>{
+    const ms=DB.matches.filter(m=>m.md===n);
+    const picked=ms.filter(m=>mine[m.id]).length;
+    return ["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`];
+  });
   let html=heroLeaderboard()+leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
@@ -1322,7 +1374,9 @@ function viewPicks(){
   const pickedOpen=openAll.filter(m=>hasPicked(m.id)).length;
   html+=`<div class="card"><h3>⚽ Make your picks</h3>
     <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Make one pick a day your ⭐ <b>Banker</b> for double points (resets each matchday). <b>One shot — no edits</b> (unless you spend a 🔁 half-time re-pick), and locking reveals everyone else's picks 👀.</div>
+    <div class="small" style="margin-top:6px;color:var(--cyan)">📊 Your picks here also <b>build your bracket</b>: top-2 in each group (based on your scorelines) become your projected R32 line-up.</div>
     ${openAll.length?`<div class="small" style="margin-top:8px">🔒 You've locked <b>${pickedOpen}</b> / ${openAll.length} open games</div>`:''}</div>
+    ${projectedSurvivorsCard()}
     <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
 
   if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
@@ -1401,42 +1455,22 @@ function matchCard(m){
 /* ---------- GROUPS / BRACKET ---------- */
 let grpSel="A";
 function viewBracket(){
-  let html=`<div class="card"><h3>🏆 Group predictions</h3>
-    <div class="small muted">Call who escapes each group (top 2 advance to the Round of 32). Each correct survivor = +${DB.settings.pts_advance} pts, scored automatically when a group wraps. <b>Picks lock the instant you choose 🔒.</b> Pick your tournament winner in the 🃏 Extras tab for big points.</div></div>
-    <div class="seg">${Object.keys(GROUPS).map(g=>`<button class="${grpSel===g?'on':''}" data-grp="${g}">Group ${g}</button>`).join("")}</div>`;
-  const g=grpSel;
-  const st=groupStandings(g);
-  const complete=groupComplete(g);
-  const myAdv=DB.predictions.filter(p=>p.user===ME.id&&p.advance&&p.grp===g).map(p=>p.team);
-  const picksLeft=2-myAdv.length;
-  html+=`<div class="card"><div class="grphead"><span class="grpbadge">Group ${g}</span>${complete?'<span class="chip done">Final</span>':'<span class="chip open">In progress</span>'}</div>`;
-  if(!complete){
-    html+= myAdv.length<2
-      ? `<div class="small" style="margin:2px 0 9px">⬆️ <b>Tap ${picksLeft} team${picksLeft>1?'s':''}</b> to send through to the knockouts <span class="muted">· +${DB.settings.pts_advance} each if right · locks instantly 🔒</span></div>`
-      : `<div class="small earn good" style="margin:2px 0 9px">🔒 Your two survivors are locked in — good luck!</div>`;
-  }
-  st.forEach((t,i)=>{
-    const picked=myAdv.includes(t.id);
-    const qualified=complete && i<2;
-    const canPick=!complete && !picked && myAdv.length<2;
-    let right;
-    if(complete){ right = picked ? (qualified?`<span class="advtag hit">✓ THROUGH</span>`:`<span class="advtag miss">✗ OUT</span>`) : (qualified?`<span class="tiny" style="color:var(--gold)">▲ advanced</span>`:''); }
-    else if(picked){ right=`<span class="advtag on">⬆️ THROUGH 🔒</span>`; }
-    else if(canPick){ right=`<span class="advhint">tap to send through ⬆️</span>`; }
-    else { right=`<span class="muted tiny">—</span>`; }
-    html+=`<button class="advrow ${picked?'on':canPick?'can':''}" ${canPick?`data-adv="${t.id}" data-advgrp="${g}"`:'disabled'}>
-      <b style="width:15px;color:var(--muted)">${i+1}</b>
-      <span class="flag" style="font-size:21px;width:27px">${t.flag}</span>
-      <span class="tname">${t.name}</span>
-      ${complete?`<span class="gp">${t.Pts}p · ${t.GF}-${t.GA}</span>`:''}
-      <span style="margin-left:auto">${right}</span>
-    </button>`;
+  let html=`<div class="card"><h3>🏆 Your bracket</h3>
+    <div class="small muted">The group survivors are <b>derived from your scoreline picks</b> in the ⚽ Picks tab — your top-2 per group automatically become your projected R32 line-up. <b>Drag-and-drop knockout bracket coming next</b> (pick winners through R32 → R16 → QF → SF → Final). For now you can still pin teams to each stage below.</div></div>`;
+  // Derived survivors per group — read-only, computed from picks
+  html+=`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">📊 Your projected R32 line-up</h3><span class="tiny muted">+${DB.settings.pts_advance} pts per correct survivor</span></div><div class="survgrid" style="margin-top:8px">`;
+  Object.keys(GROUPS).forEach(g=>{
+    const {std, predicted, total}=predictedGroupStandings(ME.id, g);
+    const real=groupStandings(g); const realComplete=groupComplete(g); const realTop2=realComplete?new Set([real[0].id, real[1].id]):null;
+    const tag=(t,i)=>{ if(!realComplete) return ''; return realTop2.has(t.id)?'<span class="advtag hit" style="margin-left:4px">✓</span>':'<span class="advtag miss" style="margin-left:4px">✗</span>'; };
+    const a=std[0], b=std[1];
+    const status = predicted===0 ? `<span class="tiny muted">no picks</span>`
+      : realComplete ? `<span class="tiny" style="color:var(--lime)">FT</span>`
+      : predicted<total ? `<span class="tiny" style="color:var(--gold)">${predicted}/${total}</span>`
+      : `<span class="tiny" style="color:var(--lime)">✓ all in</span>`;
+    html+=`<div class="survrow"><b class="survg">${g}</b><span class="survteam">${a.flag} ${escapeHtml(a.name)}${tag(a,0)}</span><span class="survteam">${b.flag} ${escapeHtml(b.name)}${tag(b,1)}</span>${status}</div>`;
   });
-  if(complete){
-    const correct=myAdv.filter(id=>[st[0].id,st[1].id].includes(id)).length;
-    html+=`<div class="small earn good" style="margin-top:8px">Group done — you nailed ${correct}/2 survivors (+${correct*DB.settings.pts_advance} pts)</div>`;
-  }
-  html+=`</div>`;
+  html+=`</div></div>`;
   // 🏆 Knockout run predictions
   html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">This is how you bet on the games after the groups: tip which teams reach each stage. ${KO_PTS.r16} pts per correct Round-of-16 team, ${KO_PTS.qf} per Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Extras tab.)</div>`;
   KO_STAGES.forEach(stage=>{
@@ -2006,7 +2040,7 @@ function rulesHTML(){
       <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
       <li><b>⭐ Banker</b> — each matchday, tag <b>one</b> pick as your Banker to score <b>double</b> on it (exact ${s.pts_exact*2}, right result ${s.pts_result*2}). No penalty if it misses, and you get a fresh Banker every day of fixtures.</li>
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
-      <li><b>🏆 Groups & knockouts</b> — tip group survivors (+${s.pts_advance}), then which teams reach the Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
+      <li><b>🏆 Groups & knockouts</b> — pick scorelines for all group matches and your top-2 per group is <b>computed automatically</b> from your picks (+${s.pts_advance} per correct survivor). Then play the knockouts in the 🏆 Bracket tab — Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>
       <li><b>⚽ Your team</b> — pick the nation you support when you join (locked in). Bag <b>+${FAN_BONUS} pt</b> every time they win a match.</li>
       <li><b>🃏 Extras</b> — tournament-wide predictions: who wins it all (worth 30!), top scorer & fun calls.</li>
       <li><b>💬 Banter bonus</b> — the 3 funniest (most ❤️ likes on your posts) bank bonus points: 🥇 +${BANTER_BONUS[0]} · 🥈 +${BANTER_BONUS[1]} · 🥉 +${BANTER_BONUS[2]}.</li>
