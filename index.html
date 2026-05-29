@@ -810,8 +810,23 @@ function othersFor(matchId){return DB.predictions.filter(p=>p.match===matchId&&!
 function myAnswer(propId){return DB.propAnswers.find(a=>a.user===ME.id&&a.prop===propId);}
 function othersProp(propId){return DB.propAnswers.filter(a=>a.prop===propId&&a.user!==ME.id);}
 // ⭐ One Banker per matchday (the calendar day of kickoff) — resets each day.
+// Blocked by BOTH already-locked Bankers on that day AND a Banker currently toggled on
+// another draft for the same day (so the moment you tap Banker on one pick, the others lock out).
 function bankerLockedOnDay(dayKey){ return DB.predictions.find(p=>{ if(p.user!==ME.id||!p.banker||p.advance||p.ko) return false; const m=DB.matches.find(x=>x.id===p.match); return m && dateKey(m.kickoff)===dayKey; }); }
-function canBankMatch(m){ if(!m) return false; const b=bankerLockedOnDay(dateKey(m.kickoff)); return !b || b.match===m.id; }
+function draftBankerOnDay(dayKey, exceptMatchId){
+  for(const id in DRAFT){ if(id===exceptMatchId) continue; if(!DRAFT[id]||!DRAFT[id].banker) continue;
+    const m=DB.matches.find(x=>x.id===id); if(m && dateKey(m.kickoff)===dayKey) return {match:id};
+  }
+  return null;
+}
+function canBankMatch(m){
+  if(!m) return false;
+  const day=dateKey(m.kickoff);
+  const locked=bankerLockedOnDay(day);
+  if(locked && locked.match!==m.id) return false;
+  if(draftBankerOnDay(day, m.id)) return false;
+  return true;
+}
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
 function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
@@ -1356,9 +1371,13 @@ function matchCard(m){
     inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 kicked off</span></div><div class="small muted center">You didn't lock a pick.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form (nothing saved until you Lock In)
     const d=draft(m.id), canBank=canBankMatch(m);
+    const dayKey=dateKey(m.kickoff);
+    const blockedByDraft = !canBank && !bankerLockedOnDay(dayKey) && draftBankerOnDay(dayKey, m.id);
     const bx=DB.settings.pts_exact*2, br=DB.settings.pts_result*2;
     const bankerHint = !canBank
-      ? `⭐ You've already used your Banker for this day. A fresh one unlocks on the next matchday.`
+      ? blockedByDraft
+        ? `⭐ You already picked your Banker on another pick today. Tap it off there to bank this one instead — one Banker per matchday.`
+        : `⭐ You've already locked your Banker for this day. A fresh one unlocks on the next matchday.`
       : d.banker
         ? `⭐ Banker ON — if this pick lands you score DOUBLE (exact ${bx} pts, right result ${br} pts). One Banker per matchday · no penalty if it misses.`
         : `⭐ Tap Banker to DOUBLE this match (exact ${bx} pts, right result ${br} pts). You get one Banker each matchday — spend it on the game you're surest of.`;
