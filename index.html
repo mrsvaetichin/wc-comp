@@ -829,16 +829,30 @@ function userBracketState(uid){
 async function pickBracketWinner(tieId, teamId){
   ALL.bracket ||= [];
   const existing = ALL.bracket.find(p=>p.user===ME.id && p.league===LG && p.tie===tieId);
-  // If clicking the same team that's already the winner — untoggle (clear pick + all downstream).
+  // Same team tapped twice = untoggle. Any change always cascades-clears every downstream tie.
   const toggleOff = existing && existing.team===teamId;
-  // Always clear downstream when changing or untoggling — keeps the chain consistent.
   const ds = downstreamTies(tieId);
   ALL.bracket = ALL.bracket.filter(p=>!(p.user===ME.id && p.league===LG && (p.tie===tieId || ds.includes(p.tie))));
+  const newId = `${ME.id}-${LG}-${tieId}`;
+  const created = new Date().toISOString();
   if(!toggleOff){
-    ALL.bracket.push({ id:`${ME.id}-${LG}-${tieId}`, user:ME.id, league:LG, tie:tieId, team:teamId, created:new Date().toISOString() });
+    ALL.bracket.push({ id:newId, user:ME.id, league:LG, tie:tieId, team:teamId, created });
   }
   scopeLeague(); saveLocal();
-  // (Supabase persistence for bracket picks ships with the rest of the schema additions; locally-only for now.)
+  // Mirror to Supabase: wipe downstream picks (server-side), then upsert or delete this tie.
+  if(MODE==="live" && supa){
+    try{
+      if(ds.length){ await supa.from("bracket_picks").delete().eq("user_id",ME.id).eq("league_id",LG).in("tie",ds); }
+      if(toggleOff){ await supa.from("bracket_picks").delete().eq("user_id",ME.id).eq("league_id",LG).eq("tie",tieId); }
+      else        { await sbUpsert("bracket_picks",{ id:newId, league_id:LG, user_id:ME.id, tie:tieId, team:teamId, created_at:created }); }
+    }catch(e){ console.error(e); toast("Bracket sync error"); }
+  }
+}
+async function reloadBracket(){ if(MODE!=="live"||!supa)return;
+  try{ const {data}=await supa.from("bracket_picks").select("*");
+    ALL.bracket=(data||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));
+    scopeLeague();
+  }catch(e){ console.error("reloadBracket",e); }
 }
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
@@ -1102,13 +1116,14 @@ async function kickMember(uid){
   scopeLeague();
   if(MODE==="live" && supa){
     try{
-      await supa.from("predictions") .delete().eq("user_id",uid).eq("league_id",lg);
-      await supa.from("prop_answers").delete().eq("user_id",uid).eq("league_id",lg);
-      await supa.from("repicks")     .delete().eq("user_id",uid).eq("league_id",lg);
-      await supa.from("likes")       .delete().eq("user_id",uid).eq("league_id",lg);
-      await supa.from("cards")       .delete().eq("from_id",uid).eq("league_id",lg);
-      await supa.from("comments")    .delete().eq("user_id",uid).eq("league_id",lg);
-      await supa.from("memberships") .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("predictions")  .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("prop_answers") .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("repicks")      .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("bracket_picks").delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("likes")        .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("cards")        .delete().eq("from_id",uid).eq("league_id",lg);
+      await supa.from("comments")     .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("memberships")  .delete().eq("user_id",uid).eq("league_id",lg);
     }catch(e){ console.error(e); }
   }
   saveLocal(); toast(`🟥 ${p?p.name:"Player"} sent off`); render();
@@ -2403,9 +2418,9 @@ async function boot(){
 
 async function liveLoad(user){
   // pull everything into the same shape the UI expects
-  const tbl=async n=>{const {data}=await supa.from(n).select("*");return data||[];};
-  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes]=await Promise.all(
-    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships","comments","cards","likes"].map(tbl));
+  const tbl=async n=>{ try{ const {data}=await supa.from(n).select("*");return data||[]; }catch(e){ console.error("load "+n,e); return []; } };
+  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes,bracketPicks]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships","comments","cards","likes","bracket_picks"].map(tbl));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
   if(!DB.settings.ko) DB.settings.ko={r16:[],qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
@@ -2425,6 +2440,7 @@ async function liveLoad(user){
   ALL.comments = (comments||[]).map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
   ALL.cards    = (cards||[]).map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
   ALL.likes    = (likes||[]).map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
+  ALL.bracket  = (bracketPicks||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
   if(!mine){

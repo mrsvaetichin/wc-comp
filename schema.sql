@@ -53,6 +53,12 @@ create table if not exists cards (id text primary key,
 create table if not exists likes (id text primary key,
   league_id text references leagues(id) on delete cascade,
   comment_id text, user_id uuid references auth.users(id) on delete cascade, created_at timestamptz default now());
+-- 🏆 knockout bracket picks (one winner per tie, per user, per league — drag-drop tree)
+create table if not exists bracket_picks (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  tie text not null, team text not null, created_at timestamptz default now(),
+  unique (league_id, user_id, tie));
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
@@ -85,6 +91,7 @@ alter table memberships enable row level security;
 alter table comments enable row level security;
 alter table cards enable row level security;
 alter table likes enable row level security;
+alter table bracket_picks enable row level security;
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
@@ -158,6 +165,11 @@ drop policy if exists cd_ins on cards;       create policy cd_ins on cards for i
 drop policy if exists lk_read on likes;      create policy lk_read on likes for select to authenticated using (is_member(league_id));
 drop policy if exists lk_ins on likes;       create policy lk_ins on likes for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
 drop policy if exists lk_del on likes;       create policy lk_del on likes for delete to authenticated using (user_id = auth.uid());
+-- 🏆 bracket picks: read in your leagues; you can only insert/update/delete your own.
+drop policy if exists bp_read on bracket_picks; create policy bp_read on bracket_picks for select to authenticated using (is_member(league_id));
+drop policy if exists bp_ins on bracket_picks;  create policy bp_ins on bracket_picks for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists bp_upd on bracket_picks;  create policy bp_upd on bracket_picks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists bp_del on bracket_picks;  create policy bp_del on bracket_picks for delete to authenticated using (user_id = auth.uid());
 
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw, official matchday dates, props)
