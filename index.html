@@ -767,6 +767,16 @@ function predictedGroupStandings(uid, g){
 function derivedSurvivors(uid, g){ return predictedGroupStandings(uid, g).std.slice(0,2); }
 // what's the next un-finished matchday for the picks page default
 function currentMD(){ for(const md of [1,2,3]) if(DB.matches.some(m=>m.md===md && m.status!=="finished")) return md; return 3; }
+// ⏱ Round-wide picks deadline = 30 min before that matchday's earliest kickoff.
+// Until the deadline you can save, edit, unlock and re-lock any pick. After it, every pick in that
+// round freezes (the only way to change anything after that is a 🔁 half-time re-pick).
+const ROUND_LOCK_BEFORE_MS = 30*60*1000;
+function roundDeadline(md){ const ms=DB.matches.filter(x=>x.md===md); if(!ms.length) return null;
+  const earliest=Math.min(...ms.map(x=>new Date(x.kickoff).getTime())); return earliest - ROUND_LOCK_BEFORE_MS; }
+function roundLocked(md){ const dl=roundDeadline(md); return dl==null ? false : Date.now()>=dl; }
+function roundCountdown(md){ const dl=roundDeadline(md); if(dl==null) return null; const ms=dl-Date.now(); if(ms<=0) return null;
+  const d=Math.floor(ms/86400000), h=Math.floor((ms%86400000)/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000);
+  if(d>0) return `${d}d ${h}h ${m}m`; if(h>0) return `${h}h ${m}m`; if(m>0) return `${m}m ${s}s`; return `${s}s`; }
 
 /* ============================================================================
    🏆  KNOCKOUT BRACKET — a 32-team seeded tree fed by your group-stage picks.
@@ -1022,11 +1032,29 @@ async function reloadPredictions(){ if(MODE!=="live"||!supa)return;
 async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}=await supa.from("prop_answers").select("*"); if(error)return; ALL.pans=(data||[]).map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer})); scopeLeague(); }
 async function lockPick(matchId, hp, ap, banker){
   if(!LG){ toast("Join a league first"); return; }
-  if(hasPicked(matchId))return;
+  // Refuse to save if the round has already locked.
+  const m=DB.matches.find(x=>x.id===matchId); if(m && roundLocked(m.md)){ toast("⏱ Round locked — pick frozen"); return; }
   const pr={id:`${ME.id}-${LG}-${matchId}`,user:ME.id,league:LG,match:matchId,hp,ap,banker:!!banker};
+  // Replace any existing pick locally (round-open model — picks are editable until the deadline).
+  ALL.pred = ALL.pred.filter(p=>!(p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko));
   ALL.pred.push(pr); scopeLeague();
-  if(MODE==="live"){ await sbInsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }
+  if(MODE==="live"){
+    try{ await sbUpsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }catch(e){ console.error(e); }
+  }
   delete DRAFT[matchId]; saveLocal();
+}
+// 🔓 Unlock a saved pick so the user can edit it — only allowed before the round deadline.
+async function unlockPick(matchId){
+  const m=DB.matches.find(x=>x.id===matchId); if(!m) return;
+  if(roundLocked(m.md)){ toast("⏱ Round locked — can't edit"); return; }
+  // Seed the draft with the current pick so the form opens pre-filled.
+  const cur=ALL.pred.find(p=>p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko);
+  if(cur){ const d=draft(matchId); d.hp=cur.hp; d.ap=cur.ap; d.banker=!!cur.banker; }
+  ALL.pred = ALL.pred.filter(p=>!(p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko));
+  scopeLeague(); saveLocal();
+  if(MODE==="live"){
+    try{ await supa.from("predictions").delete().eq("user_id",ME.id).eq("league_id",LG).eq("match_id",matchId); }catch(e){ console.error(e); }
+  }
 }
 async function lockProp(propId, answer){
   if(!LG)return;
@@ -1478,24 +1506,32 @@ function viewPicks(){
       <div class="cdbig">${countdown(nm.kickoff)||"KICKOFF!"}</div>
       <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div></div>`;
   }
-  // pick progress for the next matchday's open games
-  const openAll=DB.matches.filter(m=>m.status!=="finished"&&!isLocked(m));
-  const pickedOpen=openAll.filter(m=>hasPicked(m.id)).length;
+  // pick progress for the currently-viewed round
+  const roundMatches=DB.matches.filter(m=>m.md===round);
+  const pickedRound=roundMatches.filter(m=>hasPicked(m.id)).length;
+  const rdc=roundCountdown(round), rdLocked=roundLocked(round);
   html+=`<div class="card"><h3>⚽ Make your picks</h3>
-    <div class="small muted">Lock the exact scoreline for points (${DB.settings.pts_exact} spot-on, ${DB.settings.pts_result} right result). Make one pick a day your ⭐ <b>Banker</b> for double points (resets each matchday). <b>One shot — no edits</b> (unless you spend a 🔁 half-time re-pick), and locking reveals everyone else's picks 👀.</div>
+    <div class="small muted">Predict a scoreline for <b>every match in the round</b> (${DB.settings.pts_exact} pts spot-on, ${DB.settings.pts_result} for the right result). Make one pick a day your ⭐ <b>Banker</b> for double points (resets each matchday). <b>Edit freely until 30 min before the round's first kickoff</b> — then everything in that round freezes.</div>
     <div class="small" style="margin-top:6px;color:var(--cyan)">📊 Your picks here also <b>build your bracket</b>: top-2 in each group (based on your scorelines) become your projected R32 line-up.</div>
-    ${openAll.length?`<div class="small" style="margin-top:8px">🔒 You've locked <b>${pickedOpen}</b> / ${openAll.length} open games</div>`:''}</div>
+    <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>
+    <div class="card center cdcard ${rdLocked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
+      <div class="cdbig">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+      <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>
     ${projectedSurvivorsCard()}
-    <div class="seg">${segs.map(s=>`<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}</button>`).join("")}</div>`;
+    <div class="seg">${segs.map(s=>{ const md=+s[0].slice(2); const lk=roundLocked(md); return `<button class="${pickFilter===s[0]?'on':''}" data-pf="${s[0]}">${s[1]}${lk?' 🔒':''}</button>`; }).join("")}</div>`;
 
   if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
   else html+=`<div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
   return html;
 }
+// The blind-pick reveal — only shows once the round has locked or the match has actually kicked off.
+// Until then nobody sees anyone else's picks so people can't peek + copy mid-window.
 function revealBlock(m){
+  const canSee = roundLocked(m.md) || isLocked(m);
+  if(!canSee){ const dl=roundCountdown(m.md); return `<div class="small muted" style="margin-top:8px">👀 The crowd's picks unlock when this round locks${dl?` (in ${dl})`:''}.</div>`; }
   const others=othersFor(m.id);
-  if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else has locked this one in yet.</div>`;
-  let h=`<div class="reveal"><div class="revhead">👀 The crowd locked in (${others.length})</div>`;
+  if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else picked this one.</div>`;
+  let h=`<div class="reveal"><div class="revhead">👀 The crowd's picks (${others.length})</div>`;
   others.forEach(p=>{ const u=profileById(p.user);
     h+=`<div class="revrow"><span class="re">${u?(u.avatar?`<img class="avimg" style="width:18px;height:18px" src="${u.avatar}"/>`:u.emoji):"🙂"}</span><span class="nm">${u?u.name:"?"}</span><b>${p.hp}–${p.ap}</b>${p.banker?' <span title="Banker">⭐</span>':''}</div>`; });
   return h+`</div>`;
@@ -1515,10 +1551,14 @@ function matchCard(m){
       earn=`<div class="small center ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${eff.hp}–${eff.ap}${eff.banker?' ⭐2×':''}${eff.repick?' 🔁':''} · +${got} pts</div>`;
     } else earn=`<div class="small muted center">You didn't pick this one</div>`;
     inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${revealBlock(m)}`;
-  } else if(base){   // you've locked in → reveal the crowd (+ re-pick if live)
+  } else if(base){   // you have a saved pick
     const live=inPlay(m);
+    const rndOpen = !roundLocked(m.md) && !isLocked(m);
     inner=`${teams}<div class="scorerow"><span class="lockedpick">${eff.hp} – ${eff.ap}${eff.banker?' <span title="Banker (2×)">⭐</span>':''}${eff.repick?' <span title="Re-picked">🔁</span>':''}</span></div>
-      <div class="small muted center">${live?'🟢 LIVE — in play':'🔒 Locked'}${(!live&&cd)?` · in ${cd}`:''}</div>`;
+      <div class="small muted center">${live?'🟢 LIVE — in play':(rndOpen?'💾 Saved · editable until round locks':'🔒 Locked')}${(!live&&cd)?` · in ${cd}`:''}</div>`;
+    if(rndOpen){
+      inner+=`<div class="row" style="margin-top:8px;gap:8px"><button class="btn block" style="flex:1;border-color:var(--cyan);color:var(--cyan)" data-unlock="${m.id}">🔓 Unlock &amp; edit</button></div>`;
+    }
     if(live && repicksLeft(ME.id)>0){
       const d=draft(m.id);
       inner+=`<div class="reveal"><div class="revhead">🔁 Half-time re-pick · −${REPICK_COST} pts · ${repicksLeft(ME.id)} left</div>
@@ -1530,9 +1570,9 @@ function matchCard(m){
         <button class="btn gold block" data-repick="${m.id}">Change my pick (−${REPICK_COST} pts)</button></div>`;
     } else if(live){ inner+=`<div class="small muted center" style="margin-top:6px">No re-picks left</div>`; }
     inner+=revealBlock(m);
-  } else if(isLocked(m)){   // kicked off, you never picked
-    inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 kicked off</span></div><div class="small muted center">You didn't lock a pick.</div>${revealBlock(m)}`;
-  } else {   // OPEN — draft form (nothing saved until you Lock In)
+  } else if(isLocked(m) || roundLocked(m.md)){   // round locked or match kicked off, you never picked
+    inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 ${roundLocked(m.md)&&!isLocked(m)?'round locked':'kicked off'}</span></div><div class="small muted center">You didn't save a pick for this one.</div>${revealBlock(m)}`;
+  } else {   // OPEN — draft form, freely editable until the round deadline
     const d=draft(m.id), canBank=canBankMatch(m);
     const dayKey=dateKey(m.kickoff);
     const blockedByDraft = !canBank && !bankerLockedOnDay(dayKey) && draftBankerOnDay(dayKey, m.id);
@@ -1544,6 +1584,7 @@ function matchCard(m){
       : d.banker
         ? `⭐ Banker ON — if this pick lands you score DOUBLE (exact ${bx} pts, right result ${br} pts). One Banker per matchday · no penalty if it misses.`
         : `⭐ Tap Banker to DOUBLE this match (exact ${bx} pts, right result ${br} pts). You get one Banker each matchday — spend it on the game you're surest of.`;
+    const rdc=roundCountdown(m.md);
     inner=`${teams}
       <div class="scorerow">
         <input class="scoreinput" inputmode="numeric" data-sc="home" data-m="${m.id}" value="${d.hp??""}" placeholder="–" maxlength="2"/>
@@ -1552,12 +1593,16 @@ function matchCard(m){
       </div>
       <div class="row" style="margin-top:8px;gap:8px">
         ${canBank?`<button class="btn ${d.banker?'gold':''}" style="flex:1" data-bank="${m.id}">⭐ Banker 2×${d.banker?' ✓':''}</button>`:`<span class="tiny muted" style="flex:1;align-self:center">⭐ Banker used today</span>`}
-        <button class="btn lime" style="flex:1" data-lock="${m.id}">🔒 Lock it in</button>
+        <button class="btn lime" style="flex:1" data-lock="${m.id}">💾 Save pick</button>
       </div>
       <div class="tiny" style="margin-top:6px;color:${canBank&&d.banker?'var(--gold)':'var(--muted)'}">${bankerHint}</div>
-      <div class="tiny muted" style="margin-top:4px">⚠️ One shot — locking reveals everyone's picks 👀${cd?` · ⏱ ${cd}`:''}</div>`;
+      <div class="tiny muted" style="margin-top:4px">✏️ Edit freely until the round locks${rdc?` · ⏱ ${rdc} left`:''}</div>`;
   }
-  const tag = m.status==="finished"?'<span class="chip done">FT</span>': (base&&inPlay(m))?'<span class="chip live">🟢 LIVE</span>': base?'<span class="chip done">🔒 Locked</span>': isLocked(m)?'<span class="chip">🔒</span>':`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
+  const tag = m.status==="finished"?'<span class="chip done">FT</span>'
+    : (base&&inPlay(m))?'<span class="chip live">🟢 LIVE</span>'
+    : base?(roundLocked(m.md)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
+    : (roundLocked(m.md)||isLocked(m))?'<span class="chip">🔒</span>'
+    :`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
   return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
 }
 
@@ -1938,18 +1983,18 @@ function wire(){
   $$("[data-sc]").forEach(inp=>inp.oninput=()=>{ const id=inp.dataset.m,d=draft(id); const v=inp.value===""?null:clamp(parseInt(inp.value)||0,0,30); if(inp.dataset.sc==="home")d.hp=v; else d.ap=v; });
   // banker toggle (draft-only) + lock-in
   $$("[data-bank]").forEach(b=>b.onclick=()=>{ const id=b.dataset.bank,d=draft(id); d.banker=!d.banker; render(); });
-  $$("[data-lock]").forEach(b=>b.onclick=()=>{
+  $$("[data-lock]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.lock;
     const hi=$(`[data-sc="home"][data-m="${id}"]`),ai=$(`[data-sc="away"][data-m="${id}"]`);
     const hp=hi.value===""?null:clamp(parseInt(hi.value)||0,0,30);
     const ap=ai.value===""?null:clamp(parseInt(ai.value)||0,0,30);
     if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
-    const d=draft(id), m=DB.matches.find(x=>x.id===id), useBank=d.banker&&canBankMatch(m), vs=`${teamById(m.home).flag} ${teamById(m.home).name} vs ${teamById(m.away).name} ${teamById(m.away).flag}`;
-    confirmModal(`<div class="center"><div class="big2">${hp}–${ap}</div><div class="small muted">${vs}</div>
-      ${useBank?'<div class="small" style="color:var(--gold);margin-top:4px">⭐ Banker — double points!</div>':''}
-      <div class="small" style="margin-top:8px">You can't change this once it's locked (unless you spend a half-time re-pick).</div></div>`,
-      async()=>{ await lockPick(id,hp,ap,useBank); celebrate("LOCKED IN!"); render(); }, "Lock it in 🔒");
+    const d=draft(id), m=DB.matches.find(x=>x.id===id), useBank=d.banker&&canBankMatch(m);
+    // Quick-save model: no confirm modal — you can edit again until the round deadline.
+    await lockPick(id,hp,ap,useBank); toast("💾 Saved · editable until the round locks"); render();
   });
+  // 🔓 Unlock a saved pick so you can edit it — only allowed before the round deadline.
+  $$("[data-unlock]").forEach(b=>b.onclick=async()=>{ await unlockPick(b.dataset.unlock); render(); });
   // half-time re-pick (in-play, costs points)
   $$("[data-repick]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.repick;
@@ -2172,7 +2217,8 @@ function rulesHTML(){
     <ul style="margin:4px 0 8px;padding-left:18px">
       <li><b>🏆 Private leagues</b> — play in your own league(s). Create one and share the invite code/link, or join with a code. Your picks &amp; standings are separate in each league; switch any time via the 🏆 chip up top.</li>
       <li><b>Predict every match</b> — exact score = ${s.pts_exact} pts, right result = ${s.pts_result} pts.</li>
-      <li><b>Blind & final</b> — you can't see anyone's pick until you've locked yours, and a locked pick can't be changed.</li>
+      <li><b>Edit freely until the round locks</b> — save and unlock picks as you like. Each round-stage round (MD1/MD2/MD3) freezes 30 min before its first kickoff. After that, only a 🔁 half-time re-pick can change anything.</li>
+      <li><b>Blind reveal</b> — nobody sees anyone's picks until the round locks (or a specific match kicks off). Then the crowd's picks unlock together.</li>
       <li><b>⭐ Banker</b> — each matchday, tag <b>one</b> pick as your Banker to score <b>double</b> on it (exact ${s.pts_exact*2}, right result ${s.pts_result*2}). No penalty if it misses, and you get a fresh Banker every day of fixtures.</li>
       <li><b>🔁 Half-time re-pick</b> — ${REPICK_MAX}× all tournament you may change a pick while a match is live, for −${REPICK_COST} pts each.</li>
       <li><b>🏆 Groups & knockouts</b> — pick scorelines for all group matches and your top-2 per group is <b>computed automatically</b> from your picks (+${s.pts_advance} per correct survivor). Then play the knockouts in the 🏆 Bracket tab — Round of 16 (+${KO_PTS.r16}) / QF (+${KO_PTS.qf}) / SF (+${KO_PTS.sf}) / Final (+${KO_PTS.final}).</li>

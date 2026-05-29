@@ -129,6 +129,12 @@ create policy pred_read on predictions for select to authenticated using (
 drop policy if exists pred_own on predictions;
 drop policy if exists pred_insert on predictions;
 create policy pred_insert on predictions for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+-- Picks are now editable until the round locks (30 min before that matchday's first kickoff).
+-- The deadline itself is enforced app-side; RLS just lets you update/delete your own rows.
+drop policy if exists pred_upd on predictions;
+create policy pred_upd on predictions for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists pred_del on predictions;
+create policy pred_del on predictions for delete to authenticated using (user_id = auth.uid());
 
 drop policy if exists pa_read on prop_answers;
 create policy pa_read on prop_answers for select to authenticated using (
