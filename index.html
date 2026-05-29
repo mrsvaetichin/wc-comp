@@ -2463,6 +2463,9 @@ function loginScreen(extra=""){
       <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji&&!pendingAvatar?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
       <div class="step"><span class="stepn">${isLive?'5':'4'}</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
       <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
+      <div class="step"><span class="stepn">${isLive?'6':'5'}</span><b>Got an invite code?</b> <span class="muted tiny">— optional · drops you straight into your friends' league</span></div>
+      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${(PENDING_JOIN||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'')}"/>
+      <div class="tiny muted" style="margin-top:4px">No code? No worries — you'll be able to create a league or join one on the next screen.</div>
       <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>${isLive?'Create my account →':'Continue →'}</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Fill the steps above to continue.</div>
     `:`
@@ -2470,6 +2473,8 @@ function loginScreen(extra=""){
       <input id="email" placeholder="your username" autocomplete="username"/>
       <div class="step"><span class="stepn">2</span><b>Password</b></div>
       <input id="pw" type="password" placeholder="your password" autocomplete="current-password"/>
+      <div class="step"><span class="stepn">3</span><b>Invite code</b> <span class="muted tiny">— optional · join a new league on the way in</span></div>
+      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${(PENDING_JOIN||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'')}"/>
       <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Sign in →</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter your username and password to sign in.</div>
     `}
@@ -2512,6 +2517,10 @@ async function doLogin(){
   const isLive = MODE==="live";
   const username = ($("#email")&&$("#email").value.trim())||"";
   const password = ($("#pw")&&$("#pw").value)||"";
+  // pull the optional invite code straight from the form so it joins the league after auth
+  const joinCodeRaw = ($("#joincode")&&$("#joincode").value)||"";
+  const joinCode = joinCodeRaw.toString().toUpperCase().replace(/[^A-Z0-9]/g,"").trim();
+  if(joinCode) PENDING_JOIN = joinCode;
   if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
   if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
   const isSignup = authMode==="signup";
@@ -2555,7 +2564,9 @@ async function doLogin(){
   if(!p){ p={id:"me",name:username,emoji,email:username+"@demo",is_admin:false,paid:true,team:pendingTeam||null,avatar:pendingAvatar||null};
     DB.profiles=DB.profiles.filter(x=>x.id!=="me"); DB.profiles.unshift(p); }
   else { p.emoji=emoji; if(pendingAvatar) p.avatar=pendingAvatar; if(pendingTeam&&!p.team) p.team=pendingTeam; }
-  ME=p; saveLocal(); celebrate("LET'S GO!"); VIEW="picks"; render();
+  ME=p; saveLocal();
+  await applyPendingJoin();   // honour the invite code typed on the form (or ?join=… from the URL)
+  celebrate("LET'S GO!"); VIEW="picks"; render();
 }
 
 function loadError(msg){
