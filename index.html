@@ -190,6 +190,20 @@
   .survrow{display:grid;grid-template-columns:22px 1fr 1fr 60px;gap:8px;align-items:center;padding:4px 6px;border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:12px}
   .survg{font-family:'Fredoka';font-size:14px;color:var(--cyan);text-align:center}
   .survteam{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* knockout bracket tree */
+  .bracket{display:flex;gap:14px;overflow-x:auto;padding:6px 4px;align-items:stretch}
+  .bcol{display:flex;flex-direction:column;justify-content:space-around;min-width:148px;gap:6px}
+  .bcolhead{font-family:'Fredoka';font-weight:700;font-size:12px;color:var(--cyan);text-align:center;padding:4px 0;border-bottom:1px solid var(--line);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+  .btie{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:3px}
+  .bteam{display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;background:var(--card2);border:1px solid transparent;color:var(--ink);cursor:pointer;font-size:12px;font-family:inherit;text-align:left;width:100%;transition:transform .08s ease,background .2s}
+  .bteam:hover{border-color:var(--cyan)}
+  .bteam:active{transform:scale(.97)}
+  .bteam.won{background:var(--lime);color:#0c2a08;font-weight:700;border-color:var(--lime)}
+  .bteam.lost{opacity:.42}
+  .bteam.empty{justify-content:center;color:var(--muted);font-style:italic;cursor:default;background:transparent;border:1px dashed var(--line)}
+  .bteam.empty:hover{border-color:var(--line)}
+  .bflag{font-size:14px;flex:none}
+  .bname{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .toggle{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:13px;padding:4px;gap:4px}
   .toggle button{flex:1;background:transparent;color:var(--muted);border-radius:10px;padding:8px;font-weight:600;font-size:13px}
   .toggle button.on{background:var(--card2);color:var(--ink)}
@@ -511,7 +525,7 @@ let LEAGUES=[];        // leagues ME belongs to: {id,name,code,buy_in,currency,p
 let MEMBERS=[];        // memberships: {league,user,paid}
 let LG=null;           // current league id
 let PENDING_JOIN=null; // invite code from ?join=… waiting to be applied after login
-const ALL={pred:[],pans:[],rep:[],comments:[],cards:[],likes:[]}; // master per-league data (each row has .league)
+const ALL={pred:[],pans:[],rep:[],comments:[],cards:[],likes:[],bracket:[]}; // master per-league data (each row has .league)
 const LG_KEY="themask_league";
 function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
 function curLeague(){ return LEAGUES.find(l=>l.id===LG)||null; }
@@ -525,6 +539,7 @@ function scopeLeague(){
   DB.predictions = ALL.pred.filter(p=>p.league===LG);
   DB.propAnswers = ALL.pans.filter(p=>p.league===LG);
   DB.repicks     = ALL.rep.filter(p=>p.league===LG);
+  DB.bracket     = (ALL.bracket||[]).filter(p=>p.league===LG);
   DB.comments    = ALL.comments.filter(p=>p.league===LG);
   DB.cards       = ALL.cards.filter(p=>p.league===LG);
   DB.likes       = ALL.likes.filter(p=>p.league===LG);
@@ -641,8 +656,8 @@ function seedDemo(){
   DB.matches=buildGroupMatches();
   DB.props=seedProps();
   DB.profiles=[];
-  DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[];
-  ALL.pred=[]; ALL.pans=[]; ALL.rep=[]; ALL.comments=[]; ALL.cards=[]; ALL.likes=[];
+  DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[]; DB.bracket=[];
+  ALL.pred=[]; ALL.pans=[]; ALL.rep=[]; ALL.comments=[]; ALL.cards=[]; ALL.likes=[]; ALL.bracket=[];
 
   // a sample private league everyone's already in (you can create/join more)
   const LGID="lg-demo";
@@ -752,6 +767,79 @@ function predictedGroupStandings(uid, g){
 function derivedSurvivors(uid, g){ return predictedGroupStandings(uid, g).std.slice(0,2); }
 // what's the next un-finished matchday for the picks page default
 function currentMD(){ for(const md of [1,2,3]) if(DB.matches.some(m=>m.md===md && m.status!=="finished")) return md; return 3; }
+
+/* ============================================================================
+   🏆  KNOCKOUT BRACKET — a 32-team seeded tree fed by your group-stage picks.
+   Each user has their OWN bracket (lineup is derived from their predicted
+   standings + best-8 third-placed). Tap a team in any tie to advance them;
+   the winner is auto-piped into the next round.
+   ============================================================================ */
+// 32-team seeded line-up: winners(A..L) + runners(A..L) + 8 best 3rd-placed.
+// Seeds 0..31 are then paired R32 as (0v31)(1v30)... so #1 always plays #32.
+function userBracketLineup(uid){
+  const winners=[], runners=[], thirds=[];
+  Object.keys(GROUPS).forEach(g=>{ const std=predictedGroupStandings(uid,g).std; winners.push(std[0]); runners.push(std[1]); if(std[2]) thirds.push(std[2]); });
+  const best8=thirds.slice().sort((a,b)=>b.Pts-a.Pts||b.GD-a.GD||b.GF-a.GF||a.name.localeCompare(b.name)).slice(0,8);
+  return [...winners, ...runners, ...best8]; // 12+12+8 = 32
+}
+const BRACKET_ROUNDS = [
+  {id:'r32', label:'Round of 32', n:16, pts:'r16'},
+  {id:'r16', label:'Round of 16', n:8,  pts:'qf'},
+  {id:'qf',  label:'Quarter-finals', n:4, pts:'sf'},
+  {id:'sf',  label:'Semi-finals', n:2, pts:'final'},
+  {id:'f',   label:'Final', n:1, pts:null}
+];
+// flat tie ids: t1..t16 (R32) → t17..t24 (R16) → t25..t28 (QF) → t29..t30 (SF) → t31 (F)
+function tieRound(tieId){ const n=+tieId.slice(1);
+  if(n>=1&&n<=16) return 'r32'; if(n>=17&&n<=24) return 'r16'; if(n>=25&&n<=28) return 'qf'; if(n>=29&&n<=30) return 'sf'; if(n===31) return 'f'; return null; }
+function downstreamTie(tieId){ const n=+tieId.slice(1);
+  if(n>=1&&n<=16) return 't'+(17+Math.floor((n-1)/2));
+  if(n>=17&&n<=24) return 't'+(25+Math.floor((n-17)/2));
+  if(n>=25&&n<=28) return 't'+(29+Math.floor((n-25)/2));
+  if(n>=29&&n<=30) return 't31';
+  return null;
+}
+function downstreamTies(tieId){ const r=[]; let cur=downstreamTie(tieId); while(cur){ r.push(cur); cur=downstreamTie(cur); } return r; }
+// Compute the full bracket state for a user — every tie with teamA, teamB, winner (or null).
+// Picks that no longer match either slot (because upstream changed) are silently treated as unset.
+function userBracketState(uid){
+  const lineup=userBracketLineup(uid);
+  const byId={}; lineup.forEach(t=>{ if(t&&t.id) byId[t.id]=t; });
+  const raw={}; (DB.bracket||[]).filter(p=>p.user===uid).forEach(p=>{ raw[p.tie]=p.team; });
+  const ties={};
+  const winnerOf = id => { const w=raw[id]; const tie=ties[id]; if(!w||!tie) return null;
+    const ok = (tie.teamA && tie.teamA.id===w) || (tie.teamB && tie.teamB.id===w);
+    return ok ? w : null; };
+  // R32
+  for(let i=0;i<16;i++){ const id='t'+(i+1); ties[id]={ id, round:'r32', teamA:lineup[i]||null, teamB:lineup[31-i]||null, winner:null }; ties[id].winner=winnerOf(id); }
+  // R16
+  for(let i=0;i<8;i++){ const id='t'+(17+i); const a=ties['t'+(2*i+1)], b=ties['t'+(2*i+2)];
+    ties[id]={ id, round:'r16', teamA: a.winner?byId[a.winner]:null, teamB: b.winner?byId[b.winner]:null, winner:null }; ties[id].winner=winnerOf(id); }
+  // QF
+  for(let i=0;i<4;i++){ const id='t'+(25+i); const a=ties['t'+(17+2*i)], b=ties['t'+(18+2*i)];
+    ties[id]={ id, round:'qf', teamA: a.winner?byId[a.winner]:null, teamB: b.winner?byId[b.winner]:null, winner:null }; ties[id].winner=winnerOf(id); }
+  // SF
+  for(let i=0;i<2;i++){ const id='t'+(29+i); const a=ties['t'+(25+2*i)], b=ties['t'+(26+2*i)];
+    ties[id]={ id, round:'sf', teamA: a.winner?byId[a.winner]:null, teamB: b.winner?byId[b.winner]:null, winner:null }; ties[id].winner=winnerOf(id); }
+  // F
+  { const a=ties['t29'], b=ties['t30'];
+    ties['t31']={ id:'t31', round:'f', teamA: a.winner?byId[a.winner]:null, teamB: b.winner?byId[b.winner]:null, winner:null }; ties['t31'].winner=winnerOf('t31'); }
+  return { lineup, ties };
+}
+async function pickBracketWinner(tieId, teamId){
+  ALL.bracket ||= [];
+  const existing = ALL.bracket.find(p=>p.user===ME.id && p.league===LG && p.tie===tieId);
+  // If clicking the same team that's already the winner — untoggle (clear pick + all downstream).
+  const toggleOff = existing && existing.team===teamId;
+  // Always clear downstream when changing or untoggling — keeps the chain consistent.
+  const ds = downstreamTies(tieId);
+  ALL.bracket = ALL.bracket.filter(p=>!(p.user===ME.id && p.league===LG && (p.tie===tieId || ds.includes(p.tie))));
+  if(!toggleOff){
+    ALL.bracket.push({ id:`${ME.id}-${LG}-${tieId}`, user:ME.id, league:LG, tie:tieId, team:teamId, created:new Date().toISOString() });
+  }
+  scopeLeague(); saveLocal();
+  // (Supabase persistence for bracket picks ships with the rest of the schema additions; locally-only for now.)
+}
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
 // 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+5 🥈+3 🥉+1).
@@ -787,10 +875,15 @@ function scoreFor(profileId){
     if(pr.status!=="settled") return;
     if(String(a.answer)===String(pr.correct)) pts+=pr.pts;
   });
-  // knockout futures
-  KO_STAGES.forEach(stage=>{
-    const reached=koReached(stage);
-    DB.predictions.filter(p=>p.user===profileId&&p.ko&&p.stage===stage).forEach(p=>{ if(reached.has(p.team)) pts+=KO_PTS[stage]; });
+  // 🏆 Bracket scoring — picks come from the drag-drop tree (one team per tie).
+  // Reward = the points for reaching the NEXT round. R32 winner correct → in real R16 set → +KO_PTS.r16, etc.
+  // Final winner = your champion (scored via the Extras prop, not double-counted here).
+  const bs = userBracketState(profileId);
+  const stageFor = id => tieRound(id);
+  const nextStagePoints = { r32:KO_PTS.r16, r16:KO_PTS.qf, qf:KO_PTS.sf, sf:KO_PTS.final };
+  const nextReached     = { r32:koReached('r16'), r16:koReached('qf'), qf:koReached('sf'), sf:koReached('final') };
+  Object.values(bs.ties).forEach(tie=>{ if(!tie.winner) return; const stg=stageFor(tie.id); const reach=nextReached[stg]; const pp=nextStagePoints[stg];
+    if(reach && pp && reach.has(tie.winner)) pts+=pp;
   });
   // ⚽ fan bonus: +1 each finished match your supported team wins
   const fav=(DB.profiles.find(p=>p.id===profileId)||{}).team;
@@ -1001,6 +1094,7 @@ async function kickMember(uid){
   ALL.pred     = ALL.pred.filter(p=>!(p.user===uid && p.league===lg));
   ALL.pans     = ALL.pans.filter(p=>!(p.user===uid && p.league===lg));
   ALL.rep      = ALL.rep.filter(p=>!(p.user===uid && p.league===lg));
+  ALL.bracket  = (ALL.bracket||[]).filter(p=>!(p.user===uid && p.league===lg));
   ALL.comments = ALL.comments.filter(c=>!(c.user===uid && c.league===lg));
   ALL.cards    = ALL.cards.filter(c=>!(c.league===lg && (c.from===uid || c.target===uid || myCmts.has(c.comment))));
   ALL.likes    = ALL.likes.filter(l=>!(l.league===lg && (l.user===uid || myCmts.has(l.comment))));
@@ -1456,7 +1550,7 @@ function matchCard(m){
 let grpSel="A";
 function viewBracket(){
   let html=`<div class="card"><h3>🏆 Your bracket</h3>
-    <div class="small muted">The group survivors are <b>derived from your scoreline picks</b> in the ⚽ Picks tab — your top-2 per group automatically become your projected R32 line-up. <b>Drag-and-drop knockout bracket coming next</b> (pick winners through R32 → R16 → QF → SF → Final). For now you can still pin teams to each stage below.</div></div>`;
+    <div class="small muted">Your 32-team line-up is <b>built from your scoreline picks</b> (top-2 per group + the 8 best 3rd-placed). <b>Tap a team in any tie to advance them</b> — the winner pipes through to the next round automatically. Tap again to undo. Scoring: <b>+${KO_PTS.r16}</b> per correct R32 winner, <b>+${KO_PTS.qf}</b> per R16 winner, <b>+${KO_PTS.sf}</b> per QF, <b>+${KO_PTS.final}</b> per SF. Your Final winner = your champion (scored via the 🃏 Extras tab).</div></div>`;
   // Derived survivors per group — read-only, computed from picks
   html+=`<div class="card"><div class="spread"><h3 style="font-size:15px;margin:0">📊 Your projected R32 line-up</h3><span class="tiny muted">+${DB.settings.pts_advance} pts per correct survivor</span></div><div class="survgrid" style="margin-top:8px">`;
   Object.keys(GROUPS).forEach(g=>{
@@ -1471,18 +1565,40 @@ function viewBracket(){
     html+=`<div class="survrow"><b class="survg">${g}</b><span class="survteam">${a.flag} ${escapeHtml(a.name)}${tag(a,0)}</span><span class="survteam">${b.flag} ${escapeHtml(b.name)}${tag(b,1)}</span>${status}</div>`;
   });
   html+=`</div></div>`;
-  // 🏆 Knockout run predictions
-  html+=`<div class="card"><h3>🏆 Knockout run</h3><div class="small muted">This is how you bet on the games after the groups: tip which teams reach each stage. ${KO_PTS.r16} pts per correct Round-of-16 team, ${KO_PTS.qf} per Quarter-finalist, ${KO_PTS.sf} per Semi-finalist, ${KO_PTS.final} per Finalist. Picks lock instantly 🔒. (Tournament winner is in the 🃏 Extras tab.)</div>`;
-  KO_STAGES.forEach(stage=>{
-    const mine=myKO(stage), settled=(koActual()[stage]||[]).length>0, reached=koReached(stage);
-    html+=`<div class="kostage"><h4>${KO_LABEL[stage]} <span class="muted tiny">(${mine.length}/${KO_LIM[stage]})</span></h4><div class="kochips">`;
-    mine.forEach(id=>{const t=teamById(id);const cls=settled?(reached.has(id)?'hit':'miss'):'';html+=`<span class="kochip ${cls}">${t.flag} ${t.name}${settled?(reached.has(id)?' ✓':' ✗'):''}</span>`;});
-    if(mine.length<KO_LIM[stage]&&!settled) html+=`<button class="kochip koadd" data-ko="${stage}">＋ Add</button>`;
-    if(mine.length===0&&settled) html+=`<span class="small muted">No picks made</span>`;
-    html+=`</div></div>`;
-  });
-  html+=`</div>`;
+  // 🏆 The actual bracket tree
+  html+=bracketTree();
   return html;
+}
+// ── Bracket tree renderer ──
+function bracketTree(){
+  const {ties}=userBracketState(ME.id);
+  const champion = ties['t31'].winner ? userBracketLineup(ME.id).find(t=>t.id===ties['t31'].winner) : null;
+  const picks = Object.values(ties).filter(t=>t.winner).length;
+  let html=`<div class="card" style="padding:8px 6px"><div class="spread" style="padding:0 6px"><h3 style="margin:0;font-size:15px">🏆 Knockout bracket</h3><span class="tiny muted">${picks}/31 ties picked${champion?` · 🏆 ${champion.flag} ${escapeHtml(champion.name)}`:''}</span></div>
+    <div class="tiny muted" style="padding:2px 6px 6px">Scroll sideways to see all five rounds. Tap a team to advance them, tap again to undo. Changing a pick clears anything you'd already chosen downstream.</div>
+    <div class="bracket">`;
+  BRACKET_ROUNDS.forEach(round=>{
+    html+=`<div class="bcol"><div class="bcolhead">${round.label}${round.pts?` <span class="tiny muted">+${KO_PTS[round.pts]}</span>`:''}</div>`;
+    Object.values(ties).filter(t=>t.round===round.id).forEach(t=>{
+      const ra = stageBtn(t, t.teamA, 'A');
+      const rb = stageBtn(t, t.teamB, 'B');
+      html+=`<div class="btie" data-tie="${t.id}">${ra}${rb}</div>`;
+    });
+    html+=`</div>`;
+  });
+  html+=`</div></div>`;
+  return html;
+}
+function stageBtn(tie, team, side){
+  if(!team) return `<div class="bteam empty">— TBD —</div>`;
+  const won = tie.winner===team.id;
+  const lost = tie.winner && tie.winner!==team.id;
+  // colour mark vs reality once admin marks the actual KO sets
+  const stg=tieRound(tie.id);
+  const next={r32:'r16',r16:'qf',qf:'sf',sf:'final',f:null}[stg];
+  let badge='';
+  if(next){ const reach=koReached(next); if(reach && reach.size){ badge = reach.has(team.id) ? '<span class="advtag hit" style="margin-left:4px">✓</span>' : '<span class="advtag miss" style="margin-left:4px">✗</span>'; } }
+  return `<button class="bteam ${won?'won':lost?'lost':''}" data-bpick="${tie.id}|${team.id}" title="${escapeHtml(team.name)}"><span class="bflag">${team.flag}</span><span class="bname">${escapeHtml(team.name)}</span>${badge}</button>`;
 }
 
 /* ---------- PROPS ---------- */
@@ -1838,7 +1954,11 @@ function wire(){
     const t=teamById(team); party(); toast(`${t.flag} ${t.name} — through to the knockouts! ⬆️`); render();
   });
   $$("[data-grp]").forEach(b=>b.onclick=()=>{grpSel=b.dataset.grp;render();});
-  // knockout run picks (one-shot)
+  // 🏆 bracket — tap a team in a tie to advance them (tap again to undo)
+  $$("[data-bpick]").forEach(b=>b.onclick=async()=>{ const [tie,team]=b.dataset.bpick.split("|");
+    await pickBracketWinner(tie, team); render();
+  });
+  // knockout run picks (legacy — still wired but no longer reachable from the bracket view)
   $$("[data-ko]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{saveKO(b.dataset.ko,t.id).then(render);}));
   $$("[data-koadd]").forEach(b=>b.onclick=()=>openTeamPicker(t=>{adminAddKO(b.dataset.koadd,t.id).then(render);}));
   $$("[data-koremove]").forEach(b=>b.onclick=async()=>{const [st,id]=b.dataset.koremove.split("|");await adminRemKO(st,id);render();});
