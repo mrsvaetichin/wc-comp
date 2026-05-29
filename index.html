@@ -944,6 +944,34 @@ async function joinLeague(code){
   saveLocal(); toast(`Joined ${lg.name} ✅`); return true;
 }
 function switchLeague(id){ if(!LEAGUES.some(l=>l.id===id))return; LG=id; persistLG(); scopeLeague(); VIEW="picks"; render(); }
+// 🟥 Send-off — commissioner removes a member from THIS league + all their league-scoped data.
+// Their account stays intact (they can rejoin via invite); just their footprint in this league is wiped.
+async function kickMember(uid){
+  if(uid===ME.id){ toast("You can't kick yourself 🦇"); return; }
+  const lg=LG; const p=profileById(uid);
+  // local wipe (all data tagged to this league)
+  const myCmts = new Set(ALL.comments.filter(c=>c.user===uid && c.league===lg).map(c=>c.id));
+  ALL.pred     = ALL.pred.filter(p=>!(p.user===uid && p.league===lg));
+  ALL.pans     = ALL.pans.filter(p=>!(p.user===uid && p.league===lg));
+  ALL.rep      = ALL.rep.filter(p=>!(p.user===uid && p.league===lg));
+  ALL.comments = ALL.comments.filter(c=>!(c.user===uid && c.league===lg));
+  ALL.cards    = ALL.cards.filter(c=>!(c.league===lg && (c.from===uid || c.target===uid || myCmts.has(c.comment))));
+  ALL.likes    = ALL.likes.filter(l=>!(l.league===lg && (l.user===uid || myCmts.has(l.comment))));
+  MEMBERS      = MEMBERS.filter(m=>!(m.user===uid && m.league===lg));
+  scopeLeague();
+  if(MODE==="live" && supa){
+    try{
+      await supa.from("predictions") .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("prop_answers").delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("repicks")     .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("likes")       .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("cards")       .delete().eq("from_id",uid).eq("league_id",lg);
+      await supa.from("comments")    .delete().eq("user_id",uid).eq("league_id",lg);
+      await supa.from("memberships") .delete().eq("user_id",uid).eq("league_id",lg);
+    }catch(e){ console.error(e); }
+  }
+  saveLocal(); toast(`🟥 ${p?p.name:"Player"} sent off`); render();
+}
 // (re)load the leagues I'm in, their members, and every league's picks
 async function loadLeagueData(){
   if(MODE!=="live"||!supa){ scopeLeague(); return; }
@@ -1602,9 +1630,13 @@ function viewPool(){
 /* ---------- ADMIN ---------- */
 let adminTab="results";
 function viewAdmin(){
-  let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, and run the pool.</div>
-    <div class="seg" style="margin-top:8px">${[["results","Results"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
-    <button class="btn ghost" data-dolock style="margin-top:8px;border-color:var(--line);font-size:12px;padding:6px 10px">🔒 Lock admin</button></div>`;
+  let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
+    <div class="seg" style="margin-top:8px">${[["results","Results"],["members","Members"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn" data-dolock style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Exit admin mode</button>
+      <button class="btn" data-signout style="flex:1;border-color:var(--red);color:#ffb3b3">👋 Sign out completely</button>
+    </div>
+    <div class="tiny muted" style="margin-top:6px">Exit admin = back to player view (still signed in). Sign out = drop your identity completely and return to the login screen.</div></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
@@ -1629,6 +1661,38 @@ function viewAdmin(){
         <label class="fld">Correct answer</label>
         <select data-settle="${pr.id}"><option value="">— choose —</option>${optionsList.map(o=>`<option value="${o[0]}" ${pr.correct==o[0]?'selected':''}>${o[1]}</option>`).join("")}</select>
         <button class="btn primary block" style="margin-top:8px" data-dosettle="${pr.id}">${settled?'Re-settle & rescore':'Settle & score everyone'}</button></div>`;
+    });
+  } else if(adminTab==="members"){
+    const lg=curLeague();
+    const members=leagueMembers(LG);
+    const paidCount=members.filter(p=>memberPaid(p.id,LG)).length;
+    const totalPicks=members.reduce((s,p)=>s+DB.predictions.filter(x=>x.user===p.id&&!x.advance&&!x.ko).length,0);
+    const totalBanter=members.reduce((s,p)=>s+DB.comments.filter(c=>c.user===p.id).length,0);
+    html+=`<div class="card"><h3>👥 ${escapeHtml(lg.name)} · members</h3>
+      <div class="small muted">${members.length} signed up · ${paidCount}/${members.length} paid · ${totalPicks} match picks made · ${totalBanter} banter posts</div>
+      <div class="tiny muted" style="margin-top:6px">Tap <b>🟥 Send off</b> to kick someone out of this league. Their picks, props, banter, likes and cards in this league get wiped; their account stays intact so they could rejoin via invite code.</div>
+    </div>`;
+    members.slice().sort((a,b)=>scoreFor(b.id).pts-scoreFor(a.id).pts || a.name.localeCompare(b.name)).forEach(p=>{
+      const picks=DB.predictions.filter(x=>x.user===p.id&&!x.advance&&!x.ko).length;
+      const adv=DB.predictions.filter(x=>x.user===p.id&&x.advance).length;
+      const ko=DB.predictions.filter(x=>x.user===p.id&&x.ko).length;
+      const props=DB.propAnswers.filter(x=>x.user===p.id).length;
+      const cmts=DB.comments.filter(c=>c.user===p.id).length;
+      const pts=scoreFor(p.id).pts;
+      const paid=memberPaid(p.id,LG);
+      const isMe=p.id===ME.id;
+      const fav=p.team&&teamById(p.team);
+      html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="avatar" style="width:42px;height:42px;font-size:20px">${avatarInner(p)}</div>
+        <div style="flex:1;min-width:140px">
+          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
+          <div class="small muted">${pts} pts · ${picks} match picks · ${adv} group calls · ${ko} KO picks · ${props} extras · ${cmts} banter</div>
+        </div>
+        <div class="row" style="gap:6px">
+          <button class="btn ${paid?'lime':''}" data-paid="${p.id}" style="padding:6px 10px">${paid?'💰 paid ✓':'mark paid'}</button>
+          ${isMe?'':`<button class="btn" data-kick="${p.id}" data-kn="${escapeHtml(p.name)}" style="padding:6px 10px;border-color:var(--red);color:#ffb3b3">🟥 Send off</button>`}
+        </div>
+      </div></div>`;
     });
   } else if(adminTab==="ko"){
     html+=`<div class="small muted" style="margin:0 4px">Mark the teams that actually reached each stage. Everyone's knockout picks score instantly.</div>`;
@@ -1676,7 +1740,11 @@ function wire(){
   $$("[data-goboard]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.goboard; VIEW="board"; render(); window.scrollTo(0,0); });
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
-  const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Admin locked 🔒"); VIEW="picks"; render(); };
+  const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
+  const so=$("[data-signout]"); if(so) so.onclick=()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out completely?</div><div class="small muted" style="margin-top:6px">You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.</div></div>`, ()=>logout(), "Sign me out"); };
+  // 🟥 Kick member from this league (admin only)
+  $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player";
+    confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm}?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid); }, "Yes, send them off 🟥"); });
   // sound + profile
   const mt=$("[data-mute]"); if(mt) mt.onclick=()=>{ toggleMute(); if(!MUTED)horn(); render(); };
   const pf=$("[data-profile]"); if(pf) pf.onclick=openProfile;
@@ -1953,8 +2021,9 @@ function openLeagueMenu(anchor){
   }).join("")||'<div class="small muted" style="padding:6px 4px">No leagues yet.</div>';
   const invite=cur?`<div class="lgmenu-invite"><span class="tiny muted">📨 INVITE TO ${cur.name.toUpperCase()}</span>
     <div class="row" style="gap:6px;margin-top:5px"><input readonly value="${cur.code}" style="font-family:'Fredoka';letter-spacing:2px;text-align:center;padding:7px"/><button class="btn" data-copycode="${cur.code}" style="white-space:nowrap;padding:7px 10px">Code</button><button class="btn" data-copylink="${cur.code}" style="white-space:nowrap;padding:7px 10px">🔗</button></div></div>`:'';
+  const switchHint = LEAGUES.length>1 ? `<div class="tiny muted" style="padding:2px 4px 6px">👆 Tap any league to switch to it.</div>` : `<div class="tiny muted" style="padding:2px 4px 6px">Want a second league? Hit <b>＋ Create</b> or <b>🔑 Join</b> below. You can be in as many as you like and switch between them here.</div>`;
   root.innerHTML=`<div class="lgmenu-bg"><div class="lgmenu" style="left:${left}px;top:${top}px;width:${w}px">
-    <div class="lgmenu-head">YOUR LEAGUES</div>${list}${invite}
+    <div class="lgmenu-head">YOUR LEAGUES</div>${list}${switchHint}${invite}
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" style="flex:1" data-newleague>＋ Create</button><button class="btn lime" style="flex:1" data-joinleague>🔑 Join</button></div>
   </div></div>`;
   const close=()=>root.innerHTML="";
