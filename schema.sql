@@ -382,4 +382,11 @@ delete from memberships m
   using profiles p
   where m.user_id = p.id and coalesce(p.is_admin,false) = true;
 
--- After running: Authentication -> enable "Allow anonymous sign-ins". Admin = visit /admin, password 1234.
+-- After running:
+--   1. Authentication → Providers → Email: enable Email; uncheck "Confirm email"
+--      (login is username + password under a fake @themask.local email — no real email
+--      is ever sent, so confirmation must be off).
+--   2. Player login: visit "/" → pick a username + password (6+ chars) + nation.
+--   3. Admin login : visit "/admin" → username "admin", password "1234".
+--      (The app internally pads the short admin password so Supabase's 6-char minimum
+--      isn't a problem — change ADMIN_PASSWORD in index.html to override the friendly default.)

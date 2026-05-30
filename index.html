@@ -667,9 +667,15 @@ function scopeLeague(){
    In LIVE mode, RLS still requires the signed-in account to have is_admin=true
    for any cross-league reads or admin writes to succeed. ----- */
 const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "1234";
+const ADMIN_PASSWORD = "1234";        // ⚠️ what the admin types on the form (can be anything)
 const ADMIN_DISPLAY_NAME = "admin";   // display name matches the login username
 const ADMIN_EMOJI = "🎩";
+// 🔐 Supabase enforces a 6+ char password by default. The friendly admin password
+// ("1234") is shorter than that, so we deterministically prefix it before sending to
+// Supabase — the user keeps typing the short password they're used to, while the
+// stored credential is long enough to pass the auth policy. (Change ADMIN_PASSWORD
+// and the next sign-in just re-derives the new prefixed credential.)
+function adminSupabasePassword(pw){ return "themask-admin:" + String(pw||""); }
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
 // In demo mode (no Supabase keys), the admin gate is just a client-side flag flip.
@@ -682,20 +688,27 @@ async function adminUnlock(pw, user){
   // Live mode: sign out the current player session and sign in to the dedicated admin account.
   // First time the admin password is used we sign that account up; thereafter we just sign in.
   const adminEmail = pseudoEmail(ADMIN_USERNAME); // "admin@themask.local"
+  const sbPw = adminSupabasePassword(pw);         // padded to satisfy Supabase's 6+ char minimum
   try{ await supa.auth.signOut(); }catch(e){}
   let ok=false;
-  const {error: siErr} = await supa.auth.signInWithPassword({email:adminEmail, password:pw});
+  const {error: siErr} = await supa.auth.signInWithPassword({email:adminEmail, password:sbPw});
   if(!siErr) ok=true;
   else {
-    const {data:su, error: suErr} = await supa.auth.signUp({email:adminEmail, password:pw, options:{data:{display_name:ADMIN_DISPLAY_NAME}}});
+    const {data:su, error: suErr} = await supa.auth.signUp({email:adminEmail, password:sbPw, options:{data:{display_name:ADMIN_DISPLAY_NAME}}});
     if(!suErr){
       ok=true;
       // Some Supabase configs require an extra sign-in after sign-up (when email confirm is off, the
       // session is usually returned right away — but belt-and-braces in case it isn't).
-      if(!su || !su.session){ const {error:s2}=await supa.auth.signInWithPassword({email:adminEmail, password:pw}); if(s2) ok=false; }
+      if(!su || !su.session){ const {error:s2}=await supa.auth.signInWithPassword({email:adminEmail, password:sbPw}); if(s2) ok=false; }
     } else { console.error("admin signUp", suErr); }
   }
-  if(!ok) return false;
+  if(!ok){
+    // Surface the most likely real reason so the user can fix it (rather than just "wrong password").
+    console.error("admin sign-in failed", siErr);
+    if(siErr && /invalid/i.test(siErr.message||"")) toast("Admin sign-in failed: wrong password 🙅");
+    else if(siErr) toast("Admin sign-in error: "+(siErr.message||"unknown"));
+    return false;
+  }
   // Flip the admin profile's is_admin=true (so RLS lets us read all leagues + write results).
   // We also clear any team/avatar leftovers and force display_name/emoji to the Commissioner identity.
   try{
