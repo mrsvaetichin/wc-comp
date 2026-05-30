@@ -112,6 +112,7 @@
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:13px;padding:10px 14px;font-weight:600;font-size:15px;transition:transform .06s ease, filter .15s}
   .btn:active{transform:scale(.97)}
   .btn.primary{background:linear-gradient(90deg,var(--pink),var(--purple));border:none;color:#fff;box-shadow:0 8px 20px rgba(11,111,179,.4)}
+  .btn.dim{opacity:.55}  /* "not ready yet" hint — still fully clickable; tap shows what's missing */
   .btn.lime{background:linear-gradient(90deg,var(--lime),#7be000);border:none;color:#16123a;box-shadow:0 8px 18px rgba(198,255,61,.25)}
   .btn.gold{background:linear-gradient(90deg,var(--gold),#ff9f1c);border:none;color:#2a1a00}
   .btn.ghost{background:transparent}
@@ -2474,7 +2475,7 @@ function loginScreen(extra=""){
       <div class="step"><span class="stepn">${isLive?'6':'5'}</span><b>Got an invite code?</b> <span class="muted tiny">— optional · drops you straight into your friends' league</span></div>
       <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>
       <div class="tiny muted" style="margin-top:4px">No code? No worries — you'll be able to create a league or join one on the next screen.</div>
-      <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>${isLive?'Create my account →':'Continue →'}</button>
+      <button class="btn primary block" id="loginbtn" style="margin-top:16px">${isLive?'Create my account →':'Continue →'}</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Fill the steps above to continue.</div>
     `:`
       <div class="step"><span class="stepn">1</span><b>Username</b></div>
@@ -2483,7 +2484,7 @@ function loginScreen(extra=""){
       <input id="pw" type="password" placeholder="your password" autocomplete="current-password" value="${valP}"/>
       <div class="step"><span class="stepn">3</span><b>Invite code</b> <span class="muted tiny">— optional · join a new league on the way in</span></div>
       <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>
-      <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Sign in →</button>
+      <button class="btn primary block" id="loginbtn" style="margin-top:16px">Sign in →</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter your username and password to sign in.</div>
     `}
   </div>
@@ -2504,25 +2505,32 @@ function loginScreen(extra=""){
   updateLoginBtn();
 }
 function updateLoginBtn(){
-  // Read from the global state (not the DOM) so a re-render — emoji pick, photo upload,
-  // tab switch, team picker close — never makes the button "forget" what's typed.
   const btn=$("#loginbtn"); if(!btn) return;
+  // Always sync from the live DOM (catches autofill / paste / IME that don't fire 'input').
+  const em=$("#email"), pw=$("#pw"), jc=$("#joincode");
+  if(em) pendingUsername = em.value;
+  if(pw) pendingPassword = pw.value;
+  if(jc) pendingJoinCode = jc.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const isLive = MODE==="live";
   const isSignup = authMode==="signup";
   const u = (pendingUsername||"").trim();
   const p = pendingPassword||"";
   let ok=false, hint="";
-  if(isLive && !isSignup){ // sign-in
+  if(isLive && !isSignup){
     ok = u.length>0 && p.length>=6;
     hint = ok ? "Tap Sign in 🚪" : "Enter your username and password to sign in.";
-  } else if(isLive && isSignup){ // create account
+  } else if(isLive && isSignup){
     ok = u.length>=2 && p.length>=6 && !!pendingTeam;
     hint = u.length<2 ? "Pick a username (2+ chars)" : p.length<6 ? "Choose a password (6+ chars)" : !pendingTeam ? "Pick your nation to continue 🌍" : "All set — tap Create my account 🎉";
-  } else { // demo
+  } else {
     ok = u.length>0 && !!pendingTeam;
     hint = ok ? "Next: join or create a league to play 🏆" : (u? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
   }
-  btn.disabled = !ok;
+  // IMPORTANT: never disable the button — always allow clicking. doLogin re-validates and shows
+  // a precise toast about what's missing. This avoids the "button feels stuck" trap when an input
+  // event doesn't fire (autofill, paste, mobile keyboards). Use visual style to hint readiness.
+  btn.disabled = false;
+  btn.classList.toggle("dim", !ok);
   const h=$("#loginhint"); if(h) h.textContent = hint;
 }
 // Build a deterministic placeholder email under a local-only domain (Supabase wants an email field).
@@ -2540,9 +2548,11 @@ async function doLogin(){
   const password = pendingPassword||"";
   const joinCode = (pendingJoinCode||"").trim();
   if(joinCode) PENDING_JOIN = joinCode;
-  if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
-  if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
   const isSignup = authMode==="signup";
+  // Precise field-level validation: each missing piece gets its own toast so the user knows what to fix.
+  if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
+  if(isLive && isSignup && username.length<2){ toast("Username needs 2+ characters 👤"); return; }
+  if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
   if(isSignup && !pendingTeam){ toast("Pick your nation first 🌍"); return; }
   const emoji=pendingEmoji||"🫵";
   if(isLive){
