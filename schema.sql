@@ -177,6 +177,21 @@ drop policy if exists bp_ins on bracket_picks;  create policy bp_ins on bracket_
 drop policy if exists bp_upd on bracket_picks;  create policy bp_upd on bracket_picks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 drop policy if exists bp_del on bracket_picks;  create policy bp_del on bracket_picks for delete to authenticated using (user_id = auth.uid());
 
+-- 🛠️ SUPER-ADMIN escape hatches — when profiles.is_admin = true, the admin can delete any row.
+-- Pairs with the in-app password gate (admin/1234) which flips your is_admin flag on unlock and back off on exit.
+drop policy if exists pred_admin_del on predictions;     create policy pred_admin_del on predictions     for delete to authenticated using (is_admin());
+drop policy if exists pa_admin_del on prop_answers;      create policy pa_admin_del on prop_answers     for delete to authenticated using (is_admin());
+drop policy if exists adv_admin_del on advances;         create policy adv_admin_del on advances         for delete to authenticated using (is_admin());
+drop policy if exists ko_admin_del on ko_picks;          create policy ko_admin_del on ko_picks          for delete to authenticated using (is_admin());
+drop policy if exists rp_admin_del on repicks;           create policy rp_admin_del on repicks           for delete to authenticated using (is_admin());
+drop policy if exists bp_admin_del on bracket_picks;     create policy bp_admin_del on bracket_picks     for delete to authenticated using (is_admin());
+drop policy if exists cm_admin_del on comments;          create policy cm_admin_del on comments          for delete to authenticated using (is_admin());
+drop policy if exists cd_admin_del on cards;             create policy cd_admin_del on cards             for delete to authenticated using (is_admin());
+drop policy if exists lk_admin_del on likes;             create policy lk_admin_del on likes             for delete using (user_id = auth.uid() or is_admin());
+drop policy if exists mb_admin_del on memberships;       create policy mb_admin_del on memberships       for delete to authenticated using (user_id = auth.uid() or is_admin() or exists(select 1 from leagues l where l.id = league_id and l.created_by = auth.uid()));
+drop policy if exists lg_del on leagues;                 create policy lg_del on leagues                 for delete to authenticated using (created_by = auth.uid() or is_admin());
+drop policy if exists p_del on profiles;                 create policy p_del on profiles                 for delete to authenticated using (is_admin());
+
 -- ============================================================================
 --  SEED DATA  (real 2026 World Cup draw, official matchday dates, props)
 -- ============================================================================

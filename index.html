@@ -588,6 +588,7 @@ let VIEW = "picks";
    propAnswers/repicks are kept as a *scoped view* of the CURRENT league (LG) so
    every existing read function keeps working unchanged. */
 let LEAGUES=[];        // leagues ME belongs to: {id,name,code,buy_in,currency,payout_split,created_by}
+let ALL_LEAGUES=[];    // every league in the pool (super-admin scope only)
 let MEMBERS=[];        // memberships: {league,user,paid}
 let LG=null;           // current league id
 let PENDING_JOIN=null; // invite code from ?join=… waiting to be applied after login
@@ -619,10 +620,23 @@ const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "1234";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
-function adminUnlock(pw, user){ if(user!=null && String(user).trim().toLowerCase()!==ADMIN_USERNAME) return false; if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("themask_admin","1");}catch(e){}
-  if(MODE==="live" && ME && supa){ ME.is_admin=true; sbUpsert("profiles",{id:ME.id,is_admin:true}); } // lets RLS accept admin writes
-  return true; } return false; }
-function adminLock(){ ADMIN_UNLOCKED=false; try{localStorage.removeItem("themask_admin");}catch(e){} }
+function adminUnlock(pw, user){
+  if(user!=null && String(user).trim().toLowerCase()!==ADMIN_USERNAME) return false;
+  if(String(pw).trim()!==ADMIN_PASSWORD) return false;
+  ADMIN_UNLOCKED=true;
+  try{ localStorage.setItem("themask_admin","1"); }catch(e){}
+  // Flip our own profile.is_admin=true so the server-side RLS policies grant super-admin deletes.
+  if(ME) ME.is_admin=true;
+  if(MODE==="live" && supa && ME){ try{ supa.from("profiles").update({is_admin:true}).eq("id",ME.id).then(()=>{}); }catch(e){ console.error(e); } }
+  return true;
+}
+function adminLock(){
+  ADMIN_UNLOCKED=false;
+  try{ localStorage.removeItem("themask_admin"); }catch(e){}
+  // Flip is_admin back off so the user no longer carries server-side super-powers after exit.
+  if(ME) ME.is_admin=false;
+  if(MODE==="live" && supa && ME){ try{ supa.from("profiles").update({is_admin:false}).eq("id",ME.id).then(()=>{}); }catch(e){ console.error(e); } }
+}
 function isAdminRoute(){ try{ const l=(typeof location!=="undefined")?location:{}; return /admin/i.test((l.pathname||"")+(l.hash||"")+(l.search||"")); }catch(e){ return false; } }
 
 /* ---------- odds engine ---------- */
@@ -1232,6 +1246,74 @@ async function kickMember(uid){
     }catch(e){ console.error(e); }
   }
   saveLocal(); toast(`🟥 ${p?p.name:"Player"} sent off`); render();
+}
+// 🛠️ SUPER-ADMIN: delete an entire league + everything in it. Requires ADMIN_UNLOCKED.
+// FK cascades on league_id handle most of the server-side wipe; we mirror locally.
+async function adminDeleteLeague(lid){
+  if(!ADMIN_UNLOCKED){ toast("Admin only"); return; }
+  const lg = (ALL_LEAGUES.find(l=>l.id===lid) || LEAGUES.find(l=>l.id===lid));
+  if(!lg){ toast("League not found"); return; }
+  if(MODE==="live" && supa){
+    // Wipe scoped tables first (defensive — the DB does have ON DELETE CASCADE but we make sure).
+    try{
+      await supa.from("predictions")  .delete().eq("league_id",lid);
+      await supa.from("prop_answers") .delete().eq("league_id",lid);
+      await supa.from("repicks")      .delete().eq("league_id",lid);
+      await supa.from("bracket_picks").delete().eq("league_id",lid);
+      await supa.from("likes")        .delete().eq("league_id",lid);
+      await supa.from("cards")        .delete().eq("league_id",lid);
+      await supa.from("comments")     .delete().eq("league_id",lid);
+      await supa.from("memberships")  .delete().eq("league_id",lid);
+      await supa.from("leagues")      .delete().eq("id",lid);
+    }catch(e){ console.error("adminDeleteLeague",e); toast("Server error — check console"); }
+  }
+  // Local mirror
+  ALL.pred     = ALL.pred.filter(p=>p.league!==lid);
+  ALL.pans     = ALL.pans.filter(p=>p.league!==lid);
+  ALL.rep      = ALL.rep.filter(p=>p.league!==lid);
+  ALL.bracket  = (ALL.bracket||[]).filter(p=>p.league!==lid);
+  ALL.comments = ALL.comments.filter(p=>p.league!==lid);
+  ALL.cards    = ALL.cards.filter(p=>p.league!==lid);
+  ALL.likes    = ALL.likes.filter(p=>p.league!==lid);
+  MEMBERS      = MEMBERS.filter(m=>m.league!==lid);
+  ALL_LEAGUES  = ALL_LEAGUES.filter(l=>l.id!==lid);
+  LEAGUES      = LEAGUES.filter(l=>l.id!==lid);
+  if(LG===lid){ LG = LEAGUES[0]?LEAGUES[0].id:null; persistLG(); }
+  scopeLeague(); saveLocal();
+  toast(`🗑️ Deleted league "${lg.name}"`); render();
+}
+// 🛠️ SUPER-ADMIN: nuke a user — strip them from every league + delete their profile.
+// (auth.users row stays — Supabase requires the service key for that, which the client never has.
+//  In practice the user has zero data left; they can re-sign-up if they want.)
+async function adminDeleteUser(uid){
+  if(!ADMIN_UNLOCKED){ toast("Admin only"); return; }
+  if(uid===ME.id){ toast("You can't delete yourself 🦇"); return; }
+  const p = DB.profiles.find(x=>x.id===uid);
+  if(MODE==="live" && supa){
+    try{
+      await supa.from("predictions")  .delete().eq("user_id",uid);
+      await supa.from("prop_answers") .delete().eq("user_id",uid);
+      await supa.from("repicks")      .delete().eq("user_id",uid);
+      await supa.from("bracket_picks").delete().eq("user_id",uid);
+      await supa.from("likes")        .delete().eq("user_id",uid);
+      await supa.from("cards")        .delete().eq("from_id",uid);
+      await supa.from("comments")     .delete().eq("user_id",uid);
+      await supa.from("memberships")  .delete().eq("user_id",uid);
+      await supa.from("profiles")     .delete().eq("id",uid);
+    }catch(e){ console.error("adminDeleteUser",e); toast("Server error — check console"); }
+  }
+  // Local mirror
+  ALL.pred     = ALL.pred.filter(p=>p.user!==uid);
+  ALL.pans     = ALL.pans.filter(p=>p.user!==uid);
+  ALL.rep      = ALL.rep.filter(p=>p.user!==uid);
+  ALL.bracket  = (ALL.bracket||[]).filter(p=>p.user!==uid);
+  ALL.likes    = ALL.likes.filter(p=>p.user!==uid);
+  ALL.cards    = ALL.cards.filter(c=>c.from!==uid && c.target!==uid);
+  ALL.comments = ALL.comments.filter(c=>c.user!==uid);
+  MEMBERS      = MEMBERS.filter(m=>m.user!==uid);
+  DB.profiles  = DB.profiles.filter(x=>x.id!==uid);
+  scopeLeague(); saveLocal();
+  toast(`🗑️ Deleted user "${p?p.name:'(unknown)'}"`); render();
 }
 // (re)load the leagues I'm in, their members, and every league's picks
 async function loadLeagueData(){
@@ -1991,7 +2073,7 @@ function viewPool(){
 let adminTab="results";
 function viewAdmin(){
   let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
-    <div class="seg" style="margin-top:8px">${[["results","Results"],["members","Members"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div class="seg" style="margin-top:8px">${[["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" data-dolock style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Exit admin mode</button>
       <button class="btn" data-signout style="flex:1;border-color:var(--red);color:#ffb3b3">👋 Sign out completely</button>
@@ -2054,6 +2136,51 @@ function viewAdmin(){
         </div>
       </div></div>`;
     });
+  } else if(adminTab==="leagues"){
+    // 🛠️ Super-admin: every league in the pool. Delete cascades to all scoped data.
+    const all = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const totalMembers = MEMBERS.length;
+    html+=`<div class="card"><h3>🏆 All leagues · super-admin</h3>
+      <div class="small muted">${all.length} league${all.length===1?'':'s'} in the pool · ${totalMembers} total membership${totalMembers===1?'':'s'}.</div>
+      <div class="tiny muted" style="margin-top:6px">🗑️ Deleting a league wipes every prediction, prop answer, bracket pick, banter post, like and card scoped to that league — instantly, for every member. The user accounts themselves stay.</div>
+    </div>`;
+    if(!all.length) html+=`<div class="empty"><div class="e">🏆</div>No leagues yet.</div>`;
+    all.forEach(l=>{
+      const memCount = MEMBERS.filter(m=>m.league===l.id).length;
+      const pickCount = ALL.pred.filter(p=>p.league===l.id && !p.advance && !p.ko).length;
+      const banterCount = ALL.comments.filter(c=>c.league===l.id).length;
+      const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "—";
+      const isCur = l.id===LG;
+      html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">🏆 ${escapeHtml(l.name)}${isCur?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div>
+          <div class="small muted">${memCount} member${memCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts · invite <b style="letter-spacing:1.5px;font-family:Fredoka">${l.code}</b> · creator: ${escapeHtml(creator)}</div>
+        </div>
+        <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete league</button>
+      </div></div>`;
+    });
+  } else if(adminTab==="users"){
+    // 🛠️ Super-admin: every user across the whole pool.
+    const all = DB.profiles.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    html+=`<div class="card"><h3>👥 All users · super-admin</h3>
+      <div class="small muted">${all.length} user${all.length===1?'':'s'} signed up across the pool.</div>
+      <div class="tiny muted" style="margin-top:6px">🗑️ Deleting a user removes them from every league + wipes every pick, prop answer, bracket pick, banter post, like and card they've ever made. (Their Supabase login row stays — they could sign up again.)</div>
+    </div>`;
+    all.forEach(p=>{
+      const leagueCount = new Set(MEMBERS.filter(m=>m.user===p.id).map(m=>m.league)).size;
+      const pickCount = ALL.pred.filter(x=>x.user===p.id && !x.advance && !x.ko).length;
+      const banterCount = ALL.comments.filter(c=>c.user===p.id).length;
+      const isMe = p.id===ME.id;
+      const fav = p.team && teamById(p.team);
+      html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="avatar" style="width:42px;height:42px;font-size:20px">${avatarInner(p)}</div>
+        <div style="flex:1;min-width:160px">
+          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
+          <div class="small muted">${leagueCount} league${leagueCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts</div>
+        </div>
+        ${isMe?'<span class="tiny muted" style="padding:6px 10px">— self —</span>':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete user</button>`}
+      </div></div>`;
+    });
   } else if(adminTab==="ko"){
     html+=`<div class="small muted" style="margin:0 4px">Mark the teams that actually reached each stage. Everyone's knockout picks score instantly.</div>`;
     KO_STAGES.forEach(stage=>{
@@ -2105,6 +2232,12 @@ function wire(){
   // 🟥 Kick member from this league (admin only)
   $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player";
     confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm}?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid); }, "Yes, send them off 🟥"); });
+  // 🗑️ Super-admin: delete an entire league
+  $$("[data-delleague]").forEach(b=>b.onclick=()=>{ const lid=b.dataset.delleague, nm=b.dataset.dn||"this league";
+    confirmModal(`<div class="center"><div style="font-size:36px">🗑️🏆</div><div style="font-family:'Fredoka';font-size:18px">Delete league "${nm}"?</div><div class="small muted" style="margin-top:6px">This wipes every prediction, prop answer, bracket pick, comment, like and card scoped to this league — instantly, for every member. The user accounts themselves stay. <b>This cannot be undone.</b></div></div>`, async()=>{ await adminDeleteLeague(lid); }, "Yes, delete the league 🗑️"); });
+  // 🗑️ Super-admin: delete a user entirely
+  $$("[data-deluser]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.deluser, nm=b.dataset.dn||"this user";
+    confirmModal(`<div class="center"><div style="font-size:36px">🗑️👤</div><div style="font-family:'Fredoka';font-size:18px">Delete user "${nm}"?</div><div class="small muted" style="margin-top:6px">Removes them from every league + wipes every pick, prop, banter post, like and card they've ever made. Their Supabase login row stays (we don't have permission to delete it client-side). <b>This cannot be undone.</b></div></div>`, async()=>{ await adminDeleteUser(uid); }, "Yes, delete the user 🗑️"); });
   // sound + profile
   const mt=$("[data-mute]"); if(mt) mt.onclick=()=>{ toggleMute(); if(!MUTED)horn(); render(); };
   const pf=$("[data-profile]"); if(pf) pf.onclick=openProfile;
@@ -2738,7 +2871,9 @@ async function liveLoad(user){
   DB.profiles = profiles.map(p=>({id:p.id,name:p.display_name||p.email,emoji:p.emoji||"🙂",avatar:p.avatar||null,team:p.fav_team||null,email:p.email,is_admin:!!p.is_admin}));
   // 🏆 leagues + memberships (LEAGUES = only the ones I'm in)
   const myIds=new Set((memberships||[]).filter(m=>m.user_id===user.id).map(m=>m.league_id));
-  LEAGUES=(leagues||[]).filter(l=>myIds.has(l.id)).map(l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by}));
+  const lgMap=l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by,created_at:l.created_at});
+  ALL_LEAGUES=(leagues||[]).map(lgMap);
+  LEAGUES=(leagues||[]).filter(l=>myIds.has(l.id)).map(lgMap);
   MEMBERS=(memberships||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
   // every league's picks → master store (scoped per-league at render time)
   ALL.pred = preds.map(p=>({id:p.id,user:p.user_id,league:p.league_id,match:p.match_id,hp:p.hp,ap:p.ap,banker:p.banker}))
