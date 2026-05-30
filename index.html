@@ -668,7 +668,7 @@ function scopeLeague(){
    for any cross-league reads or admin writes to succeed. ----- */
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "1234";
-const ADMIN_DISPLAY_NAME = "Commissioner";
+const ADMIN_DISPLAY_NAME = "admin";   // display name matches the login username
 const ADMIN_EMOJI = "🎩";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
@@ -2183,12 +2183,12 @@ function viewAdmin(){
   const TABS = isPureAdmin
     ? [["results","Results"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"]]
     : [["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]];
-  let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
+  let html=`<div class="card"><h3>🛠️ Admin panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
     <div class="seg" style="margin-top:8px">${TABS.map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" data-signout style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Sign out of admin</button>
     </div>
-    <div class="tiny muted" style="margin-top:6px">Admin is its own account — signing out drops the commissioner session and returns you to the player sign-in. Your admin work (results, settled props, deletions) is saved on the server.</div></div>`;
+    <div class="tiny muted" style="margin-top:6px">Admin is its own account — signing out drops the admin session and returns you to the player sign-in. Your admin work (results, settled props, deletions) is saved on the server.</div></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
@@ -2400,7 +2400,7 @@ function render(){
 // no tabs. Just identity + sign-out, because admin only has one view: the dashboard.
 function adminHeader(){
   return `<header class="top adminhdr"><div class="brandrow"><div class="topbar">
-    <div class="tb-brand">${ADMIN_EMOJI} <b>Commissioner</b></div>
+    <div class="tb-brand">${ADMIN_EMOJI} <b>admin</b></div>
     <div class="tb-meta">
       <span class="badge-admin">ADMIN MODE</span>
       <button class="lockbtn" data-rules title="Pool rules">ℹ️</button>
@@ -2423,7 +2423,7 @@ function wire(){
     const adminMode = !!(ME && ME.is_admin);
     const title = adminMode ? "Sign out of admin?" : "Sign out of THE MASK?";
     const sub   = adminMode
-      ? "Drops the Commissioner session and returns you to the player sign-in. Your admin work is saved on the server."
+      ? "Drops the admin session and returns you to the player sign-in. Your admin work is saved on the server."
       : "You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.";
     const yesLabel = adminMode ? "Sign out of admin" : "Sign me out";
     confirmModal(`<div class="center"><div style="font-size:36px">${adminMode?'🎩':'👋'}</div><div style="font-family:'Fredoka';font-size:18px">${title}</div><div class="small muted" style="margin-top:6px">${sub}</div></div>`,
@@ -2719,7 +2719,7 @@ function rulesHTML(){
     <h4>The money 💰</h4>
     ${row("💸",`<b>Buy-in:</b> ${buyin} per player, paid to the league organiser. <b>Top ${split.split('/').length}</b> split the pot (${split}%). Results sync in live — nobody has to type scores.`)}
 
-    <div class="terms"><b>The friendly bit.</b> THE MASK is a private game among friends — for fun and bragging rights, not a commercial gambling service. Buy-ins are settled between you offline; the app only keeps score. Play responsibly and follow the rules where you live. Live scores are best-effort and the commissioner can correct any result.</div>
+    <div class="terms"><b>The friendly bit.</b> THE MASK is a private game among friends — for fun and bragging rights, not a commercial gambling service. Buy-ins are settled between you offline; the app only keeps score. Play responsibly and follow the rules where you live. Live scores are best-effort and the admin can correct any result.</div>
   </div>`;
 }
 function openRules(){
@@ -2840,11 +2840,11 @@ function adminLoginScreen(){
   $("#app").innerHTML=`<div class="app login adminlogin">
     <div class="hero" style="padding-top:30px">
       <div style="font-size:74px;line-height:1;margin-bottom:8px">🎩</div>
-      <div class="big">Commissioner sign-in</div>
+      <div class="big">Admin sign-in</div>
       <div class="muted" style="max-width:520px;margin:0 auto;font-size:16px">
         This is the admin control panel for <b>${DB.settings.app_title||"THE MASK"}</b>. Players sign in
         on the <a href="/" style="color:var(--cyan);text-decoration:underline">main page</a> — only the
-        commissioner needs to be here.
+        admin needs to be here.
       </div>
     </div>
     <div class="loginrow"><div class="card" style="max-width:440px;margin:0 auto">
