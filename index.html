@@ -590,10 +590,11 @@ function scopeLeague(){
 /* ---------- 🔐 admin gate (visit /admin or tap the lock, password 1234) ----
    Note: this is a friendly client-side UI gate. In LIVE mode, actually saving
    admin changes also requires your Supabase account to be is_admin (RLS). ----- */
+const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "1234";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
-function adminUnlock(pw){ if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("themask_admin","1");}catch(e){}
+function adminUnlock(pw, user){ if(user!=null && String(user).trim().toLowerCase()!==ADMIN_USERNAME) return false; if(String(pw).trim()===ADMIN_PASSWORD){ ADMIN_UNLOCKED=true; try{localStorage.setItem("themask_admin","1");}catch(e){}
   if(MODE==="live" && ME && supa){ ME.is_admin=true; sbUpsert("profiles",{id:ME.id,is_admin:true}); } // lets RLS accept admin writes
   return true; } return false; }
 function adminLock(){ ADMIN_UNLOCKED=false; try{localStorage.removeItem("themask_admin");}catch(e){} }
@@ -1348,8 +1349,33 @@ function countdown(iso){
   const ms=new Date(iso)-Date.now();
   if(ms<=0) return null;
   const dys=Math.floor(ms/864e5), hrs=Math.floor(ms%864e5/36e5);
-  if(dys>0) return `${dys}d ${hrs}h`;
-  const mins=Math.floor(ms%36e5/6e4);return `${hrs}h ${mins}m`;
+  const mins=Math.floor(ms%36e5/6e4), secs=Math.floor(ms%6e4/1000);
+  if(dys>0) return `${dys}d ${hrs}h ${mins}m`;
+  if(hrs>0) return `${hrs}h ${mins}m ${secs}s`;
+  if(mins>0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+// 🕐 Live ticker — re-evaluates every countdown element on the page once per second.
+// Tag a span/div with data-tick=… so its text refreshes without a full re-render (keeps focus, inputs, scroll).
+//   data-tick="kickoff" data-cd="<iso>"             → countdown(iso)
+//   data-tick="round"   data-md="1|2|3"             → roundCountdown(md)
+//   data-tick="extras"                              → extrasCountdown()
+//   data-tick="round-inline" data-md="1"            → live "X left" string (no "frozen" fallback)
+let _tickerStarted=false;
+function startTicker(){
+  if(_tickerStarted) return; _tickerStarted=true;
+  setInterval(()=>{
+    document.querySelectorAll('[data-tick]').forEach(el=>{
+      const k=el.dataset.tick;
+      try{
+        if(k==='kickoff'){ const v=countdown(el.dataset.cd); el.textContent = v || (el.dataset.kickoffLabel || 'KICKOFF!'); }
+        else if(k==='round'){ const md=+el.dataset.md; el.textContent = roundLocked(md)?'picks frozen':(roundCountdown(md)||'KICKOFF!'); }
+        else if(k==='round-inline'){ const md=+el.dataset.md; const v=roundCountdown(md); if(v) el.textContent = v; }
+        else if(k==='extras'){ el.textContent = extrasLocked()?'sealed for the tournament':(extrasCountdown()||'KICKOFF!'); }
+        else if(k==='extras-inline'){ const v=extrasCountdown(); if(v) el.textContent = v; }
+      }catch(e){}
+    });
+  }, 1000);
 }
 function isLocked(m){return m.status==="finished" || new Date(m.kickoff)<=Date.now();}
 
@@ -1559,7 +1585,7 @@ function viewPicks(){
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
-      <div class="cdbig">${countdown(nm.kickoff)||"KICKOFF!"}</div>
+      <div class="cdbig" data-tick="kickoff" data-cd="${nm.kickoff}">${countdown(nm.kickoff)||"KICKOFF!"}</div>
       <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div></div>`;
   }
   // pick progress + round countdown (group rounds only — KO rounds get their own block below)
@@ -1571,7 +1597,7 @@ function viewPicks(){
       <div class="small muted">Predict a scoreline for <b>every match in the round</b> (${DB.settings.pts_exact} pts spot-on, ${DB.settings.pts_result} for the right result). Pick <b>one match per round</b> as your ⭐ <b>Banker</b> for double points. <b>Edit freely until 30 min before the round's first kickoff</b> — then everything in that round freezes.</div>
       <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>
       <div class="card center cdcard ${rdLocked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
-        <div class="cdbig">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+        <div class="cdbig" data-tick="round" data-md="${round}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
         <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
   }
   // Tab strip — group rounds first, knockout rounds after (locked with 🔒 until group stage ends)
@@ -1628,7 +1654,7 @@ function matchCard(m){
     const live=inPlay(m);
     const rndOpen = !roundLocked(m.md) && !isLocked(m);
     inner=`${teams}<div class="scorerow"><span class="lockedpick">${eff.hp} – ${eff.ap}${eff.banker?' <span title="Banker (2×)">⭐</span>':''}${eff.repick?' <span title="Re-picked">🔁</span>':''}</span></div>
-      <div class="small muted center">${live?'🟢 LIVE — in play':(rndOpen?'💾 Saved · editable until round locks':'🔒 Locked')}${(!live&&cd)?` · in ${cd}`:''}</div>`;
+      <div class="small muted center">${live?'🟢 LIVE — in play':(rndOpen?'💾 Saved · editable until round locks':'🔒 Locked')}${(!live&&cd)?` · in <span data-tick="kickoff" data-cd="${m.kickoff}" data-kickoff-label="kickoff!">${cd}</span>`:''}</div>`;
     if(rndOpen){
       inner+=`<div class="row" style="margin-top:8px;gap:8px"><button class="btn block" style="flex:1;border-color:var(--cyan);color:var(--cyan)" data-unlock="${m.id}">🔓 Unlock &amp; edit</button></div>`;
     }
@@ -1668,7 +1694,7 @@ function matchCard(m){
         <button class="btn lime" style="flex:1" data-lock="${m.id}">💾 Save pick</button>
       </div>
       <div class="tiny" style="margin-top:6px;color:${canBank&&d.banker?'var(--gold)':'var(--muted)'}">${bankerHint}</div>
-      <div class="tiny muted" style="margin-top:4px">✏️ Edit freely until the round locks${rdc?` · ⏱ ${rdc} left`:''}</div>`;
+      <div class="tiny muted" style="margin-top:4px">✏️ Edit freely until the round locks${rdc?` · ⏱ <span data-tick="round-inline" data-md="${m.md}">${rdc}</span> left`:''}</div>`;
   }
   const tag = m.status==="finished"?'<span class="chip done">FT</span>'
     : (base&&inPlay(m))?'<span class="chip live">🟢 LIVE</span>'
@@ -1748,7 +1774,7 @@ function viewProps(){
   const cd = extrasCountdown();
   let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (worth a big <b>30 pts</b>), the top scorer, plus fun side questions. <b>All Extras lock 1 hour before the first match of the tournament</b> — answer before then and they're sealed for the whole World Cup.</div></div>
   <div class="card center cdcard ${locked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${locked?'🔒 EXTRAS · LOCKED':'⏱ EXTRAS · LOCK IN'}</div>
-    <div class="cdbig">${locked?'sealed for the tournament':(cd||'KICKOFF!')}</div>
+    <div class="cdbig" data-tick="extras">${locked?'sealed for the tournament':(cd||'KICKOFF!')}</div>
     <div class="small" style="color:#fff">${locked?"All answers are now frozen. The crowd's picks are revealed below — good luck.":"Get your answers in before the deadline. Then it's sealed until the trophy is lifted."}</div></div>`;
   let cards="";
   // keep the fun GOAT prop pinned first regardless of DB insertion order
@@ -1775,7 +1801,7 @@ function viewProps(){
       else if(pr.type==="team"){ const cur=d.answer?teamById(d.answer):null;
         opts=`<button class="opt ${d.answer?'sel':''}" data-teamprop="${pr.id}"><span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span></button>`; }
       else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
-      body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot per question — locks your answer & reveals the crowd 👀${cd?` · ⏱ ${cd} until all Extras seal`:''}</div>`;
+      body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot per question — locks your answer & reveals the crowd 👀${cd?` · ⏱ <span data-tick="extras-inline">${cd}</span> until all Extras seal`:''}</div>`;
     }
     cards+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
   });
@@ -2427,21 +2453,23 @@ function promptAdmin(){
     <div class="mhead"><b>🛠️ Admin access</b><button class="x" data-close>×</button></div>
     <div class="mbody center">
       <div style="font-size:44px">🔐🦇</div>
-      <div class="muted small" style="margin:8px 0 14px">Only the boss runs the pool. Password, please!</div>
-      <input id="apw" type="password" inputmode="numeric" placeholder="••••" style="text-align:center;font-size:24px;font-family:Fredoka;letter-spacing:8px"/>
+      <div class="muted small" style="margin:8px 0 14px">Only the boss runs the pool. Username and password, please!</div>
+      <input id="auser" type="text" autocomplete="username" placeholder="username" style="text-align:center;font-size:18px;font-family:Fredoka;letter-spacing:3px;margin-bottom:8px"/>
+      <input id="apw" type="password" inputmode="numeric" placeholder="••••" autocomplete="current-password" style="text-align:center;font-size:24px;font-family:Fredoka;letter-spacing:8px"/>
       <button class="btn primary block" id="apwbtn" style="margin-top:14px">Let me in 🚪</button>
     </div></div></div>`;
   const close=()=>root.innerHTML="";
   $("[data-close]",root).onclick=close;
   $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
   const go=()=>{
-    const v=$("#apw",root).value;
-    if(adminUnlock(v)){ close(); toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render(); }
-    else { toast("Nope! Wrong password 🙅"); const m=$(".modal",root); if(m){m.classList.remove("shake");void m.offsetWidth;m.classList.add("shake");} }
+    const u=$("#auser",root).value, v=$("#apw",root).value;
+    if(adminUnlock(v, u)){ close(); toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render(); }
+    else { toast("Nope! Wrong username or password 🙅"); const m=$(".modal",root); if(m){m.classList.remove("shake");void m.offsetWidth;m.classList.add("shake");} }
   };
   $("#apwbtn",root).onclick=go;
+  $("#auser",root).onkeydown=e=>{ if(e.key==="Enter") $("#apw",root).focus(); };
   $("#apw",root).onkeydown=e=>{ if(e.key==="Enter") go(); };
-  setTimeout(()=>{ const i=$("#apw",root); if(i) i.focus(); },60);
+  setTimeout(()=>{ const i=$("#auser",root); if(i) i.focus(); },60);
 }
 
 /* ============================================================================
@@ -2639,6 +2667,7 @@ function withTimeout(p, ms, label){ return Promise.race([Promise.resolve(p), new
 async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDING_JOIN=null; try{ await joinLeague(c); }catch(e){ console.error(e); } } }
 async function boot(){
   WANT_ADMIN = isAdminRoute();
+  startTicker();   // 🕐 once-only setInterval that ticks every countdown on the page
   try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
   if(haveKeys){
