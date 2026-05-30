@@ -121,6 +121,13 @@
   .pill.coins .v{color:var(--gold)}
   .pill.rank .v{color:var(--cyan)}
 
+  /* 🎩 admin header — visually distinct from player so you always know which mode you're in */
+  header.top.adminhdr{background:linear-gradient(180deg, rgba(255,208,46,.18), rgba(20,16,40,.85));border-bottom:1px solid var(--gold)}
+  header.top.adminhdr .tb-brand{color:var(--gold)}
+  header.top.adminhdr .tb-brand b{color:var(--gold)}
+  /* 🎩 admin login screen — gold-tinted, sparse, deliberately not player-themed */
+  .app.login.adminlogin .hero .big{color:var(--gold)}
+  .app.login.adminlogin .card{border-color:var(--gold);box-shadow:0 14px 40px rgba(255,208,46,.18)}
   /* ---------- generic ---------- */
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:12px 0;box-shadow:var(--shadow)}
   .card h3{margin:0 0 4px;font-family:'Fredoka';font-size:18px}
@@ -631,7 +638,12 @@ const LG_KEY="themask_league";
 function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
 function curLeague(){ return LEAGUES.find(l=>l.id===LG)||null; }
 function isMember(uid,lid){ return MEMBERS.some(m=>m.user===uid&&m.league===lid); }
-function leagueMembers(lid){ const ids=new Set(MEMBERS.filter(m=>m.league===lid).map(m=>m.user)); return DB.profiles.filter(p=>ids.has(p.id)); }
+// 🛡️ Admins are NEVER players — they manage the pool but never appear in any league's
+// member list, leaderboard, podium, banter board, or pool view. The `is_admin` flag on
+// a profile flips them out of every player-facing list. Their own admin dashboard still
+// shows them (they need to manage their own admin profile via the Users tab).
+function isPlayer(p){ return p && !p.is_admin; }
+function leagueMembers(lid){ const ids=new Set(MEMBERS.filter(m=>m.league===lid).map(m=>m.user)); return DB.profiles.filter(p=>ids.has(p.id) && isPlayer(p)); }
 function memberPaid(uid,lid){ const m=MEMBERS.find(x=>x.user===uid&&x.league===lid); return m?!!m.paid:false; }
 function inviteLink(code){ try{ return location.origin+location.pathname+"?join="+code; }catch(e){ return "?join="+code; } }
 function persistLG(){ try{ localStorage.setItem(LG_KEY, LG||""); }catch(e){} }
@@ -647,42 +659,69 @@ function scopeLeague(){
   if(typeof loadAdv==="function") loadAdv();
 }
 
-/* ---------- 🔐 admin gate (visit /admin or tap the lock, password 1234) ----
-   Note: this is a friendly client-side UI gate. In LIVE mode, actually saving
-   admin changes also requires your Supabase account to be is_admin (RLS). ----- */
+/* ---------- 🔐 admin gate (visit /admin, sign in as admin/1234) ----
+   Architecture: admin is a SEPARATE Supabase account (admin@themask.local), not a
+   flag we toggle on a player's profile. Going to /admin signs the player session
+   out and signs into the dedicated admin account. Admin never appears as a player
+   in any league — no member rows, no leaderboards, no banter, no podium.
+   In LIVE mode, RLS still requires the signed-in account to have is_admin=true
+   for any cross-league reads or admin writes to succeed. ----- */
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "1234";
+const ADMIN_DISPLAY_NAME = "Commissioner";
+const ADMIN_EMOJI = "🎩";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
+// In demo mode (no Supabase keys), the admin gate is just a client-side flag flip.
+function adminUnlockDemo(){ ADMIN_UNLOCKED=true; try{ localStorage.setItem("themask_admin","1"); }catch(e){} if(ME) ME.is_admin=true; return true; }
 async function adminUnlock(pw, user){
   if(user!=null && String(user).trim().toLowerCase()!==ADMIN_USERNAME) return false;
   if(String(pw).trim()!==ADMIN_PASSWORD) return false;
+  // Demo mode: no real account switch, just flip the local flag (we're in a sandbox).
+  if(MODE!=="live" || !supa){ return adminUnlockDemo(); }
+  // Live mode: sign out the current player session and sign in to the dedicated admin account.
+  // First time the admin password is used we sign that account up; thereafter we just sign in.
+  const adminEmail = pseudoEmail(ADMIN_USERNAME); // "admin@themask.local"
+  try{ await supa.auth.signOut(); }catch(e){}
+  let ok=false;
+  const {error: siErr} = await supa.auth.signInWithPassword({email:adminEmail, password:pw});
+  if(!siErr) ok=true;
+  else {
+    const {data:su, error: suErr} = await supa.auth.signUp({email:adminEmail, password:pw, options:{data:{display_name:ADMIN_DISPLAY_NAME}}});
+    if(!suErr){
+      ok=true;
+      // Some Supabase configs require an extra sign-in after sign-up (when email confirm is off, the
+      // session is usually returned right away — but belt-and-braces in case it isn't).
+      if(!su || !su.session){ const {error:s2}=await supa.auth.signInWithPassword({email:adminEmail, password:pw}); if(s2) ok=false; }
+    } else { console.error("admin signUp", suErr); }
+  }
+  if(!ok) return false;
+  // Flip the admin profile's is_admin=true (so RLS lets us read all leagues + write results).
+  // We also clear any team/avatar leftovers and force display_name/emoji to the Commissioner identity.
+  try{
+    const {data:u}=await supa.auth.getUser();
+    if(u && u.user){
+      await sbUpsert("profiles", {id:u.user.id, display_name:ADMIN_DISPLAY_NAME, emoji:ADMIN_EMOJI, is_admin:true, paid:false, fav_team:null, avatar:null});
+      await liveLoad(u.user);
+    }
+  }catch(e){ console.error("adminUnlock profile", e); }
   ADMIN_UNLOCKED=true;
   try{ localStorage.setItem("themask_admin","1"); }catch(e){}
-  if(ME) ME.is_admin=true;
-  // Flip is_admin=true server-side so the new RLS policies grant read+delete on every league's data,
-  // then re-fetch so MEMBERS / ALL.* contain the now-visible super-admin scope.
-  if(MODE==="live" && supa && ME){
-    try{
-      await supa.from("profiles").update({is_admin:true}).eq("id",ME.id);
-      const {data:u}=await supa.auth.getUser();
-      if(u && u.user) await liveLoad(u.user);
-    }catch(e){ console.error("adminUnlock refresh",e); }
-  }
   return true;
 }
 async function adminLock(){
+  // Signing out of admin mode = full sign-out (admin is its own account). The player can then sign
+  // in to their own account from the regular login screen.
   ADMIN_UNLOCKED=false;
   try{ localStorage.removeItem("themask_admin"); }catch(e){}
-  if(ME) ME.is_admin=false;
-  // Drop server-side super-powers and re-fetch so the user no longer carries admin-scoped data in memory.
-  if(MODE==="live" && supa && ME){
-    try{
-      await supa.from("profiles").update({is_admin:false}).eq("id",ME.id);
-      const {data:u}=await supa.auth.getUser();
-      if(u && u.user) await liveLoad(u.user);
-    }catch(e){ console.error("adminLock refresh",e); }
+  if(MODE==="live" && supa){
+    try{ await supa.auth.signOut(); }catch(e){}
   }
+  ME=null;
+  try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  // Strip the /admin path and re-render the player login (smoother than a hard nav).
+  try{ if(location.pathname !== "/") window.history.replaceState(null, "", "/"); }catch(e){}
+  loginScreen();
 }
 function isAdminRoute(){ try{ const l=(typeof location!=="undefined")?location:{}; return /admin/i.test((l.pathname||"")+(l.hash||"")+(l.search||"")); }catch(e){ return false; } }
 
@@ -1396,9 +1435,10 @@ function userCards(uid){
 function myCardOn(commentId){ return DB.cards.find(c=>c.from===ME.id&&c.comment===commentId); }
 function likeCount(commentId){ return DB.likes.filter(l=>l.comment===commentId).length; }
 function iLiked(commentId){ return DB.likes.some(l=>l.comment===commentId&&l.user===ME.id); }
-// best-banter ranking: total likes received on your posts (separate from the points Board)
+// best-banter ranking: total likes received on your posts (separate from the points Board).
+// 🛡️ Admins are filtered out — banter is a player-only league.
 function topBanter(){
-  const authors=[...new Set(DB.comments.map(c=>c.user))].filter(u=>profileById(u));
+  const authors=[...new Set(DB.comments.map(c=>c.user))].filter(u=>isPlayer(profileById(u)));
   return authors.map(u=>{ const posts=DB.comments.filter(c=>c.user===u);
     return {user:u, posts:posts.length, likes:posts.reduce((s,c)=>s+likeCount(c.id),0)}; })
     .sort((a,b)=> b.likes-a.likes || b.posts-a.posts);
@@ -1995,7 +2035,7 @@ function viewBanter(){
       const bonus=i<BANTER_BONUS.length?`<span class="bbonus">+${BANTER_BONUS[i]}</span>`:'';
       return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">${bonus}❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
   }
-  const naughty=DB.profiles.map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
+  const naughty=DB.profiles.filter(isPlayer).map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
   if(naughty.length){
     html+=`<div class="card"><h3 style="font-size:15px">📋 Ref's book</h3>`+naughty.map(({p,c})=>`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span>${escapeHtml(p.name)}${c.sentOff?' <span class="advtag miss">🟥 SENT OFF</span>':''}</span><span class="gp">${c.yellow?'🟨'.repeat(Math.min(c.yellow,6)):''}${c.red?'🟥'.repeat(Math.min(c.red,6)):''}</span></div>`).join("")+`</div>`;
   }
@@ -2134,13 +2174,21 @@ function viewPool(){
 let adminTab="results";
 let adminFocusLeague=null;     // when set, the Leagues admin tab drills into one league's detail
 function viewAdmin(){
+  // 🎩 Admin is its own account with no league memberships — so the "Members" tab (which
+  // shows the current league's roster) doesn't apply. The admin still manages members from
+  // the 🏆 Leagues tab → click any league → see its roster + kick anyone.
+  const isPureAdmin = !!(ME && ME.is_admin);
+  if(isPureAdmin && adminTab==="members") adminTab="leagues";
+  if(isPureAdmin && adminTab==="pool")    adminTab="leagues"; // pool view is per-league too
+  const TABS = isPureAdmin
+    ? [["results","Results"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"]]
+    : [["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]];
   let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
-    <div class="seg" style="margin-top:8px">${[["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
+    <div class="seg" style="margin-top:8px">${TABS.map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" data-dolock style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Exit admin mode</button>
-      <button class="btn" data-signout style="flex:1;border-color:var(--red);color:#ffb3b3">👋 Sign out completely</button>
+      <button class="btn" data-signout style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Sign out of admin</button>
     </div>
-    <div class="tiny muted" style="margin-top:6px">Exit admin = back to player view (still signed in). Sign out = drop your identity completely and return to the login screen.</div></div>`;
+    <div class="tiny muted" style="margin-top:6px">Admin is its own account — signing out drops the commissioner session and returns you to the player sign-in. Your admin work (results, settled props, deletions) is saved on the server.</div></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
@@ -2324,6 +2372,18 @@ function viewAdmin(){
    🎛️  RENDER ROOT + EVENT WIRING
    ============================================================================ */
 function render(){
+  // 🎩 Admin mode — no leagues, no picks, no player UI. Just the commissioner dashboard.
+  // Admin sessions skip the leagueGate entirely (admins aren't in any league by design).
+  if(ME && ME.is_admin){
+    loadAdv();
+    VIEW = "admin";              // admin has no other tabs
+    ADMIN_UNLOCKED = true;       // signed-in admin account is implicitly unlocked
+    const body = viewAdmin();
+    let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — admin sandbox.</div>` : "";
+    $("#app").innerHTML = adminHeader()+`<div class="app view-admin">${banner}${body}</div>`;
+    wire();
+    return;
+  }
   // not in any league yet → show the create/join gate (no header/nav)
   if(ME && (!LG || !curLeague())){ $("#app").innerHTML = leagueGate(); wireGate(); return; }
   loadAdv();
@@ -2336,6 +2396,19 @@ function render(){
   if(WANT_ADMIN && !ADMIN_UNLOCKED){ WANT_ADMIN=false; promptAdmin(); }
 }
 
+// 🎩 Admin's own top bar — distinct from the player header. No league chip, no points,
+// no tabs. Just identity + sign-out, because admin only has one view: the dashboard.
+function adminHeader(){
+  return `<header class="top adminhdr"><div class="brandrow"><div class="topbar">
+    <div class="tb-brand">${ADMIN_EMOJI} <b>Commissioner</b></div>
+    <div class="tb-meta">
+      <span class="badge-admin">ADMIN MODE</span>
+      <button class="lockbtn" data-rules title="Pool rules">ℹ️</button>
+      <button class="lockbtn" data-signout title="Sign out of admin">🚪</button>
+    </div>
+  </div></div></header>`;
+}
+
 function wire(){
   // nav
   $$("[data-tab]").forEach(b=>b.onclick=()=>{VIEW=b.dataset.tab;render();window.scrollTo(0,0);});
@@ -2344,7 +2417,18 @@ function wire(){
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=async()=>{ await adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
-  const so=$("[data-signout]"); if(so) so.onclick=()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out completely?</div><div class="small muted" style="margin-top:6px">You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.</div></div>`, ()=>logout(), "Sign me out"); };
+  // 🚪 Sign-out: when admin is signed in, this signs out the admin account (separate identity);
+  // when a player is signed in, this signs out the player. Either way → back to login screen.
+  const so=$("[data-signout]"); if(so) so.onclick=()=>{
+    const adminMode = !!(ME && ME.is_admin);
+    const title = adminMode ? "Sign out of admin?" : "Sign out of THE MASK?";
+    const sub   = adminMode
+      ? "Drops the Commissioner session and returns you to the player sign-in. Your admin work is saved on the server."
+      : "You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.";
+    const yesLabel = adminMode ? "Sign out of admin" : "Sign me out";
+    confirmModal(`<div class="center"><div style="font-size:36px">${adminMode?'🎩':'👋'}</div><div style="font-family:'Fredoka';font-size:18px">${title}</div><div class="small muted" style="margin-top:6px">${sub}</div></div>`,
+      ()=>{ if(adminMode) adminLock(); else logout(); }, yesLabel);
+  };
   // 🟥 Kick member from a league (admin only). Buttons in the drilled-in league detail view
   // carry an explicit data-klid; otherwise the current league (LG) is used.
   $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player", lid=b.dataset.klid||null;
@@ -2748,6 +2832,45 @@ function openLeagueForm(mode){
 }
 
 /* ---------- admin password gate ---------- */
+// 🎩 Full-screen admin login — shown when someone lands on /admin without a session.
+// Deliberately spare and visually distinct from the player login so there's no doubt
+// you're entering admin land. Admin signs in with username "admin" + the password,
+// and gets a dedicated Supabase account (admin@themask.local) — never a player profile.
+function adminLoginScreen(){
+  $("#app").innerHTML=`<div class="app login adminlogin">
+    <div class="hero" style="padding-top:30px">
+      <div style="font-size:74px;line-height:1;margin-bottom:8px">🎩</div>
+      <div class="big">Commissioner sign-in</div>
+      <div class="muted" style="max-width:520px;margin:0 auto;font-size:16px">
+        This is the admin control panel for <b>${DB.settings.app_title||"THE MASK"}</b>. Players sign in
+        on the <a href="/" style="color:var(--cyan);text-decoration:underline">main page</a> — only the
+        commissioner needs to be here.
+      </div>
+    </div>
+    <div class="loginrow"><div class="card" style="max-width:440px;margin:0 auto">
+      <div class="step"><span class="stepn">1</span><b>Username</b></div>
+      <input id="al_user" type="text" autocomplete="username" placeholder="admin" value="admin" style="text-align:center;font-family:Fredoka;font-size:18px;letter-spacing:3px"/>
+      <div class="step"><span class="stepn">2</span><b>Admin password</b></div>
+      <input id="al_pw" type="password" inputmode="numeric" placeholder="••••" autocomplete="current-password" style="text-align:center;font-family:Fredoka;font-size:24px;letter-spacing:8px"/>
+      <button class="btn primary block" id="al_go" style="margin-top:14px">🛠️ Open admin panel</button>
+      <div class="tiny muted center" style="margin-top:10px">Looking to play? <a href="/" style="color:var(--cyan)">Take me to the player login</a>.</div>
+    </div></div>
+  </div>`;
+  const go=async()=>{
+    const u=$("#al_user").value, v=$("#al_pw").value;
+    if(await adminUnlock(v, u)){
+      toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render();
+    } else {
+      toast("Nope! Wrong username or password 🙅");
+      const c=$("#al_pw"); if(c){ c.value=""; c.focus(); }
+    }
+  };
+  $("#al_go").onclick=go;
+  $("#al_user").onkeydown=e=>{ if(e.key==="Enter") $("#al_pw").focus(); };
+  $("#al_pw").onkeydown=e=>{ if(e.key==="Enter") go(); };
+  setTimeout(()=>{ const i=$("#al_pw"); if(i) i.focus(); }, 60);
+}
+
 function promptAdmin(){
   const root=$("#modal-root");
   root.innerHTML=`<div class="modal-bg"><div class="modal">
@@ -2899,6 +3022,18 @@ async function doLogin(){
   const isSignup = authMode==="signup";
   // Precise field-level validation: each missing piece gets its own toast so the user knows what to fix.
   if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
+  // 🎩 "admin" is the commissioner's reserved name — never a player. If someone types it on the
+  // player login (sign-in OR sign-up), don't try to sign them up as a player. Route them to the
+  // admin flow instead so they don't accidentally clobber the admin account's is_admin flag.
+  if(isLive && username.toLowerCase() === ADMIN_USERNAME){
+    if(isSignup){ toast(`"${ADMIN_USERNAME}" is reserved — pick another username 👑`); return; }
+    if(await adminUnlock(password, username)){
+      toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render();
+    } else {
+      toast("Wrong admin password 🙅");
+    }
+    return;
+  }
   if(isLive && isSignup && username.length<2){ toast("Username needs 2+ characters 👤"); return; }
   if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
   if(isSignup && !pendingTeam){ toast("Pick your nation first 🌍"); return; }
@@ -2984,6 +3119,12 @@ async function boot(){
       supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
       const {data}=await withTimeout(supa.auth.getSession(), 20000, "session");
       if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 20000, "load"); await applyPendingJoin(); render(); }
+      else if(WANT_ADMIN){
+        // /admin route + no session → go straight to a dedicated admin login screen.
+        // Never show the player signup form on /admin; admin is its own world.
+        Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()});
+        adminLoginScreen();
+      }
       else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
       supa.auth.onAuthStateChange(async (_e,session)=>{
         if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),20000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }

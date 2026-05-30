@@ -348,8 +348,10 @@ insert into settings (id,app_title,starting_coins,pts_exact,pts_result,pts_advan
 
 -- ============================================================================
 --  MIGRATION → PRIVATE LEAGUES
---  Puts every existing player + all their existing picks into one "Default League"
+--  Puts every existing PLAYER + all their existing picks into one "Default League"
 --  so nothing is lost when you upgrade. Safe to re-run.
+--  🛡️ Admins are intentionally excluded — admin is a separate role with no league
+--  participation, and must never appear as a player in any leaderboard or member list.
 -- ============================================================================
 insert into leagues (id,name,code,buy_in,currency,payout_split,created_by)
   values ('lg-default','THE MASK','MASK26',50,'USD','[50,30,20]'::jsonb,null)
@@ -364,5 +366,20 @@ update prop_answers set league_id='lg-default' where league_id is null;
 update advances     set league_id='lg-default' where league_id is null;
 update ko_picks     set league_id='lg-default' where league_id is null;
 update repicks      set league_id='lg-default' where league_id is null;
+
+-- 🧹 Demote any LEGACY player profiles that got a stale is_admin=true flag from the old
+-- "admin = elevate current player" flow. New architecture: admin is a separate account
+-- (admin@themask.local). Anyone NOT that account who has is_admin=true is a misflag.
+-- We keep their memberships and picks intact — they're a normal player.
+update profiles
+   set is_admin = false
+ where coalesce(is_admin,false) = true
+   and lower(coalesce(email,'')) <> 'admin@themask.local';
+
+-- 🛡️ The dedicated admin account must never be a member of any league.
+-- (After the demote above, this only matches admin@themask.local.)
+delete from memberships m
+  using profiles p
+  where m.user_id = p.id and coalesce(p.is_admin,false) = true;
 
 -- After running: Authentication -> enable "Allow anonymous sign-ins". Admin = visit /admin, password 1234.
