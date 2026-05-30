@@ -146,6 +146,13 @@ After editing `index.html`, redeploy to Vercel.
 
 ## Good to know
 
+- **🌍 Times in your local timezone.** Friends in Tokyo and friends in Stockholm each see
+  kickoff in their own clock — the actual moment is the same for everyone, the displayed time
+  just matches the viewer's location. A short timezone tag (CET, JST, ET…) is shown next to
+  every kickoff so there's no confusion.
+- **📱 Mobile-first.** Designed to look great on a phone — top bar packs down on narrow widths
+  and there's no horizontal scroll. Drop it on the home screen via Safari/Chrome → Share → "Add
+  to Home Screen" for a near-native feel (the icon + name are wired up).
 - **Picks are blind until you commit** — you only see the crowd's picks for a game after you've
   locked your own (or after kickoff). Then it's a fun reveal of who said what.
 - **Reload to see others' latest** picks/results — the app loads fresh data on open.

@@ -427,6 +427,31 @@
   .scorerow{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}
   .scorerow .colon{font-family:'Fredoka';color:var(--muted);font-size:22px}
   @media (max-width:380px){ .oddbtn{font-size:11px;padding:7px 2px} .oddbtn b{font-size:14px} .tname{font-size:15px} }
+  /* 📱 narrow-phone packing: shrink the top-bar buttons + brand so 4 lockbtns + avatar
+     fit one row on iPhone-mini / Android compact widths without horizontal scroll. */
+  @media (max-width:430px){
+    .topbar{gap:6px}
+    .tb-meta{gap:5px}
+    .tb-brand{font-size:17px;gap:5px}
+    .tb-brand .ball{font-size:19px}
+    .lockbtn{width:30px;height:30px;font-size:13px;border-width:1.5px}
+    .avatar.avbtn{width:30px;height:30px;font-size:15px}
+    .badge-admin{font-size:9px;padding:2px 6px}
+  }
+  @media (max-width:360px){
+    .tb-brand{font-size:15px}
+    .lockbtn{width:27px;height:27px;font-size:12px}
+    .avatar.avbtn{width:27px;height:27px;font-size:13px}
+    .tb-league{padding:7px 9px}
+    .tb-league .tbl-ic{font-size:17px}
+    .tb-league .tbl-title{font-size:16px}
+  }
+  /* 🚫 prevent any accidental horizontal scroll from over-wide content */
+  html,body{max-width:100vw;overflow-x:hidden}
+  .app, .modal, .card, .match{max-width:100%}
+  /* dropdown menus that previously could overflow the viewport on phones */
+  .lgmenu{max-width:calc(100vw - 16px)}
+  .modal{max-width:min(460px, calc(100vw - 24px))}
   /* ---------- responsive: lay out cards in a grid + use the screen on desktop ---------- */
   .hwrap{max-width:540px;margin:0 auto}
   .cardgrid{display:grid;gap:12px;align-items:start;margin-top:12px}
@@ -1474,10 +1499,16 @@ async function sbUpsert(table,row){ try{ await supa.from(table).upsert(row); }ca
 /* ============================================================================
    🖼️  RENDER
    ============================================================================ */
+// 🌍 Localized to each viewer's timezone. We grab the IANA name once (e.g. "Europe/Stockholm")
+// and the browser handles DST + locale formatting; we append a short TZ tag (CET, ET, JST…) so
+// users from different countries always know what clock they're looking at.
+const USER_TZ = (function(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; }catch(e){ return undefined; } })();
+function tzShort(d){ try{ const p=new Intl.DateTimeFormat(undefined,{timeZoneName:"short"}).formatToParts(d||new Date()); const t=p.find(x=>x.type==="timeZoneName"); return t?t.value:""; }catch(e){ return ""; } }
 function fmtKick(iso){
   const d=new Date(iso);
-  // Always show US Eastern so the matchday date is stable for everyone, wherever they are.
-  try{ return d.toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",timeZone:"America/New_York"})+" ET"; }
+  // Show in the viewer's local timezone (so a friend in Tokyo and a friend in Stockholm each
+  // see kickoff in their own clock). Falls back gracefully if Intl is unavailable.
+  try{ return d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})+" "+tzShort(d); }
   catch(e){ return d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
 }
 function countdown(iso){
@@ -1722,7 +1753,8 @@ function viewPicks(){
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
       <div class="cdbig" data-tick="kickoff" data-cd="${nm.kickoff}">${countdown(nm.kickoff)||"KICKOFF!"}</div>
-      <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div></div>`;
+      <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div>
+      <div class="tiny" style="color:#dfeaff;opacity:.85;margin-top:4px">🕐 ${fmtKick(nm.kickoff)} <span style="opacity:.7">· your local time</span></div></div>`;
   }
   // pick progress + round countdown (group rounds only — KO rounds get their own block below)
   if(isGroupRound){
@@ -2584,6 +2616,7 @@ function rulesHTML(){
     <h4>Rounds &amp; lock-in</h4>
     ${row("✏️",`<b>Edit freely until 30 min before each round kicks off.</b> Save, unlock, and tweak picks as much as you like.`)}
     ${row("🔒",`<b>Then the whole round freezes.</b> No more changes — except a 🔁 half-time re-pick during a live match.`)}
+    ${row("🌍",`<b>Times shown in your local timezone</b> (${USER_TZ||'your local clock'}) — kickoff is the same instant for everyone, the clock you see just matches yours.`)}
     ${row("👀",`<b>Blind reveal.</b> Nobody sees anyone's picks until the round locks. Then everyone's choices unlock together.`)}
 
     <h4>The Banker ⭐</h4>
