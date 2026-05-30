@@ -1018,6 +1018,14 @@ function canBankMatch(m){
 }
 // Group stage is "finished" when every Round-3 match has finished — gates the projected R32 reveal and the KO rounds.
 function groupStageFinished(){ const md3=DB.matches.filter(m=>m.md===3); return md3.length>0 && md3.every(m=>m.status==="finished"); }
+// 🃏 Extras (tournament-wide props) lock 1 hour before the FIRST match of the tournament — then frozen for good.
+const EXTRAS_LOCK_BEFORE_MS = 60*60*1000;
+function tournamentStart(){ const ks=DB.matches.map(m=>new Date(m.kickoff).getTime()).filter(t=>!isNaN(t)); return ks.length?Math.min(...ks):null; }
+function extrasDeadline(){ const t=tournamentStart(); return t==null?null:t-EXTRAS_LOCK_BEFORE_MS; }
+function extrasLocked(){ const dl=extrasDeadline(); return dl!=null && Date.now()>=dl; }
+function extrasCountdown(){ const dl=extrasDeadline(); if(dl==null) return null; const ms=dl-Date.now(); if(ms<=0) return null;
+  const d=Math.floor(ms/86400000), h=Math.floor((ms%86400000)/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000);
+  if(d>0) return `${d}d ${h}h ${m}m`; if(h>0) return `${h}h ${m}m`; if(m>0) return `${m}m ${s}s`; return `${s}s`; }
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
 function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
@@ -1101,6 +1109,7 @@ async function unlockPick(matchId){
 async function lockProp(propId, answer){
   if(!LG)return;
   if(myAnswer(propId))return;
+  if(extrasLocked()){ toast("⏱ Extras locked — kickoff is too close"); return; }
   const a={id:`${ME.id}-${LG}-${propId}`,user:ME.id,league:LG,prop:propId,answer};
   ALL.pans.push(a); scopeLeague();
   if(MODE==="live"){ await sbInsert("prop_answers",{id:a.id,user_id:ME.id,league_id:LG,prop_id:propId,answer}); await reloadProps(); }
@@ -1735,7 +1744,12 @@ function revealPropBlock(pr){
 }
 function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class="opt ${sel}" data-propopt="${v}" data-prop="${pr.id}"><span class="rd"></span><span>${label}</span></div>`; }
 function viewProps(){
-  let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (worth a big <b>30 pts</b>), the top scorer, plus fun side questions. Answer to <b>lock in</b> (one shot!) — then you'll see what everyone else guessed 👀.</div></div>`;
+  const locked = extrasLocked();
+  const cd = extrasCountdown();
+  let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (worth a big <b>30 pts</b>), the top scorer, plus fun side questions. <b>All Extras lock 1 hour before the first match of the tournament</b> — answer before then and they're sealed for the whole World Cup.</div></div>
+  <div class="card center cdcard ${locked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${locked?'🔒 EXTRAS · LOCKED':'⏱ EXTRAS · LOCK IN'}</div>
+    <div class="cdbig">${locked?'sealed for the tournament':(cd||'KICKOFF!')}</div>
+    <div class="small" style="color:#fff">${locked?"All answers are now frozen. The crowd's picks are revealed below — good luck.":"Get your answers in before the deadline. Then it's sealed until the trophy is lifted."}</div></div>`;
   let cards="";
   // keep the fun GOAT prop pinned first regardless of DB insertion order
   const props=[...DB.props].sort((a,b)=>(b.id==="p-goat")-(a.id==="p-goat"));
@@ -1751,6 +1765,9 @@ function viewProps(){
       else if(settled){ const won=a&&String(a.answer)===String(pr.correct);
         res=`<div class="small ${won?'earn good':'earn bad'}" style="margin-top:6px">${won?'✅ You nailed it! +'+pr.pts+' pts':'❌ Settled · correct: '+labelFor(pr,pr.correct)}</div>`; }
       body=`<div class="small" style="margin-top:6px">🔒 Your answer: <b>${a?labelFor(pr,a.answer):'—'}</b></div>${res}${revealPropBlock(pr)}`;
+    } else if(locked){
+      // Tournament-wide deadline passed and the user never locked an answer
+      body=`<div class="small muted" style="margin-top:6px">🔒 Locked — you didn't answer this one.</div>${revealPropBlock(pr)}`;
     } else {
       let opts="";
       if(pr.type==="yesno") opts=["yes","no"].map(v=>pOpt(pr,v,v==="yes"?"✅ Yes":"❌ No",d)).join("");
@@ -1758,7 +1775,7 @@ function viewProps(){
       else if(pr.type==="team"){ const cur=d.answer?teamById(d.answer):null;
         opts=`<button class="opt ${d.answer?'sel':''}" data-teamprop="${pr.id}"><span class="rd"></span><span>${cur?`${cur.flag} ${cur.name}`:'🌍 Tap to choose a team…'}</span></button>`; }
       else opts=pr.options.map(o=>pOpt(pr,o.v,o.label,d)).join("");
-      body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot — locks your answer & reveals the crowd 👀</div>`;
+      body=`${opts}<button class="btn lime block" style="margin-top:10px" data-plock="${pr.id}">🔒 Lock answer</button><div class="tiny muted" style="margin-top:4px">One shot per question — locks your answer & reveals the crowd 👀${cd?` · ⏱ ${cd} until all Extras seal`:''}</div>`;
     }
     cards+=`<div class="card"><div class="spread"><h3 style="font-size:16px">${pr.icon} ${pr.q}</h3><span class="chip ${settled?'done':'open'}">${pr.id==="p-goat"?'😜 for fun':pr.pts+' pts'}</span></div>${body}</div>`;
   });
@@ -2324,17 +2341,19 @@ function leagueGate(){
     <div class="big">You're in, <b>${(ME&&ME.name)||"player"}</b>!</div>
     <div class="muted">Now set up a <b>private league</b> for your crew, or join one with an invite code. You can be in as many leagues as you like. 🦇⚽</div>
   </div>
-  <div class="card"><h3>➕ Create a league</h3>
-    <label class="fld">League name</label>
-    <input id="lgname" placeholder="e.g. The Lads 🍻" autocomplete="off"/>
-    <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>
-    <div class="tiny muted center" style="margin-top:6px">Buy-in is ${DEFAULTS.buy_in} ${DEFAULTS.currency} for everyone · you'll get an invite code + link to share.</div>
-  </div>
-  <div class="card"><h3>🔑 Join a league</h3>
-    <label class="fld">Invite code</label>
-    <input id="lgcode" placeholder="e.g. LADS26" autocomplete="off" style="text-transform:uppercase"/>
-    <button class="btn lime block" id="lgjoin" style="margin-top:12px">Join 🤝</button>
-    <div class="tiny muted center" style="margin-top:6px">Got an invite link? Just open it — you'll join automatically.</div>
+  <div class="loginrow">
+    <div class="card"><h3>➕ Create a league</h3>
+      <label class="fld">League name</label>
+      <input id="lgname" placeholder="e.g. The Lads 🍻" autocomplete="off"/>
+      <button class="btn primary block" id="lgcreate" style="margin-top:12px">Create league 🏆</button>
+      <div class="tiny muted center" style="margin-top:6px">Buy-in is ${DEFAULTS.buy_in} ${DEFAULTS.currency} for everyone · you'll get an invite code + link to share.</div>
+    </div>
+    <div class="card"><h3>🔑 Join a league</h3>
+      <label class="fld">Invite code</label>
+      <input id="lgcode" placeholder="e.g. LADS26" autocomplete="off" style="text-transform:uppercase;letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700"/>
+      <button class="btn lime block" id="lgjoin" style="margin-top:12px">Join 🤝</button>
+      <div class="tiny muted center" style="margin-top:6px">Got an invite link? Just open it — you'll join automatically.</div>
+    </div>
   </div></div>`;
 }
 function wireGate(){
