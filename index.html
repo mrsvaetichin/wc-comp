@@ -2429,11 +2429,19 @@ function promptAdmin(){
    ============================================================================ */
 const EMOJIS=["🦇","🦁","🐉","🐙","🦄","🐺","🌶️","👽","🤡","🐸","🦊","🐯","🦅","🐝","💀","🤖","🦖","👻","🧛","🐳"];
 let pendingEmoji=null, pendingTeam=null, pendingAvatar=null;
+// Form values that must survive a login-screen re-render (when the user picks an emoji,
+// uploads a photo, switches tabs, etc.). Read DOM into these on every input; pre-fill from these on render.
+let pendingUsername="", pendingPassword="", pendingJoinCode="";
 // Auth state for the login form: 'signin' = returning user, 'signup' = first-time
 let authMode = "signup";
 function loginScreen(extra=""){
   if(!pendingEmoji) pendingEmoji=EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+  // Seed the join code from a ?join=… URL the first time we render
+  if(!pendingJoinCode && PENDING_JOIN) pendingJoinCode=(PENDING_JOIN||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'');
   const teamLabel = pendingTeam&&teamById(pendingTeam) ? `${teamById(pendingTeam).flag} ${teamById(pendingTeam).name} ✓` : '🌍 Tap to choose your nation…';
+  const valU = (pendingUsername||"").replace(/"/g,'&quot;');
+  const valP = (pendingPassword||"").replace(/"/g,'&quot;');
+  const valJ = (pendingJoinCode||"").replace(/"/g,'&quot;');
   const isLive = MODE==="live";
   const isSignup = authMode==="signup";
   const showAuthTabs = isLive;     // demo mode is just "type a name"
@@ -2447,7 +2455,7 @@ function loginScreen(extra=""){
   <div class="card">${extra}
     ${showAuthTabs?`<div class="authtabs"><button class="${isSignup?'':'on'}" data-authtab="signin">Sign in</button><button class="${isSignup?'on':''}" data-authtab="signup">Create account</button></div>`:''}
     ${isSignup?`
-      <div class="step"><span class="stepn">1</span><b>Your profile photo</b> <span class="muted tiny">— optional, you can also pick an emoji below</span></div>
+      <div class="step"><span class="stepn">1</span><b>Profile photo</b> <span class="muted tiny" style="color:var(--gold)">— optional · skip and use just the emoji badge below</span></div>
       <div class="photopick">
         <div class="photoavatar" id="pvprev">${av}</div>
         <div class="photobtns">
@@ -2455,26 +2463,26 @@ function loginScreen(extra=""){
           ${pendingAvatar?`<button class="btn ghost" id="pvclear" style="padding:6px 10px;font-size:12px">Remove photo, use emoji</button>`:''}
         </div>
       </div>
-      <div class="step"><span class="stepn">2</span><b>${isLive?'Username':'Your name'}</b> <span class="muted tiny">— ${isLive?'how friends find you':'what we call you'}</span></div>
-      <input id="email" placeholder="${isLive?'pick a username':'what should we call you?'}" autocomplete="off"/>
+      <div class="step"><span class="stepn">2</span><b>${isLive?'Username':'Your name'}</b> <span class="muted tiny">— ${isLive?'how friends find you · must be unique':'what we call you'}</span></div>
+      <input id="email" placeholder="${isLive?'pick a username':'what should we call you?'}" autocomplete="off" value="${valU}"/>
       ${isLive?`<div class="step"><span class="stepn">3</span><b>Password</b> <span class="muted tiny">— at least 6 characters, no email needed</span></div>
-      <input id="pw" type="password" placeholder="choose a password" autocomplete="new-password"/>`:''}
+      <input id="pw" type="password" placeholder="choose a password" autocomplete="new-password" value="${valP}"/>`:''}
       <div class="step"><span class="stepn">${isLive?'4':'3'}</span><b>Pick an emoji badge</b></div>
       <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji&&!pendingAvatar?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
       <div class="step"><span class="stepn">${isLive?'5':'4'}</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
       <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
       <div class="step"><span class="stepn">${isLive?'6':'5'}</span><b>Got an invite code?</b> <span class="muted tiny">— optional · drops you straight into your friends' league</span></div>
-      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${(PENDING_JOIN||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'')}"/>
+      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>
       <div class="tiny muted" style="margin-top:4px">No code? No worries — you'll be able to create a league or join one on the next screen.</div>
       <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>${isLive?'Create my account →':'Continue →'}</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Fill the steps above to continue.</div>
     `:`
       <div class="step"><span class="stepn">1</span><b>Username</b></div>
-      <input id="email" placeholder="your username" autocomplete="username"/>
+      <input id="email" placeholder="your username" autocomplete="username" value="${valU}"/>
       <div class="step"><span class="stepn">2</span><b>Password</b></div>
-      <input id="pw" type="password" placeholder="your password" autocomplete="current-password"/>
+      <input id="pw" type="password" placeholder="your password" autocomplete="current-password" value="${valP}"/>
       <div class="step"><span class="stepn">3</span><b>Invite code</b> <span class="muted tiny">— optional · join a new league on the way in</span></div>
-      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${(PENDING_JOIN||'').toString().toUpperCase().replace(/[^A-Z0-9]/g,'')}"/>
+      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>
       <button class="btn primary block" id="loginbtn" style="margin-top:16px" disabled>Sign in →</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter your username and password to sign in.</div>
     `}
@@ -2482,30 +2490,37 @@ function loginScreen(extra=""){
   <div class="card"><h3 style="font-size:16px">📖 How it works</h3>${rulesHTML()}</div>
   </div>
   </div>`;
-  $$("[data-authtab]").forEach(b=>b.onclick=()=>{ authMode=b.dataset.authtab; loginScreen(extra); });
-  $$("[data-ep]").forEach(b=>b.onclick=()=>{ pendingEmoji=b.dataset.ep; pendingAvatar=null; loginScreen(extra); });
-  const fav=$("#favteam"); if(fav) fav.onclick=()=>openTeamPicker(t=>{ pendingTeam=t.id; const b=$("#favteam"); if(b){ b.innerHTML=`${t.flag} ${t.name} ✓`; b.classList.add("gold"); } updateLoginBtn(); });
-  const pvf=$("#pvfile"); if(pvf) pvf.onchange=e=>{ readImageFile(e.target.files[0], url=>{ pendingAvatar=url; loginScreen(extra); }); };
-  const pvc=$("#pvclear"); if(pvc) pvc.onclick=()=>{ pendingAvatar=null; loginScreen(extra); };
-  const em=$("#email"); if(em){ em.oninput=updateLoginBtn; em.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
-  const pw=$("#pw"); if(pw){ pw.oninput=updateLoginBtn; pw.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
+  // Capture whatever the user's typed into the inputs RIGHT NOW, so any re-render below preserves it.
+  const syncInputs=()=>{ if($("#email")) pendingUsername=$("#email").value; if($("#pw")) pendingPassword=$("#pw").value; if($("#joincode")) pendingJoinCode=$("#joincode").value.toUpperCase().replace(/[^A-Z0-9]/g,''); };
+  $$("[data-authtab]").forEach(b=>b.onclick=()=>{ syncInputs(); authMode=b.dataset.authtab; loginScreen(extra); });
+  $$("[data-ep]").forEach(b=>b.onclick=()=>{ syncInputs(); pendingEmoji=b.dataset.ep; pendingAvatar=null; loginScreen(extra); });
+  const fav=$("#favteam"); if(fav) fav.onclick=()=>{ syncInputs(); openTeamPicker(t=>{ pendingTeam=t.id; const b=$("#favteam"); if(b){ b.innerHTML=`${t.flag} ${t.name} ✓`; b.classList.add("gold"); } updateLoginBtn(); }); };
+  const pvf=$("#pvfile"); if(pvf) pvf.onchange=e=>{ syncInputs(); readImageFile(e.target.files[0], url=>{ pendingAvatar=url; loginScreen(extra); }); };
+  const pvc=$("#pvclear"); if(pvc) pvc.onclick=()=>{ syncInputs(); pendingAvatar=null; loginScreen(extra); };
+  const em=$("#email"); if(em){ em.oninput=()=>{ pendingUsername=em.value; updateLoginBtn(); }; em.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
+  const pw=$("#pw"); if(pw){ pw.oninput=()=>{ pendingPassword=pw.value; updateLoginBtn(); }; pw.onkeydown=e=>{ if(e.key==="Enter"&&!$("#loginbtn").disabled) doLogin(); }; }
+  const jc=$("#joincode"); if(jc){ jc.oninput=()=>{ pendingJoinCode=jc.value.toUpperCase().replace(/[^A-Z0-9]/g,''); jc.value=pendingJoinCode; }; }
   $("#loginbtn").onclick=doLogin;
   updateLoginBtn();
 }
 function updateLoginBtn(){
-  const em=$("#email"), pw=$("#pw"), btn=$("#loginbtn"); if(!btn) return;
+  // Read from the global state (not the DOM) so a re-render — emoji pick, photo upload,
+  // tab switch, team picker close — never makes the button "forget" what's typed.
+  const btn=$("#loginbtn"); if(!btn) return;
   const isLive = MODE==="live";
   const isSignup = authMode==="signup";
+  const u = (pendingUsername||"").trim();
+  const p = pendingPassword||"";
   let ok=false, hint="";
   if(isLive && !isSignup){ // sign-in
-    ok = em && em.value.trim().length>0 && pw && pw.value.length>=6;
+    ok = u.length>0 && p.length>=6;
     hint = ok ? "Tap Sign in 🚪" : "Enter your username and password to sign in.";
   } else if(isLive && isSignup){ // create account
-    ok = em && em.value.trim().length>=2 && pw && pw.value.length>=6 && !!pendingTeam;
-    hint = !em||em.value.trim().length<2 ? "Pick a username (2+ chars)" : !pw||pw.value.length<6 ? "Choose a password (6+ chars)" : !pendingTeam ? "Pick your nation to continue 🌍" : "All set — tap Create my account 🎉";
+    ok = u.length>=2 && p.length>=6 && !!pendingTeam;
+    hint = u.length<2 ? "Pick a username (2+ chars)" : p.length<6 ? "Choose a password (6+ chars)" : !pendingTeam ? "Pick your nation to continue 🌍" : "All set — tap Create my account 🎉";
   } else { // demo
-    ok = em && em.value.trim().length>0 && !!pendingTeam;
-    hint = ok ? "Next: join or create a league to play 🏆" : (em&&em.value.trim()? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
+    ok = u.length>0 && !!pendingTeam;
+    hint = ok ? "Next: join or create a league to play 🏆" : (u? "Pick your nation to continue 🌍" : "Enter a name and pick your nation to continue.");
   }
   btn.disabled = !ok;
   const h=$("#loginhint"); if(h) h.textContent = hint;
@@ -2515,11 +2530,15 @@ function updateLoginBtn(){
 function pseudoEmail(username){ return String(username||"").toLowerCase().replace(/[^a-z0-9._-]/g,"")+"@themask.local"; }
 async function doLogin(){
   const isLive = MODE==="live";
-  const username = ($("#email")&&$("#email").value.trim())||"";
-  const password = ($("#pw")&&$("#pw").value)||"";
-  // pull the optional invite code straight from the form so it joins the league after auth
-  const joinCodeRaw = ($("#joincode")&&$("#joincode").value)||"";
-  const joinCode = joinCodeRaw.toString().toUpperCase().replace(/[^A-Z0-9]/g,"").trim();
+  // Always read from the persistent state, not the DOM (DOM may have just been re-rendered).
+  // Belt-and-braces: also pull whatever's currently in the inputs so a click-then-submit
+  // before oninput fires still picks up the latest typed value.
+  if($("#email")) pendingUsername = $("#email").value;
+  if($("#pw")) pendingPassword = $("#pw").value;
+  if($("#joincode")) pendingJoinCode = $("#joincode").value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+  const username = (pendingUsername||"").trim();
+  const password = pendingPassword||"";
+  const joinCode = (pendingJoinCode||"").trim();
   if(joinCode) PENDING_JOIN = joinCode;
   if(!username){ toast(isLive?"Type your username 🙂":"Type your name first 🙂"); return; }
   if(isLive && password.length<6){ toast("Password needs 6+ characters 🔒"); return; }
@@ -2532,13 +2551,19 @@ async function doLogin(){
       if(isSignup){
         const {data, error} = await supa.auth.signUp({ email, password, options:{ data:{ display_name:username } } });
         if(error){
-          if(/registered|exists/i.test(error.message)) toast("Username already taken — pick another, or use Sign in");
+          if(/registered|exists|already/i.test(error.message)) toast("Username already taken — pick another or use Sign in 👤");
           else toast("Sign up failed: "+error.message);
+          return;
+        }
+        // Supabase quirk: with "Confirm email" off, signUp on an existing email returns success but
+        // user.identities is empty (an "obfuscated user" — no new account was created).
+        if(data && data.user && Array.isArray(data.user.identities) && data.user.identities.length===0){
+          toast("Username already taken — pick another or use Sign in 👤");
+          try{ await supa.auth.signOut(); }catch(e){}
           return;
         }
         // If the project still requires email confirmation, the session will be null and we can't proceed.
         if(!data.session){
-          // try signing in (works if "Confirm email" is OFF in the Supabase project)
           const {error:siErr} = await supa.auth.signInWithPassword({ email, password });
           if(siErr){ toast("Disable 'Confirm email' in Supabase Auth → see SETUP"); console.error(siErr); return; }
         }
