@@ -177,8 +177,20 @@ drop policy if exists bp_ins on bracket_picks;  create policy bp_ins on bracket_
 drop policy if exists bp_upd on bracket_picks;  create policy bp_upd on bracket_picks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 drop policy if exists bp_del on bracket_picks;  create policy bp_del on bracket_picks for delete to authenticated using (user_id = auth.uid());
 
--- 🛠️ SUPER-ADMIN escape hatches — when profiles.is_admin = true, the admin can delete any row.
+-- 🛠️ SUPER-ADMIN escape hatches — when profiles.is_admin = true, the admin can SEE and DELETE every row.
 -- Pairs with the in-app password gate (admin/1234) which flips your is_admin flag on unlock and back off on exit.
+-- READ overrides — admin sees data in EVERY league, not just the ones they're a member of.
+drop policy if exists mb_read on memberships;       create policy mb_read on memberships     for select to authenticated using (user_id = auth.uid() or is_member(league_id) or is_admin());
+drop policy if exists pred_read on predictions;     create policy pred_read on predictions   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_pick(match_id, league_id) or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now())))));
+drop policy if exists pa_read on prop_answers;      create policy pa_read on prop_answers   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_answer(prop_id, league_id) or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled'))));
+drop policy if exists adv_read on advances;         create policy adv_read on advances       for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists ko_read on ko_picks;          create policy ko_read on ko_picks         for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists rp_read on repicks;           create policy rp_read on repicks         for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists bp_read on bracket_picks;     create policy bp_read on bracket_picks   for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists cm_read on comments;          create policy cm_read on comments         for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists cd_read on cards;             create policy cd_read on cards             for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists lk_read on likes;             create policy lk_read on likes             for select to authenticated using (is_member(league_id) or is_admin());
+-- DELETE overrides — admin can wipe any row.
 drop policy if exists pred_admin_del on predictions;     create policy pred_admin_del on predictions     for delete to authenticated using (is_admin());
 drop policy if exists pa_admin_del on prop_answers;      create policy pa_admin_del on prop_answers     for delete to authenticated using (is_admin());
 drop policy if exists adv_admin_del on advances;         create policy adv_admin_del on advances         for delete to authenticated using (is_admin());

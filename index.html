@@ -620,22 +620,35 @@ const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "1234";
 let ADMIN_UNLOCKED = (typeof localStorage!=="undefined" && localStorage.getItem("themask_admin")==="1");
 let WANT_ADMIN = false;
-function adminUnlock(pw, user){
+async function adminUnlock(pw, user){
   if(user!=null && String(user).trim().toLowerCase()!==ADMIN_USERNAME) return false;
   if(String(pw).trim()!==ADMIN_PASSWORD) return false;
   ADMIN_UNLOCKED=true;
   try{ localStorage.setItem("themask_admin","1"); }catch(e){}
-  // Flip our own profile.is_admin=true so the server-side RLS policies grant super-admin deletes.
   if(ME) ME.is_admin=true;
-  if(MODE==="live" && supa && ME){ try{ supa.from("profiles").update({is_admin:true}).eq("id",ME.id).then(()=>{}); }catch(e){ console.error(e); } }
+  // Flip is_admin=true server-side so the new RLS policies grant read+delete on every league's data,
+  // then re-fetch so MEMBERS / ALL.* contain the now-visible super-admin scope.
+  if(MODE==="live" && supa && ME){
+    try{
+      await supa.from("profiles").update({is_admin:true}).eq("id",ME.id);
+      const {data:u}=await supa.auth.getUser();
+      if(u && u.user) await liveLoad(u.user);
+    }catch(e){ console.error("adminUnlock refresh",e); }
+  }
   return true;
 }
-function adminLock(){
+async function adminLock(){
   ADMIN_UNLOCKED=false;
   try{ localStorage.removeItem("themask_admin"); }catch(e){}
-  // Flip is_admin back off so the user no longer carries server-side super-powers after exit.
   if(ME) ME.is_admin=false;
-  if(MODE==="live" && supa && ME){ try{ supa.from("profiles").update({is_admin:false}).eq("id",ME.id).then(()=>{}); }catch(e){ console.error(e); } }
+  // Drop server-side super-powers and re-fetch so the user no longer carries admin-scoped data in memory.
+  if(MODE==="live" && supa && ME){
+    try{
+      await supa.from("profiles").update({is_admin:false}).eq("id",ME.id);
+      const {data:u}=await supa.auth.getUser();
+      if(u && u.user) await liveLoad(u.user);
+    }catch(e){ console.error("adminLock refresh",e); }
+  }
 }
 function isAdminRoute(){ try{ const l=(typeof location!=="undefined")?location:{}; return /admin/i.test((l.pathname||"")+(l.hash||"")+(l.search||"")); }catch(e){ return false; } }
 
@@ -2227,7 +2240,7 @@ function wire(){
   $$("[data-goboard]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.goboard; VIEW="board"; render(); window.scrollTo(0,0); });
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
-  const dl=$("[data-dolock]"); if(dl) dl.onclick=()=>{ adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
+  const dl=$("[data-dolock]"); if(dl) dl.onclick=async()=>{ await adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
   const so=$("[data-signout]"); if(so) so.onclick=()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out completely?</div><div class="small muted" style="margin-top:6px">You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.</div></div>`, ()=>logout(), "Sign me out"); };
   // 🟥 Kick member from this league (admin only)
   $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player";
@@ -2619,9 +2632,9 @@ function promptAdmin(){
   const close=()=>root.innerHTML="";
   $("[data-close]",root).onclick=close;
   $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
-  const go=()=>{
+  const go=async()=>{
     const u=$("#auser",root).value, v=$("#apw",root).value;
-    if(adminUnlock(v, u)){ close(); toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render(); }
+    if(await adminUnlock(v, u)){ close(); toast("Welcome, boss! 🛠️"); celebrate("BOSS MODE!"); VIEW="admin"; render(); }
     else { toast("Nope! Wrong username or password 🙅"); const m=$(".modal",root); if(m){m.classList.remove("shake");void m.offsetWidth;m.classList.add("shake");} }
   };
   $("#apwbtn",root).onclick=go;
