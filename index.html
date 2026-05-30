@@ -506,7 +506,7 @@ const KO_PTS={r16:2,qf:3,sf:5,final:8}; // points per correct knockout-stage tea
 const KO_LIM={r16:16,qf:8,sf:4,final:2};
 const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
-const FAN_BONUS=1; // +1 pt each time your supported team wins a match
+const FAN_BONUS=3; // +3 pts each time your supported team wins a match — pick wisely, it pays off
 // Currencies the league creator can pick from. Display order = popularity for a casual prediction pool.
 const CURRENCIES = [
   ["USD","$ US dollar"],   ["EUR","€ Euro"],          ["GBP","£ British pound"],
@@ -516,7 +516,7 @@ const CURRENCIES = [
   ["JPY","¥ Japanese yen"],  ["KRW","₩ South Korean won"], ["INR","₹ Indian rupee"],
   ["GEL","₾ Georgian lari"], ["ZAR","R South African rand"],["MAD","DH Moroccan dirham"]
 ];
-const BANTER_BONUS=[5,3,1]; // 💬 extra points for the funniest: 🥇+5 🥈+3 🥉+1 (ranked by ❤️ likes, must have ≥1 like)
+const BANTER_BONUS=[15,10,5]; // 💬 high-stakes funny tax: 🥇+15 🥈+10 🥉+5 (ranked by ❤️ likes, must have ≥1 like)
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
 function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
@@ -2527,7 +2527,7 @@ function openProfile(){
             <input id="pvname" value="${pendName.replace(/"/g,'&quot;')}" placeholder="Your name"/>
             <label class="fld" style="text-align:left">Or pick an emoji badge</label>
             <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${pendEmoji===e&&!pendAvatar?'on':''}" data-pe="${e}">${e}</button>`).join("")}</div>
-            <label class="fld" style="text-align:left">⚽ Your team <span class="muted tiny">(+${FAN_BONUS} pt every time they win — ${locked?'locked in 🔒':'choose once, then locked'})</span></label>
+            <label class="fld" style="text-align:left">⚽ Your team <span class="muted tiny">(+${FAN_BONUS} pts every time they win — ${locked?'locked in 🔒':'choose once, then locked'})</span></label>
             ${locked
               ? `<div class="opt" style="opacity:.95"><span class="flag">${ft?ft.flag:'🌍'}</span><span>${ft?ft.name:'—'}</span><span style="margin-left:auto" class="tiny muted">🔒</span></div>`
               : `<button class="btn block" id="pvteam" type="button">${ft?`${ft.flag} ${ft.name}`:'🌍 Tap to choose your team'}</button>`}
@@ -2571,7 +2571,7 @@ function rulesHTML(){
     <h4>The basics</h4>
     ${row("🏆",`<b>Private leagues.</b> Create one and share the invite code, or join with a code. You can be in several at once and switch any time via the 🏆 chip up top.`)}
     ${row("⚽",`<b>Predict every match.</b> <b>${s.pts_exact} pts</b> for the exact score, <b>${s.pts_result} pts</b> for the right result.`)}
-    ${row("🌍",`<b>Pick your nation.</b> Locked in when you sign up. Bag <b>+${FAN_BONUS} pt</b> every time they win.`)}
+    ${row("🌍",`<b>Pick your nation.</b> Locked in when you sign up. Bag <b>+${FAN_BONUS} pts</b> every time they win.`)}
 
     <h4>Rounds &amp; lock-in</h4>
     ${row("✏️",`<b>Edit freely until 30 min before each round kicks off.</b> Save, unlock, and tweak picks as much as you like.`)}
@@ -2777,7 +2777,7 @@ function loginScreen(extra=""){
       <input id="pw" type="password" placeholder="choose a password" autocomplete="new-password" value="${valP}"/>`:''}
       <div class="step"><span class="stepn">${isLive?'4':'3'}</span><b>Pick an emoji badge</b></div>
       <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${e===pendingEmoji&&!pendingAvatar?'on':''}" data-ep="${e}">${e}</button>`).join("")}</div>
-      <div class="step"><span class="stepn">${isLive?'5':'4'}</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pt every time they win</span></div>
+      <div class="step"><span class="stepn">${isLive?'5':'4'}</span><b>Your nation</b> <span class="muted tiny">— locked in · +${FAN_BONUS} pts every time they win</span></div>
       <button class="btn block ${pendingTeam?'gold':''}" id="favteam" type="button">${teamLabel}</button>
       <div class="step"><span class="stepn">${isLive?'6':'5'}</span><b>Got an invite code?</b> <span class="muted tiny">— optional · drops you straight into your friends' league</span></div>
       <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>

@@ -119,9 +119,9 @@ It's **one simple Points pool** — no coins, no virtual currency. Most points w
   each stage: Round of 16 (+2 each), Quarter-finals (+3), Semi-finals (+5), Final (+8). The
   commissioner marks who actually reached each stage in **Admin → Knockouts** and it scores instantly.
 - **⚽ Your team:** when you join you pick the nation you personally support (locked in for good).
-  You earn **+1 point every time they win a match**.
+  You earn **+3 points every time they win a match** — pick a nation that goes deep and it adds up fast.
 - **Extras (tournament calls):** the 🃏 Extras tab holds whole-tournament predictions — champion (a big 30), top scorer, plus fun side questions — each worth its own points.
-- **💬 Banter bonus:** the funniest people earn real points. The top 3 on the Banter leaderboard (ranked by ❤️ likes on their posts) bank bonus points toward the main standings: **🥇 +5, 🥈 +3, 🥉 +1**. You need at least one like to place, and it updates live as likes come in.
+- **💬 Banter bonus:** the funniest people earn real points — and a lot of them. The top 3 on the Banter leaderboard (ranked by ❤️ likes on their posts) bank bonus points toward the main standings: **🥇 +15, 🥈 +10, 🥉 +5**. You need at least one like to place, and it updates live as likes come in — being witty can swing podium spots right up to the final whistle.
 - **💸 Buy-in:** **50 USD to play** — paid to the commissioner; the top 3 split the pot. (Change the amount/currency anytime in **Admin → Settings**.)
 - **📸 Profile photos:** tap your avatar (top-right) to upload a photo or pick an emoji badge.
 - **🔥 Streaks & badges:** correct-result streaks light a flame; badges (Sniper, Giant Slayer,
