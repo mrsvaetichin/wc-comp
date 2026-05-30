@@ -969,7 +969,7 @@ async function reloadBracket(){ if(MODE!=="live"||!supa)return;
 }
 function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.status==="finished");}
 
-// 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+5 🥈+3 🥉+1).
+// 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+15 🥈+10 🥉+5).
 // Ranked by ❤️ likes; you must have at least one like to place (so nobody wins it just by existing).
 function banterRank(uid){ const ranked=topBanter().filter(x=>x.likes>0); return ranked.findIndex(x=>x.user===uid); }
 function banterBonus(uid){ const i=banterRank(uid); return (i>=0 && i<BANTER_BONUS.length) ? BANTER_BONUS[i] : 0; }
@@ -1012,12 +1012,12 @@ function scoreFor(profileId){
   Object.values(bs.ties).forEach(tie=>{ if(!tie.winner) return; const stg=stageFor(tie.id); const reach=nextReached[stg]; const pp=nextStagePoints[stg];
     if(reach && pp && reach.has(tie.winner)) pts+=pp;
   });
-  // ⚽ fan bonus: +1 each finished match your supported team wins
+  // ⚽ fan bonus: +FAN_BONUS pts each finished match your supported team wins
   const fav=(DB.profiles.find(p=>p.id===profileId)||{}).team;
   if(fav){ DB.matches.forEach(m=>{ if(m.status!=="finished")return; if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; }); }
   // half-time re-pick penalty
   pts -= REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
-  // 💬 banter bonus: top-3 funniest (by ❤️ likes) earn 🥇+5 🥈+3 🥉+1
+  // 💬 banter bonus: top-3 funniest (by ❤️ likes) earn 🥇+BANTER_BONUS[0] 🥈+BANTER_BONUS[1] 🥉+BANTER_BONUS[2]
   pts += banterBonus(profileId);
   return {pts};
 }
@@ -1537,6 +1537,7 @@ function header(){
           <button class="lockbtn" data-rules title="How to play">ℹ️</button>
           <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
           <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
+          <button class="lockbtn" data-signout title="Sign out">🚪</button>
           <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
         </div>
       </div>
@@ -2513,7 +2514,12 @@ function openProfile(){
         <div class="tiny muted" style="margin-top:6px">Want another? Tap the 🏆 chip in the top bar to Create or Join.</div>
       </div>`;
     root.innerHTML=`<div class="modal-bg"><div class="modal">
-      <div class="mhead"><b>Profile &amp; account</b><button class="x" data-close>×</button></div>
+      <div class="mhead"><b>Profile &amp; account</b>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn" id="pvlogout-top" style="padding:5px 10px;font-size:12px;border-color:var(--red);color:#ffb3b3" title="Sign out of THE MASK">🚪 Sign out</button>
+          <button class="x" data-close>×</button>
+        </div>
+      </div>
       <div class="mbody">
         ${accountBlock}
         ${leaguesBlock}
@@ -2555,7 +2561,9 @@ function openProfile(){
       if(!locked && pendTeam) fields.team=pendTeam; // only settable while unlocked
       await updateProfile(fields); close(); toast("Profile saved ✨"); render();
     };
-    $("#pvlogout",root).onclick=()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out of THE MASK?</div><div class="small muted" style="margin-top:6px">You'll return to the login screen and need to re-enter your name to come back. Your picks &amp; leagues stay safe on the server.</div></div>`, ()=>{ close(); logout(); }, "Sign me out"); };
+    const doSignOut = ()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out of THE MASK?</div><div class="small muted" style="margin-top:6px">You'll return to the login screen and need to re-enter your name to come back. Your picks &amp; leagues stay safe on the server.</div></div>`, ()=>{ close(); logout(); }, "Sign me out"); };
+    $("#pvlogout",root).onclick=doSignOut;
+    const pvTop=$("#pvlogout-top",root); if(pvTop) pvTop.onclick=doSignOut;
   };
   draw();
 }
