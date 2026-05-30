@@ -1244,9 +1244,11 @@ async function joinLeague(code){
 function switchLeague(id){ if(!LEAGUES.some(l=>l.id===id))return; LG=id; persistLG(); scopeLeague(); VIEW="picks"; render(); }
 // 🟥 Send-off — commissioner removes a member from THIS league + all their league-scoped data.
 // Their account stays intact (they can rejoin via invite); just their footprint in this league is wiped.
-async function kickMember(uid){
+async function kickMember(uid, leagueId){
   if(uid===ME.id){ toast("You can't kick yourself 🦇"); return; }
-  const lg=LG; const p=profileById(uid);
+  // Default to the current league. Admins drilled into another league pass the explicit id.
+  const lg = leagueId || LG; if(!lg){ toast("No league selected"); return; }
+  const p=profileById(uid);
   // local wipe (all data tagged to this league)
   const myCmts = new Set(ALL.comments.filter(c=>c.user===uid && c.league===lg).map(c=>c.id));
   ALL.pred     = ALL.pred.filter(p=>!(p.user===uid && p.league===lg));
@@ -2210,6 +2212,7 @@ function viewAdmin(){
             <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
             <div class="small muted">${picks.length} match picks · ${bracket} bracket picks · ${props} extras · ${banter} banter posts · ${paid?'<span style="color:var(--green)">paid ✓</span>':'<span style="color:var(--gold)">unpaid</span>'}</div>
           </div>
+          ${isMe?'<span class="tiny muted" style="padding:6px 10px">— self —</span>':`<button class="btn" data-kick="${p.id}" data-klid="${lid}" data-kn="${escapeHtml(p.name)}" style="padding:6px 10px;border-color:var(--red);color:#ffb3b3">🟥 Remove from league</button>`}
         </div>${picksList}</div>`;
       });
     }
@@ -2309,9 +2312,11 @@ function wire(){
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=async()=>{ await adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
   const so=$("[data-signout]"); if(so) so.onclick=()=>{ confirmModal(`<div class="center"><div style="font-size:36px">👋</div><div style="font-family:'Fredoka';font-size:18px">Sign out completely?</div><div class="small muted" style="margin-top:6px">You'll be returned to the login screen and need to re-enter your name to come back. Your picks and league memberships stay safe on the server.</div></div>`, ()=>logout(), "Sign me out"); };
-  // 🟥 Kick member from this league (admin only)
-  $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player";
-    confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm}?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid); }, "Yes, send them off 🟥"); });
+  // 🟥 Kick member from a league (admin only). Buttons in the drilled-in league detail view
+  // carry an explicit data-klid; otherwise the current league (LG) is used.
+  $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player", lid=b.dataset.klid||null;
+    const lgName = lid ? (((ALL_LEAGUES||[]).find(l=>l.id===lid)||(LEAGUES||[]).find(l=>l.id===lid)||{}).name || 'this league') : (curLeague()?curLeague().name:'this league');
+    confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm} from "${escapeHtml(lgName)}"?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid, lid); }, "Yes, send them off 🟥"); });
   // 🗑️ Super-admin: delete an entire league
   // 🛠️ Super-admin: drill into one league
   $$("[data-viewleague]").forEach(b=>b.onclick=()=>{ adminFocusLeague=b.dataset.viewleague; render(); window.scrollTo(0,0); });
