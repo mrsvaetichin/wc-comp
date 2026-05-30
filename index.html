@@ -1304,6 +1304,7 @@ async function adminDeleteLeague(lid){
   ALL_LEAGUES  = ALL_LEAGUES.filter(l=>l.id!==lid);
   LEAGUES      = LEAGUES.filter(l=>l.id!==lid);
   if(LG===lid){ LG = LEAGUES[0]?LEAGUES[0].id:null; persistLG(); }
+  if(adminFocusLeague===lid) adminFocusLeague=null;
   scopeLeague(); saveLocal();
   toast(`🗑️ Deleted league "${lg.name}"`); render();
 }
@@ -2096,6 +2097,7 @@ function viewPool(){
 
 /* ---------- ADMIN ---------- */
 let adminTab="results";
+let adminFocusLeague=null;     // when set, the Leagues admin tab drills into one league's detail
 function viewAdmin(){
   let html=`<div class="card"><h3>🛠️ Commissioner panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
     <div class="seg" style="margin-top:8px">${[["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]].map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
@@ -2161,13 +2163,63 @@ function viewAdmin(){
         </div>
       </div></div>`;
     });
+  } else if(adminTab==="leagues" && adminFocusLeague){
+    // 🛠️ Super-admin: drilled into one league. Shows every member + the picks each has made.
+    const lid = adminFocusLeague;
+    const lg = (ALL_LEAGUES.find(l=>l.id===lid)) || (LEAGUES.find(l=>l.id===lid));
+    if(!lg){ adminFocusLeague=null; html+=`<div class="empty"><div class="e">🏆</div>League not found.</div>`; }
+    else {
+      const members = leagueMembers(lid);
+      const paidCount = members.filter(p=>memberPaid(p.id,lid)).length;
+      const totalPicks = ALL.pred.filter(p=>p.league===lid && !p.advance && !p.ko).length;
+      const totalBracket = (ALL.bracket||[]).filter(p=>p.league===lid).length;
+      const totalBanter = ALL.comments.filter(c=>c.league===lid).length;
+      const creator = (DB.profiles.find(p=>p.id===lg.created_by)||{}).name || "—";
+      html+=`<div class="card"><div class="spread"><button class="btn" data-backleagues style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">← All leagues</button>
+        <span class="tiny muted">invite <b style="letter-spacing:1.5px;font-family:Fredoka;color:var(--ink)">${lg.code}</b></span></div>
+        <h3 style="margin:8px 0 0">🏆 ${escapeHtml(lg.name)}</h3>
+        <div class="small muted">${members.length} member${members.length===1?'':'s'} · ${paidCount}/${members.length} paid · buy-in ${money(lg.buy_in)} · created by ${escapeHtml(creator)}</div>
+        <div class="tiny muted" style="margin-top:6px">Across this league: ${totalPicks} match picks · ${totalBracket} bracket picks · ${totalBanter} banter posts.</div>
+        <button class="btn" data-delleague="${lg.id}" data-dn="${escapeHtml(lg.name)}" style="margin-top:10px;padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete this league</button>
+      </div>`;
+      // Each member: their stats + their saved scoreline picks for this league
+      members.slice().sort((a,b)=>{
+        const ap=ALL.pred.filter(x=>x.user===a.id&&x.league===lid&&!x.advance&&!x.ko).length;
+        const bp=ALL.pred.filter(x=>x.user===b.id&&x.league===lid&&!x.advance&&!x.ko).length;
+        return bp-ap || a.name.localeCompare(b.name);
+      }).forEach(p=>{
+        const picks = ALL.pred.filter(x=>x.user===p.id && x.league===lid && !x.advance && !x.ko)
+          .map(pr=>({pr, m:DB.matches.find(x=>x.id===pr.match)})).filter(x=>x.m)
+          .sort((a,b)=> new Date(a.m.kickoff)-new Date(b.m.kickoff));
+        const props = ALL.pans.filter(x=>x.user===p.id && x.league===lid).length;
+        const bracket = (ALL.bracket||[]).filter(x=>x.user===p.id && x.league===lid).length;
+        const banter = ALL.comments.filter(x=>x.user===p.id && x.league===lid).length;
+        const paid = memberPaid(p.id,lid);
+        const isMe = p.id===ME.id;
+        const fav = p.team && teamById(p.team);
+        const picksList = picks.length ? `<div style="margin-top:8px;display:grid;grid-template-columns:1fr;gap:3px">` + picks.map(({pr,m})=>{
+          const h=teamById(m.home), a=teamById(m.away);
+          return `<div class="small" style="display:flex;gap:6px;align-items:center;padding:3px 8px;background:var(--bg);border:1px solid var(--line);border-radius:8px">
+            <span class="tiny muted" style="min-width:80px">Grp ${m.grp} · MD${m.md}</span>
+            <span style="flex:1">${h?h.flag+' '+h.name:'?'} <b>${pr.hp}–${pr.ap}</b> ${a?a.name+' '+a.flag:'?'}</span>
+            ${pr.banker?'<span title="Banker" style="color:var(--gold)">⭐</span>':''}
+          </div>`;}).join("") + `</div>` : `<div class="tiny muted" style="margin-top:6px">No match picks yet.</div>`;
+        html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="avatar" style="width:38px;height:38px;font-size:18px">${avatarInner(p)}</div>
+          <div style="flex:1;min-width:140px">
+            <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
+            <div class="small muted">${picks.length} match picks · ${bracket} bracket picks · ${props} extras · ${banter} banter posts · ${paid?'<span style="color:var(--green)">paid ✓</span>':'<span style="color:var(--gold)">unpaid</span>'}</div>
+          </div>
+        </div>${picksList}</div>`;
+      });
+    }
   } else if(adminTab==="leagues"){
     // 🛠️ Super-admin: every league in the pool. Delete cascades to all scoped data.
     const all = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     const totalMembers = MEMBERS.length;
     html+=`<div class="card"><h3>🏆 All leagues · super-admin</h3>
       <div class="small muted">${all.length} league${all.length===1?'':'s'} in the pool · ${totalMembers} total membership${totalMembers===1?'':'s'}.</div>
-      <div class="tiny muted" style="margin-top:6px">🗑️ Deleting a league wipes every prediction, prop answer, bracket pick, banter post, like and card scoped to that league — instantly, for every member. The user accounts themselves stay.</div>
+      <div class="tiny muted" style="margin-top:6px">Click <b>👁️ View details</b> on any league to drill in and see its members, the picks they've made, their bracket and banter activity. <b>🗑️ Delete</b> wipes every prediction, prop answer, bracket pick, banter post, like and card scoped to that league — instantly, for every member.</div>
     </div>`;
     if(!all.length) html+=`<div class="empty"><div class="e">🏆</div>No leagues yet.</div>`;
     all.forEach(l=>{
@@ -2179,9 +2231,12 @@ function viewAdmin(){
       html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:160px">
           <div style="font-family:'Fredoka';font-weight:700;font-size:16px">🏆 ${escapeHtml(l.name)}${isCur?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div>
-          <div class="small muted">${memCount} member${memCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts · invite <b style="letter-spacing:1.5px;font-family:Fredoka">${l.code}</b> · creator: ${escapeHtml(creator)}</div>
+          <div class="small muted">${memCount} member${memCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts · ${money(l.buy_in)} buy-in · invite <b style="letter-spacing:1.5px;font-family:Fredoka">${l.code}</b> · creator: ${escapeHtml(creator)}</div>
         </div>
-        <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete league</button>
+        <div class="row" style="gap:6px">
+          <button class="btn" data-viewleague="${l.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ View details</button>
+          <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>
+        </div>
       </div></div>`;
     });
   } else if(adminTab==="users"){
@@ -2258,6 +2313,9 @@ function wire(){
   $$("[data-kick]").forEach(b=>b.onclick=()=>{ const uid=b.dataset.kick, nm=b.dataset.kn||"this player";
     confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm}?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid); }, "Yes, send them off 🟥"); });
   // 🗑️ Super-admin: delete an entire league
+  // 🛠️ Super-admin: drill into one league
+  $$("[data-viewleague]").forEach(b=>b.onclick=()=>{ adminFocusLeague=b.dataset.viewleague; render(); window.scrollTo(0,0); });
+  const back=$("[data-backleagues]"); if(back) back.onclick=()=>{ adminFocusLeague=null; render(); window.scrollTo(0,0); };
   $$("[data-delleague]").forEach(b=>b.onclick=()=>{ const lid=b.dataset.delleague, nm=b.dataset.dn||"this league";
     confirmModal(`<div class="center"><div style="font-size:36px">🗑️🏆</div><div style="font-family:'Fredoka';font-size:18px">Delete league "${nm}"?</div><div class="small muted" style="margin-top:6px">This wipes every prediction, prop answer, bracket pick, comment, like and card scoped to this league — instantly, for every member. The user accounts themselves stay. <b>This cannot be undone.</b></div></div>`, async()=>{ await adminDeleteLeague(lid); }, "Yes, delete the league 🗑️"); });
   // 🗑️ Super-admin: delete a user entirely
@@ -2336,7 +2394,7 @@ function wire(){
   // pool
   $$("[data-paid]").forEach(b=>b.onclick=async()=>{await adminTogglePaid(b.dataset.paid);render();});
   // admin
-  $$("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab;render();});
+  $$("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab; adminFocusLeague=null; render();});
   $$("[data-ascore]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.ascore;
     const hi=$(`[data-asc="home"][data-m="${id}"]`),ai=$(`[data-asc="away"][data-m="${id}"]`);
