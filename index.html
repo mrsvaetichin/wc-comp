@@ -2199,9 +2199,9 @@ function viewAdmin(){
   let html=`<div class="card"><h3>🛠️ Admin panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
     <div class="seg" style="margin-top:8px">${TABS.map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" data-signout style="flex:1;border-color:var(--gold);color:var(--gold)">🚪 Sign out of admin</button>
+      <button class="btn block" data-adminlogout style="border-color:var(--red);color:#ffb3b3;font-weight:700">🚪 Logout</button>
     </div>
-    <div class="tiny muted" style="margin-top:6px">Admin is its own account — signing out drops the admin session and returns you to the player sign-in. Your admin work (results, settled props, deletions) is saved on the server.</div></div>`;
+    <div class="tiny muted" style="margin-top:6px">One click signs out the admin account and returns you to the player sign-in. Your admin work (results, settled props, deletions) stays saved on the server.</div></div>`;
   if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
@@ -2411,13 +2411,15 @@ function render(){
 
 // 🎩 Admin's own top bar — distinct from the player header. No league chip, no points,
 // no tabs. Just identity + sign-out, because admin only has one view: the dashboard.
+// The Logout button is the big obvious one — single click, no confirm modal needed
+// because admin work is server-side and signing out doesn't lose anything.
 function adminHeader(){
   return `<header class="top adminhdr"><div class="brandrow"><div class="topbar">
     <div class="tb-brand">${ADMIN_EMOJI} <b>admin</b></div>
     <div class="tb-meta">
       <span class="badge-admin">ADMIN MODE</span>
       <button class="lockbtn" data-rules title="Pool rules">ℹ️</button>
-      <button class="lockbtn" data-signout title="Sign out of admin">🚪</button>
+      <button class="btn" data-adminlogout style="padding:7px 14px;border-color:var(--red);color:#ffb3b3;font-weight:700">🚪 Logout</button>
     </div>
   </div></div></header>`;
 }
@@ -2430,6 +2432,9 @@ function wire(){
   // admin lock / unlock
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=async()=>{ await adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
+  // 🚪 One-click admin logout. No confirm modal — admin work is server-side and signing out
+  // doesn't risk losing anything. Found in both the top bar and the admin panel card.
+  $$("[data-adminlogout]").forEach(b=>b.onclick=async()=>{ toast("Signed out of admin 🚪"); await adminLock(); });
   // 🚪 Sign-out: when admin is signed in, this signs out the admin account (separate identity);
   // when a player is signed in, this signs out the player. Either way → back to login screen.
   const so=$("[data-signout]"); if(so) so.onclick=()=>{
