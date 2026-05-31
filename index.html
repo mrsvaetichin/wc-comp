@@ -1417,6 +1417,7 @@ async function adminDeleteUser(uid){
   ALL.comments = ALL.comments.filter(c=>c.user!==uid);
   MEMBERS      = MEMBERS.filter(m=>m.user!==uid);
   DB.profiles  = DB.profiles.filter(x=>x.id!==uid);
+  if(adminFocusUser===uid) adminFocusUser=null;  // step out of the drill-in if we just nuked the user
   scopeLeague(); saveLocal();
   toast(`🗑️ Deleted user "${p?p.name:'(unknown)'}"`); render();
 }
@@ -1556,6 +1557,19 @@ async function sbUpsert(table,row){ try{ await supa.from(table).upsert(row); }ca
 // and the browser handles DST + locale formatting; we append a short TZ tag (CET, ET, JST…) so
 // users from different countries always know what clock they're looking at.
 const USER_TZ = (function(){ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; }catch(e){ return undefined; } })();
+const USER_LOCALE = (function(){ try{ return navigator.language || (navigator.languages && navigator.languages[0]) || null; }catch(e){ return null; } })();
+// 🌐 "Where from" snapshot captured at signup (timezone + locale). Combined with the user's
+// fav_team flag in the profile, this is a privacy-friendly proxy for geography — no IP
+// tracking, no geolocation API permission prompt, just what the browser already exposes.
+function clientSignupInfo(){ return { signup_tz: USER_TZ || null, signup_locale: USER_LOCALE || null }; }
+// Friendly "X minutes ago"/"in 3 days" string for the admin audit view.
+function relativeTime(iso){ if(!iso) return "—"; const t=new Date(iso).getTime(); if(isNaN(t)) return "—";
+  const dx=Date.now()-t, abs=Math.abs(dx), sgn=dx>=0?"ago":"from now";
+  const units=[["year",365.25*864e5],["month",30.4*864e5],["week",7*864e5],["day",864e5],["hour",36e5],["minute",6e4],["second",1000]];
+  for(const [n,ms] of units){ const v=Math.floor(abs/ms); if(v>=1) return `${v} ${n}${v===1?'':'s'} ${sgn}`; }
+  return "just now"; }
+// Pretty IANA timezone display: "Europe/Stockholm" → "Stockholm (Europe)"
+function prettyTZ(tz){ if(!tz) return "—"; const [region,city]=String(tz).split("/"); return city?`${city.replace(/_/g," ")} (${region})`:tz; }
 function tzShort(d){ try{ const p=new Intl.DateTimeFormat(undefined,{timeZoneName:"short"}).formatToParts(d||new Date()); const t=p.find(x=>x.type==="timeZoneName"); return t?t.value:""; }catch(e){ return ""; } }
 function fmtKick(iso){
   const d=new Date(iso);
@@ -2186,6 +2200,7 @@ function viewPool(){
 /* ---------- ADMIN ---------- */
 let adminTab="results";
 let adminFocusLeague=null;     // when set, the Leagues admin tab drills into one league's detail
+let adminFocusUser=null;       // when set, the Users admin tab drills into one user's full audit
 function viewAdmin(){
   // 🎩 Admin is its own account with no league memberships — so the "Members" tab (which
   // shows the current league's roster) doesn't apply. The admin still manages members from
@@ -2343,12 +2358,15 @@ function viewAdmin(){
         </div>
       </div></div>`;
     });
+  } else if(adminTab==="users" && adminFocusUser){
+    // 🛠️🔍 Drill-in: full audit of one user. Identity + where-from + leagues + activity + every pick.
+    html += adminUserDetail(adminFocusUser);
   } else if(adminTab==="users"){
     // 🛠️ Super-admin: every user across the whole pool.
     const all = DB.profiles.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     html+=`<div class="card"><h3>👥 All users · super-admin</h3>
       <div class="small muted">${all.length} user${all.length===1?'':'s'} signed up across the pool.</div>
-      <div class="tiny muted" style="margin-top:6px">🗑️ Deleting a user removes them from every league + wipes every pick, prop answer, bracket pick, banter post, like and card they've ever made. (Their Supabase login row stays — they could sign up again.)</div>
+      <div class="tiny muted" style="margin-top:6px">Tap <b>👁️ Profile</b> to drill into a user's full stats: when they signed up, where they're from (timezone + locale), every league they're in, every pick they've made, banter, cards & re-picks. <b>🗑️ Delete</b> wipes them from every league.</div>
     </div>`;
     all.forEach(p=>{
       const leagueCount = new Set(MEMBERS.filter(m=>m.user===p.id).map(m=>m.league)).size;
@@ -2356,13 +2374,19 @@ function viewAdmin(){
       const banterCount = ALL.comments.filter(c=>c.user===p.id).length;
       const isMe = p.id===ME.id;
       const fav = p.team && teamById(p.team);
+      const adminTag = p.is_admin ? ' <span class="badge-admin" style="font-size:9px;padding:1px 6px;margin-left:4px">ADMIN</span>' : '';
+      const whence = p.signup_tz ? `· ${prettyTZ(p.signup_tz)}` : '';
+      const seen   = p.last_seen_at ? `· last seen ${relativeTime(p.last_seen_at)}` : '';
       html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
         <div class="avatar" style="width:42px;height:42px;font-size:20px">${avatarInner(p)}</div>
         <div style="flex:1;min-width:160px">
-          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
-          <div class="small muted">${leagueCount} league${leagueCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts</div>
+          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}${adminTag}</div>
+          <div class="small muted">${leagueCount} league${leagueCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts ${whence} ${seen}</div>
         </div>
-        ${isMe?'<span class="tiny muted" style="padding:6px 10px">— self —</span>':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete user</button>`}
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="btn" data-viewuser="${p.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ Profile</button>
+          ${isMe?'<span class="tiny muted" style="padding:6px 10px">— self —</span>':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>`}
+        </div>
       </div></div>`;
     });
   } else if(adminTab==="ko"){
@@ -2385,6 +2409,201 @@ function viewAdmin(){
     ${MODE==="demo"?`<div class="card"><h3>⚠️ Danger zone</h3>
       <button class="btn block" data-resetdemo style="border-color:var(--red);color:#ffb3b3">Reset demo data</button></div>`:""}`;
   }
+  return html;
+}
+
+/* ----------------------------------------------------------------------------
+   🛠️🔍  Admin · single-user detail (audit view)
+   Everything an admin could want to know about one player in one scroll: identity,
+   where they signed up from (timezone + locale), when, every league they're in
+   with per-league points / picks / paid status, full activity totals (banter,
+   likes, cards, re-picks), and every match pick they've ever locked — grouped
+   by league + sorted by kickoff.
+   ---------------------------------------------------------------------------- */
+function adminUserDetail(uid){
+  const p = DB.profiles.find(x=>x.id===uid);
+  if(!p) return `<div class="card center"><div class="empty"><div class="e">🤷</div>User not found.</div>
+    <button class="btn" data-backusers style="border-color:var(--cyan);color:var(--cyan)">← All users</button></div>`;
+  const fav = p.team && teamById(p.team);
+  const isMe = p.id===ME.id;
+  const isAdminUser = !!p.is_admin;
+  const userLeagueIds = [...new Set(MEMBERS.filter(m=>m.user===uid).map(m=>m.league))];
+  const userLeagues = userLeagueIds.map(lid => (ALL_LEAGUES||[]).find(l=>l.id===lid) || (LEAGUES||[]).find(l=>l.id===lid)).filter(Boolean);
+
+  // Activity totals across the whole pool
+  const allPicks   = ALL.pred.filter(x=>x.user===uid && !x.advance && !x.ko);
+  const allAdv     = ALL.pred.filter(x=>x.user===uid &&  x.advance);
+  const allKO      = ALL.pred.filter(x=>x.user===uid &&  x.ko);
+  const allBracket = (ALL.bracket||[]).filter(x=>x.user===uid);
+  const allProps   = ALL.pans.filter(x=>x.user===uid);
+  const allBanter  = ALL.comments.filter(c=>c.user===uid);
+  const allRepicks = ALL.rep.filter(r=>r.user===uid);
+  const banterRcvd = ALL.likes.filter(l=>{ const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid; }).length;
+  const banterGiven = ALL.likes.filter(l=>l.user===uid).length;
+  const cardsGivenY = ALL.cards.filter(c=>c.from===uid && c.kind==="yellow").length;
+  const cardsGivenR = ALL.cards.filter(c=>c.from===uid && c.kind==="red").length;
+  const cardsGotY   = ALL.cards.filter(c=>c.target===uid && c.kind==="yellow").length;
+  const cardsGotR   = ALL.cards.filter(c=>c.target===uid && c.kind==="red").length;
+  const bankerUses  = allPicks.filter(x=>x.banker).length;
+
+  // Last-activity timestamps
+  const lastBanter = allBanter.map(c=>c.created).sort().pop();
+  const lastLike   = ALL.likes.filter(l=>l.user===uid).map(l=>l.created).sort().pop();
+  const lastBracket= allBracket.map(b=>b.created).sort().pop();
+
+  // Identity card
+  const tzStr  = p.signup_tz ? `${prettyTZ(p.signup_tz)}` : '<span class="muted">unknown</span>';
+  const lcStr  = p.signup_locale ? p.signup_locale : '<span class="muted">unknown</span>';
+  const joined = p.created_at ? `${fmtKick(p.created_at)} <span class="muted tiny">(${relativeTime(p.created_at)})</span>` : '<span class="muted">unknown</span>';
+  const seenAt = p.last_seen_at ? `${fmtKick(p.last_seen_at)} <span class="muted tiny">(${relativeTime(p.last_seen_at)})</span>` : '<span class="muted">never</span>';
+  const emailStr = p.email ? escapeHtml(p.email) : '<span class="muted">—</span>';
+  const idShort = p.id ? p.id.slice(0,8)+'…'+p.id.slice(-4) : '—';
+
+  let html = `<div class="card"><div class="spread"><button class="btn" data-backusers style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">← All users</button>
+    ${isAdminUser?'<span class="badge-admin">ADMIN ACCOUNT</span>':'<span class="tiny muted">player</span>'}</div>
+    <div class="row" style="gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <div class="avatar" style="width:64px;height:64px;font-size:30px">${avatarInner(p)}</div>
+      <div style="flex:1;min-width:200px">
+        <div style="font-family:'Fredoka';font-weight:700;font-size:22px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
+        <div class="small muted">${fav?`Supports <b style="color:var(--ink)">${fav.flag} ${fav.name}</b> · +${FAN_BONUS} pts when they win`:'<span style="color:var(--gold)">No nation picked yet</span>'}</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px">
+      <div class="muted">📅 Signed up</div><div>${joined}</div>
+      <div class="muted">🕐 Last seen</div><div>${seenAt}</div>
+      <div class="muted">🌍 Signup timezone</div><div>${tzStr}</div>
+      <div class="muted">🗣️ Browser locale</div><div>${lcStr}</div>
+      <div class="muted">📧 Account email</div><div style="font-family:monospace;font-size:12.5px">${emailStr}</div>
+      <div class="muted">🆔 User ID</div><div style="font-family:monospace;font-size:12.5px">${idShort}</div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+      ${isMe?'':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete user (wipes everything)</button>`}
+    </div>
+  </div>`;
+
+  // Headline numbers
+  html += `<div class="card"><h3>📊 Activity totals (across all leagues)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px">
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">Leagues</div><div style="font-family:'Fredoka';font-size:20px;color:var(--cyan)">${userLeagues.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">Match picks</div><div style="font-family:'Fredoka';font-size:20px;color:var(--lime)">${allPicks.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">⭐ Banker uses</div><div style="font-family:'Fredoka';font-size:20px;color:var(--gold)">${bankerUses}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">Group calls</div><div style="font-family:'Fredoka';font-size:20px">${allAdv.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">Bracket picks</div><div style="font-family:'Fredoka';font-size:20px">${allBracket.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">🃏 Extras</div><div style="font-family:'Fredoka';font-size:20px">${allProps.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">💬 Banter posts</div><div style="font-family:'Fredoka';font-size:20px">${allBanter.length}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">❤️ Likes received</div><div style="font-family:'Fredoka';font-size:20px;color:var(--pink)">${banterRcvd}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">❤️ Likes given</div><div style="font-family:'Fredoka';font-size:20px">${banterGiven}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">🟨 → 🟥 received</div><div style="font-family:'Fredoka';font-size:20px">${cardsGotY}/${cardsGotR}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">🟨 → 🟥 given</div><div style="font-family:'Fredoka';font-size:20px">${cardsGivenY}/${cardsGivenR}</div></div>
+      <div class="pill" style="background:var(--card2);text-align:center;padding:10px"><div class="tiny muted">🔁 Re-picks used</div><div style="font-family:'Fredoka';font-size:20px">${allRepicks.length}/${REPICK_MAX}</div></div>
+    </div>
+    <div class="tiny muted" style="margin-top:10px">
+      Last banter: ${lastBanter?relativeTime(lastBanter):'—'} ·
+      Last like: ${lastLike?relativeTime(lastLike):'—'} ·
+      Last bracket pick: ${lastBracket?relativeTime(lastBracket):'—'}
+    </div>
+  </div>`;
+
+  // Per-league breakdown
+  if(!userLeagues.length){
+    html += `<div class="card center"><div class="empty"><div class="e">🏆</div>Not in any league yet.</div></div>`;
+  } else {
+    html += `<div class="card"><h3>🏆 Leagues (${userLeagues.length})</h3>
+      <div class="small muted">Per-league stats. Click <b>👁️</b> to drill into a league, <b>🟥</b> to remove the user from just that one.</div>`;
+    userLeagues.forEach(lg=>{
+      // Compute per-league stats by temporarily scoping
+      const lid = lg.id;
+      const lp = ALL.pred.filter(x=>x.user===uid && x.league===lid && !x.advance && !x.ko);
+      const lb = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.banker).length;
+      const ladv = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.advance).length;
+      const lko = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.ko).length;
+      const lbr = (ALL.bracket||[]).filter(x=>x.user===uid && x.league===lid).length;
+      const lprops = ALL.pans.filter(x=>x.user===uid && x.league===lid).length;
+      const lcmts = ALL.comments.filter(c=>c.user===uid && c.league===lid).length;
+      const paid = memberPaid(uid, lid);
+      // Compute their rank + points within this league using the existing scoreFor() and leagueMembers()
+      // We need to temporarily set LG to compute scoreFor in this league's scope.
+      const savedLG = LG, savedDB = {pred:DB.predictions, pans:DB.propAnswers, rep:DB.repicks, br:DB.bracket, cm:DB.comments, cd:DB.cards, lk:DB.likes};
+      LG = lid; scopeLeague();
+      const lbBoard = leagueMembers(lid).map(m=>({id:m.id, pts:scoreFor(m.id).pts})).sort((a,b)=>b.pts-a.pts);
+      const myRow = lbBoard.find(x=>x.id===uid);
+      const myPts = myRow ? myRow.pts : 0;
+      const myRk  = myRow ? lbBoard.findIndex(x=>x.id===uid)+1 : 0;
+      // Restore
+      LG = savedLG;
+      DB.predictions=savedDB.pred; DB.propAnswers=savedDB.pans; DB.repicks=savedDB.rep; DB.bracket=savedDB.br;
+      DB.comments=savedDB.cm; DB.cards=savedDB.cd; DB.likes=savedDB.lk;
+
+      html += `<div class="card" style="margin:8px 0">
+        <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <div style="font-family:'Fredoka';font-weight:700;font-size:16px">🏆 ${escapeHtml(lg.name)} <span class="tiny muted" style="font-weight:400">· invite ${lg.code}</span></div>
+            <div class="small muted">
+              <b style="color:var(--lime)">${myPts} pts</b> · rank ${myRk?`#${myRk}/${lbBoard.length}`:'—'} ·
+              ${lp.length} picks (${lb} ⭐ banker) · ${ladv} group · ${lko} KO · ${lbr} bracket · ${lprops} extras · ${lcmts} banter ·
+              ${paid?'<span style="color:var(--green)">paid ✓</span>':'<span style="color:var(--gold)">unpaid</span>'}
+            </div>
+          </div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <button class="btn" data-viewleague="${lid}" style="padding:5px 10px;border-color:var(--cyan);color:var(--cyan)">👁️ League</button>
+            ${isMe?'':`<button class="btn" data-kick="${uid}" data-klid="${lid}" data-kn="${escapeHtml(p.name)}" style="padding:5px 10px;border-color:var(--red);color:#ffb3b3">🟥 Remove</button>`}
+          </div>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Full pick history (grouped by league, sorted by kickoff)
+  if(allPicks.length){
+    html += `<div class="card"><h3>⚽ Every match pick (${allPicks.length})</h3>
+      <div class="small muted">Sorted by kickoff. ⭐ = Banker. ✓/✗ once the match has finished.</div>`;
+    userLeagues.forEach(lg=>{
+      const lid = lg.id;
+      const picks = ALL.pred.filter(x=>x.user===uid && x.league===lid && !x.advance && !x.ko)
+        .map(pr=>({pr, m:DB.matches.find(x=>x.id===pr.match)})).filter(x=>x.m)
+        .sort((a,b)=> new Date(a.m.kickoff)-new Date(b.m.kickoff));
+      if(!picks.length) return;
+      html += `<div style="margin-top:10px"><div class="tiny" style="color:var(--gold);font-family:Fredoka;font-weight:700;letter-spacing:1px">🏆 ${escapeHtml(lg.name).toUpperCase()}</div>`;
+      picks.forEach(({pr, m})=>{
+        const h = teamById(m.home), a = teamById(m.away);
+        const finished = m.status==="finished";
+        let verdict = '';
+        if(finished){
+          const exact = (pr.hp===m.hs && pr.ap===m.as);
+          const resHome = pr.hp>pr.ap?'h':(pr.hp<pr.ap?'a':'d');
+          const resAct  = m.hs>m.as?'h':(m.hs<m.as?'a':'d');
+          if(exact) verdict = `<span style="color:var(--lime)">✓ exact</span>`;
+          else if(resHome===resAct) verdict = `<span style="color:var(--cyan)">≈ right result</span>`;
+          else verdict = `<span style="color:var(--muted)">✗ off</span>`;
+        }
+        html += `<div class="small" style="display:flex;gap:8px;align-items:center;padding:5px 10px;margin-top:3px;background:var(--bg);border:1px solid var(--line);border-radius:8px">
+          <span class="tiny muted" style="min-width:84px">${m.grp?`Grp ${m.grp} MD${m.md}`:m.stage}</span>
+          <span style="flex:1">${h?h.flag+' '+h.name:'?'} <b>${pr.hp}–${pr.ap}</b> ${a?a.name+' '+a.flag:'?'}${finished?` <span class="muted">(FT ${m.hs}–${m.as})</span>`:''}</span>
+          ${pr.banker?'<span title="Banker" style="color:var(--gold)">⭐</span>':''}
+          ${verdict}
+        </div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Banter posts (full text)
+  if(allBanter.length){
+    html += `<div class="card"><h3>💬 Banter posts (${allBanter.length})</h3>`;
+    allBanter.slice().sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,30).forEach(c=>{
+      const lg = userLeagues.find(l=>l.id===c.league);
+      const likes = ALL.likes.filter(l=>l.comment===c.id).length;
+      html += `<div class="small" style="padding:7px 10px;margin-top:6px;background:var(--bg);border:1px solid var(--line);border-radius:8px">
+        <div class="tiny muted">${lg?'🏆 '+escapeHtml(lg.name):''} · ${relativeTime(c.created)} · ❤️ ${likes}</div>
+        <div style="margin-top:3px">${escapeHtml(c.body)}</div>
+      </div>`;
+    });
+    if(allBanter.length>30) html += `<div class="tiny muted center" style="margin-top:6px">… and ${allBanter.length-30} more older posts.</div>`;
+    html += `</div>`;
+  }
+
   return html;
 }
 
@@ -2460,9 +2679,11 @@ function wire(){
     const lgName = lid ? (((ALL_LEAGUES||[]).find(l=>l.id===lid)||(LEAGUES||[]).find(l=>l.id===lid)||{}).name || 'this league') : (curLeague()?curLeague().name:'this league');
     confirmModal(`<div class="center"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:18px">Send off ${nm} from "${escapeHtml(lgName)}"?</div><div class="small muted" style="margin-top:6px">They'll be removed from this league and all their picks, props, banter, likes and cards here get wiped. Their account stays intact — they can rejoin via the invite code if you want.</div></div>`, async()=>{ await kickMember(uid, lid); }, "Yes, send them off 🟥"); });
   // 🗑️ Super-admin: delete an entire league
-  // 🛠️ Super-admin: drill into one league
-  $$("[data-viewleague]").forEach(b=>b.onclick=()=>{ adminFocusLeague=b.dataset.viewleague; render(); window.scrollTo(0,0); });
+  // 🛠️ Super-admin: drill into one league or one user
+  $$("[data-viewleague]").forEach(b=>b.onclick=()=>{ adminFocusLeague=b.dataset.viewleague; adminTab="leagues"; adminFocusUser=null; render(); window.scrollTo(0,0); });
   const back=$("[data-backleagues]"); if(back) back.onclick=()=>{ adminFocusLeague=null; render(); window.scrollTo(0,0); };
+  $$("[data-viewuser]").forEach(b=>b.onclick=()=>{ adminFocusUser=b.dataset.viewuser; render(); window.scrollTo(0,0); });
+  const backu=$("[data-backusers]"); if(backu) backu.onclick=()=>{ adminFocusUser=null; render(); window.scrollTo(0,0); };
   $$("[data-delleague]").forEach(b=>b.onclick=()=>{ const lid=b.dataset.delleague, nm=b.dataset.dn||"this league";
     confirmModal(`<div class="center"><div style="font-size:36px">🗑️🏆</div><div style="font-family:'Fredoka';font-size:18px">Delete league "${nm}"?</div><div class="small muted" style="margin-top:6px">This wipes every prediction, prop answer, bracket pick, comment, like and card scoped to this league — instantly, for every member. The user accounts themselves stay. <b>This cannot be undone.</b></div></div>`, async()=>{ await adminDeleteLeague(lid); }, "Yes, delete the league 🗑️"); });
   // 🗑️ Super-admin: delete a user entirely
@@ -2541,7 +2762,7 @@ function wire(){
   // pool
   $$("[data-paid]").forEach(b=>b.onclick=async()=>{await adminTogglePaid(b.dataset.paid);render();});
   // admin
-  $$("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab; adminFocusLeague=null; render();});
+  $$("[data-atab]").forEach(b=>b.onclick=()=>{adminTab=b.dataset.atab; adminFocusLeague=null; adminFocusUser=null; render();});
   $$("[data-ascore]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.ascore;
     const hi=$(`[data-asc="home"][data-m="${id}"]`),ai=$(`[data-asc="away"][data-m="${id}"]`);
@@ -3091,9 +3312,12 @@ async function doLogin(){
       }
       const {data:u}=await supa.auth.getUser();
       const uid=u.user.id;
-      const profileFields = {id:uid, display_name:username, emoji, is_admin:false, paid:false};
+      const profileFields = {id:uid, display_name:username, emoji, is_admin:false, paid:false, last_seen_at:new Date().toISOString()};
       if(pendingTeam) profileFields.fav_team = pendingTeam;
       if(pendingAvatar) profileFields.avatar = pendingAvatar;
+      // 🌐 Capture the user's browser timezone + locale at signup. Privacy-friendly proxy
+      // for "where from" — no IP, no geolocation permission prompt, just IANA TZ + language.
+      if(isSignup){ const ci=clientSignupInfo(); profileFields.signup_tz=ci.signup_tz; profileFields.signup_locale=ci.signup_locale; }
       await sbUpsert("profiles", profileFields);
       await liveLoad(u.user);
       if(ME){ ME.name=username; ME.emoji=emoji; if(pendingAvatar) ME.avatar=pendingAvatar; if(pendingTeam&&!ME.team) ME.team=pendingTeam; }
@@ -3177,7 +3401,14 @@ async function liveLoad(user){
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
   DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
   DB.props = props.length?props.map(normalizeProp):seedProps();
-  DB.profiles = profiles.map(p=>({id:p.id,name:p.display_name||p.email,emoji:p.emoji||"🙂",avatar:p.avatar||null,team:p.fav_team||null,email:p.email,is_admin:!!p.is_admin}));
+  DB.profiles = profiles.map(p=>({
+    id:p.id, name:p.display_name||p.email, emoji:p.emoji||"🙂",
+    avatar:p.avatar||null, team:p.fav_team||null, email:p.email,
+    is_admin:!!p.is_admin,
+    // 📊 audit fields shown in the admin user-detail view
+    created_at:p.created_at, last_seen_at:p.last_seen_at,
+    signup_tz:p.signup_tz, signup_locale:p.signup_locale
+  }));
   // 🏆 leagues + memberships (LEAGUES = only the ones I'm in)
   const myIds=new Set((memberships||[]).filter(m=>m.user_id===user.id).map(m=>m.league_id));
   const lgMap=l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by,created_at:l.created_at});
@@ -3203,6 +3434,16 @@ async function liveLoad(user){
     await sbUpsert("profiles",{id:user.id,email:user.email,display_name:mine.name,emoji:mine.emoji,is_admin:isAdmin,paid:false});
   }
   ME=mine;
+  // 📊 Touch last_seen_at fire-and-forget on every load so admin can see active vs
+  // inactive players. Also backfill signup_tz / signup_locale for any pre-existing profile
+  // that hasn't been captured yet (these were added after some users had already signed up).
+  if(supa && ME){
+    const touch={id:ME.id, last_seen_at:new Date().toISOString()};
+    if(!mine.signup_tz)     touch.signup_tz     = USER_TZ || null;
+    if(!mine.signup_locale) touch.signup_locale = USER_LOCALE || null;
+    try{ supa.from("profiles").upsert(touch); }catch(e){} // fire-and-forget — never block render
+    Object.assign(ME, touch);
+  }
   // pick the current league (last used if still a member, else first)
   const stored=(typeof localStorage!=="undefined"&&localStorage.getItem(LG_KEY))||null;
   LG = (LEAGUES.find(l=>l.id===stored)?stored:(LEAGUES[0]&&LEAGUES[0].id)) || null;

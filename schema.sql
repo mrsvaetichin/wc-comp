@@ -7,6 +7,11 @@ create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text, display_name text, emoji text default '🙂', avatar text, fav_team text,
   is_admin boolean default false, paid boolean default false, created_at timestamptz default now());
+-- 📊 Audit columns for the admin user-detail view ("where from + when").
+-- All additive + safe to re-run.
+alter table profiles add column if not exists signup_tz     text;          -- IANA timezone of the browser at signup ("Europe/Stockholm", "Asia/Tokyo", …)
+alter table profiles add column if not exists signup_locale text;          -- navigator.language at signup ("en-US", "sv-SE", …)
+alter table profiles add column if not exists last_seen_at  timestamptz;   -- updated on every load — admin can see who's active
 create table if not exists settings (
   id int primary key default 1, app_title text default 'THE MASK', starting_coins int default 1000,
   pts_exact int default 5, pts_result int default 2, pts_advance int default 4,
