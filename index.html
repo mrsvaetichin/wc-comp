@@ -2276,7 +2276,12 @@ function viewAdmin(){
         <h3 style="margin:8px 0 0">🏆 ${escapeHtml(lg.name)}</h3>
         <div class="small muted">${members.length} member${members.length===1?'':'s'} · ${paidCount}/${members.length} paid · buy-in ${money(lg.buy_in)} · created by ${escapeHtml(creator)}</div>
         <div class="tiny muted" style="margin-top:6px">Across this league: ${totalPicks} match picks · ${totalBracket} bracket picks · ${totalBanter} banter posts.</div>
-        <button class="btn" data-delleague="${lg.id}" data-dn="${escapeHtml(lg.name)}" style="margin-top:10px;padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete this league</button>
+        <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn" data-copycode="${lg.code}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">📋 Copy code · <b>${lg.code}</b></button>
+          <button class="btn" data-copylink="${lg.code}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">🔗 Copy invite link</button>
+          <button class="btn" data-delleague="${lg.id}" data-dn="${escapeHtml(lg.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete this league</button>
+        </div>
+        <div class="tiny muted" style="margin-top:6px">Share the code or the link with anyone you want in this league — opening the link auto-joins them after they pick a username.</div>
       </div>`;
       // Each member: their stats + their saved scoreline picks for this league
       members.slice().sort((a,b)=>{
@@ -2330,8 +2335,10 @@ function viewAdmin(){
           <div style="font-family:'Fredoka';font-weight:700;font-size:16px">🏆 ${escapeHtml(l.name)}${isCur?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div>
           <div class="small muted">${memCount} member${memCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts · ${money(l.buy_in)} buy-in · invite <b style="letter-spacing:1.5px;font-family:Fredoka">${l.code}</b> · creator: ${escapeHtml(creator)}</div>
         </div>
-        <div class="row" style="gap:6px">
-          <button class="btn" data-viewleague="${l.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ View details</button>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="btn" data-copycode="${l.code}" title="Copy invite code" style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">📋 ${l.code}</button>
+          <button class="btn" data-copylink="${l.code}" title="Copy invite link" style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">🔗 Link</button>
+          <button class="btn" data-viewleague="${l.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ Details</button>
           <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>
         </div>
       </div></div>`;
