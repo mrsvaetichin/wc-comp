@@ -121,6 +121,62 @@
   .pill.coins .v{color:var(--gold)}
   .pill.rank .v{color:var(--cyan)}
 
+  /* 🛠️ Admin CRM — KPI cards, sortable tables, activity feed, search */
+  .kpigrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0 16px}
+  .kpicard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px;text-align:center;position:relative}
+  .kpicard .v{font-family:'Fredoka';font-weight:700;font-size:32px;line-height:1.05}
+  .kpicard .k{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.9px;margin-top:4px;font-weight:700}
+  .kpicard .delta{font-size:11px;margin-top:4px;color:var(--green);font-weight:600}
+  .kpicard .delta.neg{color:var(--red)}
+  .kpicard.players .v{color:var(--cyan)}
+  .kpicard.leagues .v{color:var(--gold)}
+  .kpicard.picks  .v{color:var(--lime)}
+  .kpicard.banter .v{color:var(--pink)}
+  .kpicard.active .v{color:#3ddc84}
+  .kpicard.pot    .v{color:var(--gold)}
+  .crmsearch{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap;align-items:center}
+  .crmsearch input{flex:1;min-width:180px;font-size:14px;padding:9px 12px}
+  .crmsearch select{flex:none;width:auto;min-width:140px;font-size:14px;padding:9px 12px}
+  .crmsearch .count{font-size:12.5px;color:var(--muted);margin-left:auto;font-weight:600}
+  .crmwrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:14px;margin:10px 0}
+  table.crm{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+  table.crm thead{background:var(--card2);position:sticky;top:0;z-index:2}
+  table.crm th{text-align:left;padding:11px 10px;font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  table.crm th:hover{color:var(--ink)}
+  table.crm th.sorted{color:var(--gold)}
+  table.crm th .arr{margin-left:4px;opacity:.5;font-size:10px}
+  table.crm th.sorted .arr{opacity:1}
+  table.crm td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  table.crm tbody tr:hover{background:var(--card2)}
+  table.crm tbody tr:last-child td{border-bottom:none}
+  table.crm .cellnm{display:flex;align-items:center;gap:8px;min-width:140px}
+  table.crm .cellnm .avatar{width:30px;height:30px;font-size:15px;flex:none}
+  table.crm .cellnm .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+  table.crm .pillpaid{background:rgba(61,220,132,.18);color:#7be0a4;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700}
+  table.crm .pillunpaid{background:rgba(255,208,46,.16);color:var(--gold);padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700}
+  table.crm .pilladmin{background:rgba(255,208,46,.18);color:var(--gold);padding:1px 7px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px}
+  table.crm .tinydate{font-size:12px;color:var(--ink)}
+  table.crm .tinydate .ago{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+  table.crm .rowacts{display:flex;gap:5px;justify-content:flex-end}
+  table.crm .rowacts button{padding:4px 8px;font-size:12px}
+  /* Activity feed */
+  .actfeed{max-height:560px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  .actrow{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);align-items:center;font-size:13px}
+  .actrow:last-child{border-bottom:none}
+  .actrow:hover{background:var(--card2)}
+  .actrow .actic{flex:none;font-size:18px;width:28px;text-align:center}
+  .actrow .actwhat{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .actrow .actwhat b{color:var(--ink)}
+  .actrow .actwhen{flex:none;font-size:11px;color:var(--muted);white-space:nowrap}
+  .actfilters{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+  .actfilters button{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer}
+  .actfilters button.on{background:var(--card2);color:var(--gold);border-color:var(--gold)}
+  /* Admin grid: KPIs side-by-side with recent feed on desktop */
+  @media(min-width:1080px){
+    .adminoverview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:start}
+    .adminoverview .ovleft{min-width:0}
+    .adminoverview .ovright{min-width:0}
+  }
   /* 🎩 admin header — visually distinct from player so you always know which mode you're in */
   header.top.adminhdr{background:linear-gradient(180deg, rgba(255,208,46,.18), rgba(20,16,40,.85));border-bottom:1px solid var(--gold)}
   header.top.adminhdr .tb-brand{color:var(--gold)}
@@ -466,7 +522,9 @@
   @media (min-width:880px){
     .hwrap{max-width:1080px}
     .app.view-picks, .app.view-props{max-width:1080px;padding-left:22px;padding-right:22px}
-    .app.view-board, .app.view-pool, .app.view-bracket, .app.view-admin, .app.view-banter{max-width:720px}
+    .app.view-board, .app.view-pool, .app.view-bracket, .app.view-banter{max-width:720px}
+    /* 🛠️ Admin CRM gets the full screen on desktop — sortable tables need room to breathe */
+    .app.view-admin{max-width:1480px;padding-left:24px;padding-right:24px}
     .view-picks .cardgrid, .view-props .cardgrid{grid-template-columns:1fr 1fr}
     /* one tidy top bar instead of the stacked mobile header + bottom tab bar */
     nav.tabs{display:none}
@@ -2197,27 +2255,48 @@ function viewPool(){
   return html;
 }
 
-/* ---------- ADMIN ---------- */
-let adminTab="results";
+/* ---------- ADMIN (CRM) ---------- */
+let adminTab="results";        // default for non-pure-admin (player who's also admin)
 let adminFocusLeague=null;     // when set, the Leagues admin tab drills into one league's detail
 let adminFocusUser=null;       // when set, the Users admin tab drills into one user's full audit
+// 📊 Sortable-table state. Each is "field:direction" e.g. "last_seen_at:desc".
+let adminUserSort   = "last_seen_at:desc";
+let adminUserFilter = "";              // free-text search (name, email, TZ)
+let adminUserScope  = "players";       // players | admins | all
+let adminLeagueSort   = "created_at:desc";
+let adminLeagueFilter = "";
+let adminActivityFilter = "all";       // all | signups | leagues | joins | banter | picks
+// Helper: toggle sort direction or switch sort field.
+function adminToggleSort(curState, setter, field){
+  const [f,d] = curState.split(":");
+  setter(f===field ? `${field}:${d==="asc"?"desc":"asc"}` : `${field}:desc`);
+}
 function viewAdmin(){
   // 🎩 Admin is its own account with no league memberships — so the "Members" tab (which
   // shows the current league's roster) doesn't apply. The admin still manages members from
   // the 🏆 Leagues tab → click any league → see its roster + kick anyone.
   const isPureAdmin = !!(ME && ME.is_admin);
-  if(isPureAdmin && adminTab==="members") adminTab="leagues";
-  if(isPureAdmin && adminTab==="pool")    adminTab="leagues"; // pool view is per-league too
+  if(isPureAdmin && adminTab==="members") adminTab="overview";
+  if(isPureAdmin && adminTab==="pool")    adminTab="overview";
+  // Admin's first visit defaults to Overview (the CRM dashboard).
+  if(isPureAdmin && (adminTab==="results" || !adminTab)) {
+    // keep current tab if user chose it; only steer first-time visits
+    if(!sessionStorage.getItem("themask_admin_visited")){ adminTab="overview"; sessionStorage.setItem("themask_admin_visited","1"); }
+  }
   const TABS = isPureAdmin
-    ? [["results","Results"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"]]
+    ? [["overview","📊 Overview"],["users","👥 Users"],["leagues","🏆 Leagues"],["activity","📜 Activity"],["results","Results"],["props","Settle"],["ko","Knockouts"]]
     : [["results","Results"],["members","Members"],["leagues","🏆 Leagues"],["users","👥 Users"],["props","Settle props"],["ko","Knockouts"],["pool","Settings"]];
-  let html=`<div class="card"><h3>🛠️ Admin panel</h3><div class="small muted">You're the gaffer. Enter results to auto-score everyone, settle props, manage members, and run the pool.</div>
+  let html=`<div class="card"><h3>🛠️ Admin panel</h3><div class="small muted">You're the gaffer. The CRM lets you see who's signing up, when, where from, what they're doing in every league.</div>
     <div class="seg" style="margin-top:8px">${TABS.map(t=>`<button class="${adminTab===t[0]?'on':''}" data-atab="${t[0]}">${t[1]}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn block" data-adminlogout style="border-color:var(--red);color:#ffb3b3;font-weight:700">🚪 Logout</button>
     </div>
     <div class="tiny muted" style="margin-top:6px">One click signs out the admin account and returns you to the player sign-in. Your admin work (results, settled props, deletions) stays saved on the server.</div></div>`;
-  if(adminTab==="results"){
+  if(adminTab==="overview"){
+    html += adminOverview();
+  } else if(adminTab==="activity"){
+    html += adminActivityView();
+  } else if(adminTab==="results"){
     const upcoming=[...DB.matches].sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
     html+=`<div class="small muted" style="margin:0 4px">Scores normally sync in live. You can also type a score and hit ✓ to finalize — everyone's points recompute instantly.</div>`;
     upcoming.forEach(m=>{
@@ -2331,64 +2410,12 @@ function viewAdmin(){
       });
     }
   } else if(adminTab==="leagues"){
-    // 🛠️ Super-admin: every league in the pool. Delete cascades to all scoped data.
-    const all = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-    const totalMembers = MEMBERS.length;
-    html+=`<div class="card"><h3>🏆 All leagues · super-admin</h3>
-      <div class="small muted">${all.length} league${all.length===1?'':'s'} in the pool · ${totalMembers} total membership${totalMembers===1?'':'s'}.</div>
-      <div class="tiny muted" style="margin-top:6px">Click <b>👁️ View details</b> on any league to drill in and see its members, the picks they've made, their bracket and banter activity. <b>🗑️ Delete</b> wipes every prediction, prop answer, bracket pick, banter post, like and card scoped to that league — instantly, for every member.</div>
-    </div>`;
-    if(!all.length) html+=`<div class="empty"><div class="e">🏆</div>No leagues yet.</div>`;
-    all.forEach(l=>{
-      const memCount = MEMBERS.filter(m=>m.league===l.id).length;
-      const pickCount = ALL.pred.filter(p=>p.league===l.id && !p.advance && !p.ko).length;
-      const banterCount = ALL.comments.filter(c=>c.league===l.id).length;
-      const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "—";
-      const isCur = l.id===LG;
-      html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
-        <div style="flex:1;min-width:160px">
-          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">🏆 ${escapeHtml(l.name)}${isCur?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div>
-          <div class="small muted">${memCount} member${memCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts · ${money(l.buy_in)} buy-in · invite <b style="letter-spacing:1.5px;font-family:Fredoka">${l.code}</b> · creator: ${escapeHtml(creator)}</div>
-        </div>
-        <div class="row" style="gap:6px;flex-wrap:wrap">
-          <button class="btn" data-copycode="${l.code}" title="Copy invite code" style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">📋 ${l.code}</button>
-          <button class="btn" data-copylink="${l.code}" title="Copy invite link" style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">🔗 Link</button>
-          <button class="btn" data-viewleague="${l.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ Details</button>
-          <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>
-        </div>
-      </div></div>`;
-    });
+    html += adminLeaguesTable();
   } else if(adminTab==="users" && adminFocusUser){
     // 🛠️🔍 Drill-in: full audit of one user. Identity + where-from + leagues + activity + every pick.
     html += adminUserDetail(adminFocusUser);
   } else if(adminTab==="users"){
-    // 🛠️ Super-admin: every user across the whole pool.
-    const all = DB.profiles.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-    html+=`<div class="card"><h3>👥 All users · super-admin</h3>
-      <div class="small muted">${all.length} user${all.length===1?'':'s'} signed up across the pool.</div>
-      <div class="tiny muted" style="margin-top:6px">Tap <b>👁️ Profile</b> to drill into a user's full stats: when they signed up, where they're from (timezone + locale), every league they're in, every pick they've made, banter, cards & re-picks. <b>🗑️ Delete</b> wipes them from every league.</div>
-    </div>`;
-    all.forEach(p=>{
-      const leagueCount = new Set(MEMBERS.filter(m=>m.user===p.id).map(m=>m.league)).size;
-      const pickCount = ALL.pred.filter(x=>x.user===p.id && !x.advance && !x.ko).length;
-      const banterCount = ALL.comments.filter(c=>c.user===p.id).length;
-      const isMe = p.id===ME.id;
-      const fav = p.team && teamById(p.team);
-      const adminTag = p.is_admin ? ' <span class="badge-admin" style="font-size:9px;padding:1px 6px;margin-left:4px">ADMIN</span>' : '';
-      const whence = p.signup_tz ? `· ${prettyTZ(p.signup_tz)}` : '';
-      const seen   = p.last_seen_at ? `· last seen ${relativeTime(p.last_seen_at)}` : '';
-      html+=`<div class="card"><div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
-        <div class="avatar" style="width:42px;height:42px;font-size:20px">${avatarInner(p)}</div>
-        <div style="flex:1;min-width:160px">
-          <div style="font-family:'Fredoka';font-weight:700;font-size:16px">${escapeHtml(p.name)}${fav?' '+fav.flag:''}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}${adminTag}</div>
-          <div class="small muted">${leagueCount} league${leagueCount===1?'':'s'} · ${pickCount} match picks · ${banterCount} banter posts ${whence} ${seen}</div>
-        </div>
-        <div class="row" style="gap:6px;flex-wrap:wrap">
-          <button class="btn" data-viewuser="${p.id}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">👁️ Profile</button>
-          ${isMe?'<span class="tiny muted" style="padding:6px 10px">— self —</span>':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>`}
-        </div>
-      </div></div>`;
-    });
+    html += adminUsersTable();
   } else if(adminTab==="ko"){
     html+=`<div class="small muted" style="margin:0 4px">Mark the teams that actually reached each stage. Everyone's knockout picks score instantly.</div>`;
     KO_STAGES.forEach(stage=>{
@@ -2420,6 +2447,321 @@ function viewAdmin(){
    likes, cards, re-picks), and every match pick they've ever locked — grouped
    by league + sorted by kickoff.
    ---------------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------------
+   🛠️📊  CRM HELPERS — overview, sortable user/league tables, activity feed
+   ---------------------------------------------------------------------------- */
+// Tiny absolute-date formatter that always shows the actual date+time (the relative tag is on the side).
+// We render kickoff times via fmtKick (drops in the TZ tag) — these timestamps reuse that.
+function fmtAbs(iso){ return iso ? fmtKick(iso) : "—"; }
+// Sortable-table header cell. Calling `data-sort-users` / `data-sort-leagues` toggles direction.
+function thSort(scope, field, label, curState){
+  const [f,d] = curState.split(":");
+  const on = f===field;
+  return `<th class="${on?'sorted':''}" data-sort-${scope}="${field}">${label}<span class="arr">${on?(d==="asc"?'▲':'▼'):'▴▾'}</span></th>`;
+}
+function compareBy(field, dir){
+  const mul = dir==="asc" ? 1 : -1;
+  return (a,b)=>{
+    const av=a[field], bv=b[field];
+    if(av==null && bv==null) return 0;
+    if(av==null) return 1;       // nulls always last
+    if(bv==null) return -1;
+    if(typeof av==="number" && typeof bv==="number") return (av-bv)*mul;
+    return String(av).localeCompare(String(bv))*mul;
+  };
+}
+// 📊 Overview dashboard: KPIs + recent activity preview + currently-online list.
+function adminOverview(){
+  const players  = DB.profiles.filter(p=>!p.is_admin);
+  const adminsN  = DB.profiles.filter(p=>p.is_admin).length;
+  const leagues  = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES);
+  const picks    = ALL.pred.filter(x=>!x.advance && !x.ko);
+  const props    = ALL.pans;
+  const banter   = ALL.comments;
+  const bracket  = (ALL.bracket||[]);
+  const now      = Date.now();
+  const dayAgo   = now - 864e5;
+  const weekAgo  = now - 7*864e5;
+  const activeToday = players.filter(u=>u.last_seen_at && new Date(u.last_seen_at).getTime() > dayAgo).length;
+  const activeWeek  = players.filter(u=>u.last_seen_at && new Date(u.last_seen_at).getTime() > weekAgo).length;
+  const signupsWeek = players.filter(u=>u.created_at && new Date(u.created_at).getTime() > weekAgo).length;
+  const leaguesWeek = leagues.filter(l=>l.created_at && new Date(l.created_at).getTime() > weekAgo).length;
+  const banterToday = banter.filter(c=>c.created && new Date(c.created).getTime() > dayAgo).length;
+  const totalPotByCcy = {};
+  leagues.forEach(l=>{
+    const ccy = l.currency || "USD";
+    const mems = MEMBERS.filter(m=>m.league===l.id).length;
+    totalPotByCcy[ccy] = (totalPotByCcy[ccy]||0) + mems * (l.buy_in||0);
+  });
+  const potStr = Object.entries(totalPotByCcy).map(([c,v])=>`${v.toLocaleString()} ${c}`).join(" + ") || "—";
+  // KPI grid
+  const kpis = `<div class="kpigrid">
+    <div class="kpicard players"><div class="v">${players.length}</div><div class="k">Total players</div>${signupsWeek?`<div class="delta">+${signupsWeek} this week</div>`:''}</div>
+    <div class="kpicard leagues"><div class="v">${leagues.length}</div><div class="k">Leagues</div>${leaguesWeek?`<div class="delta">+${leaguesWeek} this week</div>`:''}</div>
+    <div class="kpicard active"><div class="v">${activeToday}</div><div class="k">Active today</div><div class="delta">${activeWeek} this week</div></div>
+    <div class="kpicard picks"><div class="v">${picks.length}</div><div class="k">Match picks</div></div>
+    <div class="kpicard banter"><div class="v">${banter.length}</div><div class="k">Banter posts</div>${banterToday?`<div class="delta">+${banterToday} today</div>`:''}</div>
+    <div class="kpicard pot"><div class="v" style="font-size:22px;line-height:1.2;padding-top:8px">${potStr}</div><div class="k">Total pot</div></div>
+    <div class="kpicard"><div class="v">${MEMBERS.length}</div><div class="k">Memberships</div></div>
+    <div class="kpicard"><div class="v">${props.length}</div><div class="k">Extras locked</div></div>
+    <div class="kpicard"><div class="v">${bracket.length}</div><div class="k">Bracket picks</div></div>
+    <div class="kpicard"><div class="v">${adminsN}</div><div class="k">Admin accounts</div></div>
+  </div>`;
+  // Recent activity preview (top 12 events)
+  const acts = buildActivityEvents().slice(0,12);
+  const feed = acts.length
+    ? `<div class="actfeed">${acts.map(renderActivityRow).join("")}</div>`
+    : `<div class="empty"><div class="e">🪺</div>No activity yet — once players start signing up, joining leagues, and posting banter, you'll see it here in real time.</div>`;
+  return `<div class="adminoverview">
+    <div class="ovleft">${kpis}
+      <div class="card"><h3>🆕 Newest players</h3>${
+        players.slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,6).map(p=>{
+          const fav = p.team && teamById(p.team);
+          return `<div class="actrow"><span class="actic">${avatarInner(p)}</span>
+            <span class="actwhat"><b>${escapeHtml(p.name)}</b>${fav?' '+fav.flag:''}<span class="muted"> from ${prettyTZ(p.signup_tz)}</span></span>
+            <span class="actwhen">${relativeTime(p.created_at)}</span></div>`;
+        }).join("") || `<div class="small muted">No players yet.</div>`
+      }</div>
+      <div class="card"><h3>🏆 Newest leagues</h3>${
+        leagues.slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,6).map(l=>{
+          const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "—";
+          const mems = MEMBERS.filter(m=>m.league===l.id).length;
+          return `<div class="actrow"><span class="actic">🏆</span>
+            <span class="actwhat"><b>${escapeHtml(l.name)}</b><span class="muted"> · ${mems} member${mems===1?'':'s'} · ${money(l.buy_in)} buy-in · invite ${l.code}</span></span>
+            <span class="actwhen">${relativeTime(l.created_at)}</span></div>`;
+        }).join("") || `<div class="small muted">No leagues yet.</div>`
+      }</div>
+    </div>
+    <div class="ovright">
+      <div class="card"><div class="spread"><h3>📜 Recent activity</h3><button class="btn" data-atab="activity" style="padding:5px 10px;font-size:12px;border-color:var(--cyan);color:var(--cyan)">Full log →</button></div>
+        ${feed}
+      </div>
+    </div>
+  </div>`;
+}
+
+// 👥 Sortable + searchable players table.
+function adminUsersTable(){
+  const filterQ = (adminUserFilter||"").toLowerCase().trim();
+  const scope = adminUserScope;
+  let rows = DB.profiles.slice();
+  if(scope==="players") rows = rows.filter(p=>!p.is_admin);
+  else if(scope==="admins") rows = rows.filter(p=> p.is_admin);
+  if(filterQ){
+    rows = rows.filter(p=>{
+      const hay = `${p.name||''} ${p.email||''} ${p.signup_tz||''} ${p.signup_locale||''} ${(p.team&&teamById(p.team)||{}).name||''}`.toLowerCase();
+      return hay.includes(filterQ);
+    });
+  }
+  // Enrich with derived stats so we can sort by them
+  rows = rows.map(p=>{
+    const leagueCount = new Set(MEMBERS.filter(m=>m.user===p.id).map(m=>m.league)).size;
+    const pickCount = ALL.pred.filter(x=>x.user===p.id && !x.advance && !x.ko).length;
+    const banterCount = ALL.comments.filter(c=>c.user===p.id).length;
+    return Object.assign({}, p, {leagueCount, pickCount, banterCount,
+      created_ts: p.created_at?new Date(p.created_at).getTime():0,
+      seen_ts: p.last_seen_at?new Date(p.last_seen_at).getTime():0
+    });
+  });
+  const [f,d] = adminUserSort.split(":");
+  const sortField = ({created_at:"created_ts", last_seen_at:"seen_ts", name:"name", leagues:"leagueCount", picks:"pickCount", banter:"banterCount", tz:"signup_tz"}[f])||"seen_ts";
+  rows.sort(compareBy(sortField, d));
+
+  const headRow = `<tr>
+    ${thSort("users","name","Player", adminUserSort)}
+    <th>Nation</th>
+    ${thSort("users","tz","Signed up from", adminUserSort)}
+    ${thSort("users","created_at","Joined", adminUserSort)}
+    ${thSort("users","last_seen_at","Last seen", adminUserSort)}
+    ${thSort("users","leagues","Lg", adminUserSort)}
+    ${thSort("users","picks","Picks", adminUserSort)}
+    ${thSort("users","banter","💬", adminUserSort)}
+    <th>Actions</th>
+  </tr>`;
+  const body = rows.map(p=>{
+    const isMe = p.id===ME.id;
+    const fav = p.team && teamById(p.team);
+    const adminTag = p.is_admin ? '<span class="pilladmin" style="margin-left:6px">ADMIN</span>' : '';
+    return `<tr>
+      <td><div class="cellnm"><div class="avatar">${avatarInner(p)}</div><div class="nm">${escapeHtml(p.name)}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}${adminTag}</div></div></td>
+      <td>${fav?`${fav.flag} ${fav.name}`:'<span class="muted">—</span>'}</td>
+      <td>${p.signup_tz?prettyTZ(p.signup_tz):'<span class="muted">—</span>'}${p.signup_locale?` <span class="tiny muted">· ${escapeHtml(p.signup_locale)}</span>`:''}</td>
+      <td><div class="tinydate">${p.created_at?fmtKick(p.created_at):'<span class="muted">—</span>'}${p.created_at?`<span class="ago">${relativeTime(p.created_at)}</span>`:''}</div></td>
+      <td><div class="tinydate">${p.last_seen_at?fmtKick(p.last_seen_at):'<span class="muted">never</span>'}${p.last_seen_at?`<span class="ago">${relativeTime(p.last_seen_at)}</span>`:''}</div></td>
+      <td>${p.leagueCount}</td>
+      <td>${p.pickCount}</td>
+      <td>${p.banterCount}</td>
+      <td><div class="rowacts">
+        <button class="btn" data-viewuser="${p.id}" style="border-color:var(--cyan);color:var(--cyan)">👁️</button>
+        ${isMe?'':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="border-color:var(--red);color:#ffb3b3">🗑️</button>`}
+      </div></td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="card"><h3>👥 Players</h3>
+    <div class="crmsearch">
+      <input id="usersearch" placeholder="🔍  Search by name, nation, timezone, locale…" value="${escapeHtml(adminUserFilter)}"/>
+      <select id="userscope">
+        <option value="players" ${scope==="players"?'selected':''}>Players only</option>
+        <option value="admins"  ${scope==="admins" ?'selected':''}>Admins only</option>
+        <option value="all"     ${scope==="all"    ?'selected':''}>Everyone</option>
+      </select>
+      <span class="count">${rows.length} of ${DB.profiles.length}</span>
+    </div>
+    <div class="crmwrap"><table class="crm"><thead>${headRow}</thead><tbody>${body || `<tr><td colspan="9" class="center muted" style="padding:20px">No matches.</td></tr>`}</tbody></table></div>
+    <div class="tiny muted" style="margin-top:8px">Click a column header to sort. <b>👁️</b> opens the full audit — every league, every pick, every banter post.</div>
+  </div>`;
+}
+
+// 🏆 Sortable + searchable leagues table.
+function adminLeaguesTable(){
+  const filterQ = (adminLeagueFilter||"").toLowerCase().trim();
+  let rows = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).slice();
+  if(filterQ){
+    rows = rows.filter(l=>{
+      const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "";
+      const hay = `${l.name||''} ${l.code||''} ${l.currency||''} ${creator}`.toLowerCase();
+      return hay.includes(filterQ);
+    });
+  }
+  rows = rows.map(l=>{
+    const memCount  = MEMBERS.filter(m=>m.league===l.id).length;
+    const paidCount = MEMBERS.filter(m=>m.league===l.id && m.paid).length;
+    const pickCount = ALL.pred.filter(p=>p.league===l.id && !p.advance && !p.ko).length;
+    const banterCount = ALL.comments.filter(c=>c.league===l.id).length;
+    const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "—";
+    const pot = (l.buy_in||0) * memCount;
+    return Object.assign({}, l, {memCount, paidCount, pickCount, banterCount, creator, pot,
+      created_ts: l.created_at?new Date(l.created_at).getTime():0});
+  });
+  const [f,d] = adminLeagueSort.split(":");
+  const sortField = ({created_at:"created_ts", name:"name", code:"code", members:"memCount", picks:"pickCount", banter:"banterCount", pot:"pot", buyin:"buy_in", creator:"creator"}[f])||"created_ts";
+  rows.sort(compareBy(sortField, d));
+
+  const headRow = `<tr>
+    ${thSort("leagues","name","League", adminLeagueSort)}
+    ${thSort("leagues","code","Invite", adminLeagueSort)}
+    ${thSort("leagues","created_at","Created", adminLeagueSort)}
+    ${thSort("leagues","creator","Creator", adminLeagueSort)}
+    ${thSort("leagues","members","Members", adminLeagueSort)}
+    ${thSort("leagues","buyin","Buy-in", adminLeagueSort)}
+    ${thSort("leagues","pot","Pot", adminLeagueSort)}
+    ${thSort("leagues","picks","Picks", adminLeagueSort)}
+    ${thSort("leagues","banter","💬", adminLeagueSort)}
+    <th>Actions</th>
+  </tr>`;
+  const body = rows.map(l=>{
+    return `<tr>
+      <td><div class="cellnm"><span style="font-size:18px">🏆</span><div class="nm">${escapeHtml(l.name)}${l.id===LG?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div></div></td>
+      <td><b style="font-family:Fredoka;letter-spacing:1.2px">${l.code}</b></td>
+      <td><div class="tinydate">${l.created_at?fmtKick(l.created_at):'<span class="muted">—</span>'}${l.created_at?`<span class="ago">${relativeTime(l.created_at)}</span>`:''}</div></td>
+      <td>${escapeHtml(l.creator)}</td>
+      <td>${l.memCount} <span class="tiny muted">· ${l.paidCount} paid</span></td>
+      <td>${money(l.buy_in)}</td>
+      <td>${money(l.pot)}</td>
+      <td>${l.pickCount}</td>
+      <td>${l.banterCount}</td>
+      <td><div class="rowacts">
+        <button class="btn" data-copycode="${l.code}" title="Copy code" style="border-color:var(--cyan);color:var(--cyan)">📋</button>
+        <button class="btn" data-copylink="${l.code}" title="Copy invite link" style="border-color:var(--cyan);color:var(--cyan)">🔗</button>
+        <button class="btn" data-viewleague="${l.id}" title="Details" style="border-color:var(--cyan);color:var(--cyan)">👁️</button>
+        <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" title="Delete" style="border-color:var(--red);color:#ffb3b3">🗑️</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="card"><h3>🏆 Leagues</h3>
+    <div class="crmsearch">
+      <input id="leaguesearch" placeholder="🔍  Search by name, code, currency, creator…" value="${escapeHtml(adminLeagueFilter)}"/>
+      <span class="count">${rows.length} of ${(ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).length}</span>
+    </div>
+    <div class="crmwrap"><table class="crm"><thead>${headRow}</thead><tbody>${body || `<tr><td colspan="10" class="center muted" style="padding:20px">No matches.</td></tr>`}</tbody></table></div>
+    <div class="tiny muted" style="margin-top:8px">Click a column header to sort. <b>📋 / 🔗</b> copy invite code/link · <b>👁️</b> drills in · <b>🗑️</b> deletes with full cascade.</div>
+  </div>`;
+}
+
+// 📜 Build a flat chronological list of every notable event across the pool.
+// Each event = {ts, kind, icon, who, msg}. Used by the Activity tab + Overview preview.
+function buildActivityEvents(){
+  const ev = [];
+  // Signups
+  DB.profiles.forEach(p=>{ if(p.created_at) ev.push({
+    ts:new Date(p.created_at).getTime(), kind:"signup", icon:"🆕",
+    who:p.id, msg:`<b>${escapeHtml(p.name)}</b> signed up${p.signup_tz?` from <b>${prettyTZ(p.signup_tz)}</b>`:''}${p.team&&teamById(p.team)?` · supports ${teamById(p.team).flag} ${teamById(p.team).name}`:''}`
+  }); });
+  // League creations
+  (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).forEach(l=>{ if(l.created_at){
+    const creator = (DB.profiles.find(p=>p.id===l.created_by)||{}).name || "—";
+    ev.push({
+      ts:new Date(l.created_at).getTime(), kind:"league", icon:"🏆",
+      who:l.created_by, msg:`<b>${escapeHtml(creator)}</b> created league <b>${escapeHtml(l.name)}</b> · invite <b>${l.code}</b> · ${money(l.buy_in)} buy-in`
+    });
+  } });
+  // League joins (memberships) — skip if joined_at equals league creation (= creator auto-join)
+  MEMBERS.forEach(m=>{ if(m.joined_at){
+    const u = DB.profiles.find(p=>p.id===m.user); if(!u || u.is_admin) return;
+    const lg = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).find(l=>l.id===m.league); if(!lg) return;
+    const jts = new Date(m.joined_at).getTime();
+    const cts = lg.created_at?new Date(lg.created_at).getTime():0;
+    if(Math.abs(jts-cts)<2000 && m.user===lg.created_by) return; // creator auto-join — skip noise
+    ev.push({ts:jts, kind:"join", icon:"🤝", who:m.user, msg:`<b>${escapeHtml(u.name)}</b> joined league <b>${escapeHtml(lg.name)}</b>`});
+  } });
+  // Picks (created)
+  ALL.pred.filter(p=>p.created && !p.advance && !p.ko).forEach(p=>{
+    const u = DB.profiles.find(x=>x.id===p.user); if(!u || u.is_admin) return;
+    const m = DB.matches.find(x=>x.id===p.match); if(!m) return;
+    const lg = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).find(l=>l.id===p.league);
+    const h = teamById(m.home), a = teamById(m.away);
+    ev.push({ts:new Date(p.created).getTime(), kind:"pick", icon:"⚽",
+      who:p.user, msg:`<b>${escapeHtml(u.name)}</b> locked <b>${h?h.flag:'?'} ${p.hp}–${p.ap} ${a?a.flag:'?'}</b>${p.banker?' ⭐':''}${lg?` in <b>${escapeHtml(lg.name)}</b>`:''}`});
+  });
+  // Banter
+  ALL.comments.forEach(c=>{
+    const u = DB.profiles.find(x=>x.id===c.user); if(!u || u.is_admin) return;
+    const lg = (ALL_LEAGUES.length?ALL_LEAGUES:LEAGUES).find(l=>l.id===c.league);
+    ev.push({ts:new Date(c.created).getTime(), kind:"banter", icon:"💬",
+      who:c.user, msg:`<b>${escapeHtml(u.name)}</b> in <b>${lg?escapeHtml(lg.name):'a league'}</b>: <span class="muted">"${escapeHtml(c.body.slice(0,80))}${c.body.length>80?'…':''}"</span>`});
+  });
+  // Likes
+  ALL.likes.forEach(l=>{
+    const u = DB.profiles.find(x=>x.id===l.user); if(!u || u.is_admin) return;
+    const c = ALL.comments.find(x=>x.id===l.comment); if(!c) return;
+    const author = DB.profiles.find(p=>p.id===c.user);
+    ev.push({ts:new Date(l.created).getTime(), kind:"like", icon:"❤️",
+      who:l.user, msg:`<b>${escapeHtml(u.name)}</b> liked <b>${author?escapeHtml(author.name):'someone'}</b>'s banter`});
+  });
+  // Cards
+  ALL.cards.forEach(c=>{
+    const from = DB.profiles.find(x=>x.id===c.from);
+    const target = DB.profiles.find(x=>x.id===c.target);
+    if(!from || !target || from.is_admin) return;
+    ev.push({ts:new Date(c.created).getTime(), kind:"card", icon: c.kind==="red"?"🟥":"🟨",
+      who:c.from, msg:`<b>${escapeHtml(from.name)}</b> booked <b>${escapeHtml(target.name)}</b> with a ${c.kind} card`});
+  });
+  // Sort newest first
+  return ev.sort((a,b)=>b.ts-a.ts);
+}
+function renderActivityRow(e){
+  return `<div class="actrow"><span class="actic">${e.icon}</span>
+    <span class="actwhat">${e.msg}</span>
+    <span class="actwhen" title="${e.ts?fmtKick(new Date(e.ts).toISOString()):''}">${relativeTime(new Date(e.ts).toISOString())}</span></div>`;
+}
+function adminActivityView(){
+  let ev = buildActivityEvents();
+  const filt = adminActivityFilter;
+  const KINDS = [["all","All"],["signup","🆕 Signups"],["league","🏆 Leagues"],["join","🤝 Joins"],["pick","⚽ Picks"],["banter","💬 Banter"],["like","❤️ Likes"],["card","🟨 Cards"]];
+  if(filt!=="all") ev = ev.filter(x=>x.kind===filt);
+  const trail = ev.slice(0, 400); // cap to avoid huge DOM
+  return `<div class="card"><h3>📜 Activity log</h3>
+    <div class="small muted">Every notable event across every league, newest first. Click a tag to filter.</div>
+    <div class="actfilters">${KINDS.map(([v,l])=>`<button class="${filt===v?'on':''}" data-actfilter="${v}">${l}</button>`).join("")}</div>
+    <div class="tiny muted" style="margin-bottom:6px">${ev.length} event${ev.length===1?'':'s'} ${filt==="all"?'':`· filter: ${filt}`}${ev.length>trail.length?` · showing newest ${trail.length}`:''}</div>
+    ${trail.length
+      ? `<div class="actfeed">${trail.map(renderActivityRow).join("")}</div>`
+      : `<div class="empty"><div class="e">🪺</div>Nothing here yet.</div>`}
+  </div>`;
+}
+
 function adminUserDetail(uid){
   const p = DB.profiles.find(x=>x.id===uid);
   if(!p) return `<div class="card center"><div class="empty"><div class="e">🤷</div>User not found.</div>
@@ -2684,6 +3026,13 @@ function wire(){
   const back=$("[data-backleagues]"); if(back) back.onclick=()=>{ adminFocusLeague=null; render(); window.scrollTo(0,0); };
   $$("[data-viewuser]").forEach(b=>b.onclick=()=>{ adminFocusUser=b.dataset.viewuser; render(); window.scrollTo(0,0); });
   const backu=$("[data-backusers]"); if(backu) backu.onclick=()=>{ adminFocusUser=null; render(); window.scrollTo(0,0); };
+  // 📊 CRM sortable headers + search + activity filter wires
+  $$("[data-sort-users]").forEach(h=>h.onclick=()=>{ adminToggleSort(adminUserSort,v=>adminUserSort=v,h.dataset.sortUsers); render(); });
+  $$("[data-sort-leagues]").forEach(h=>h.onclick=()=>{ adminToggleSort(adminLeagueSort,v=>adminLeagueSort=v,h.dataset.sortLeagues); render(); });
+  const us=$("#usersearch"); if(us){ us.oninput=()=>{ adminUserFilter=us.value; clearTimeout(window._usrch); window._usrch=setTimeout(()=>{ render(); setTimeout(()=>{const x=$("#usersearch");if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length);}}, 0); }, 200); }; }
+  const ls=$("#leaguesearch"); if(ls){ ls.oninput=()=>{ adminLeagueFilter=ls.value; clearTimeout(window._lsrch); window._lsrch=setTimeout(()=>{ render(); setTimeout(()=>{const x=$("#leaguesearch");if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length);}}, 0); }, 200); }; }
+  const sc=$("#userscope"); if(sc) sc.onchange=()=>{ adminUserScope=sc.value; render(); };
+  $$("[data-actfilter]").forEach(b=>b.onclick=()=>{ adminActivityFilter=b.dataset.actfilter; render(); });
   $$("[data-delleague]").forEach(b=>b.onclick=()=>{ const lid=b.dataset.delleague, nm=b.dataset.dn||"this league";
     confirmModal(`<div class="center"><div style="font-size:36px">🗑️🏆</div><div style="font-family:'Fredoka';font-size:18px">Delete league "${nm}"?</div><div class="small muted" style="margin-top:6px">This wipes every prediction, prop answer, bracket pick, comment, like and card scoped to this league — instantly, for every member. The user accounts themselves stay. <b>This cannot be undone.</b></div></div>`, async()=>{ await adminDeleteLeague(lid); }, "Yes, delete the league 🗑️"); });
   // 🗑️ Super-admin: delete a user entirely
@@ -3414,12 +3763,12 @@ async function liveLoad(user){
   const lgMap=l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by,created_at:l.created_at});
   ALL_LEAGUES=(leagues||[]).map(lgMap);
   LEAGUES=(leagues||[]).filter(l=>myIds.has(l.id)).map(lgMap);
-  MEMBERS=(memberships||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
+  MEMBERS=(memberships||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid,joined_at:m.joined_at}));
   // every league's picks → master store (scoped per-league at render time)
-  ALL.pred = preds.map(p=>({id:p.id,user:p.user_id,league:p.league_id,match:p.match_id,hp:p.hp,ap:p.ap,banker:p.banker}))
-    .concat(advances.map(a=>({id:a.id,user:a.user_id,league:a.league_id,advance:true,grp:a.grp,team:a.team})))
-    .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,league:k.league_id,ko:true,stage:k.stage,team:k.team})));
-  ALL.pans = answers.map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer}));
+  ALL.pred = preds.map(p=>({id:p.id,user:p.user_id,league:p.league_id,match:p.match_id,hp:p.hp,ap:p.ap,banker:p.banker,created:p.created_at}))
+    .concat(advances.map(a=>({id:a.id,user:a.user_id,league:a.league_id,advance:true,grp:a.grp,team:a.team,created:a.created_at})))
+    .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,league:k.league_id,ko:true,stage:k.stage,team:k.team,created:k.created_at})));
+  ALL.pans = answers.map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer,created:a.created_at}));
   ALL.rep  = (reps||[]).map(r=>({id:r.id,user:r.user_id,league:r.league_id,match:r.match_id,hp:r.hp,ap:r.ap}));
   ALL.comments = (comments||[]).map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
   ALL.cards    = (cards||[]).map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
