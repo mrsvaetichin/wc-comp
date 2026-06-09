@@ -614,18 +614,22 @@ function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.curr
    🌍  THE REAL 2026 WORLD CUP DRAW (held Dec 5, 2025, Washington D.C.)
    Group stage Jun 11–27 · Knockouts to Jul 19 · Hosts USA/MEX/CAN
    ============================================================================ */
+// 🌍 Official 2026 FIFA World Cup draw (Dec 2025). Teams listed in pot order:
+//   Pot 1 → pos 1   ·   Pot 2 → pos 2   ·   Pot 3 → pos 3   ·   Pot 4 → pos 4
+// Matchday pairings follow FIFA's "1v2 3v4 · 1v3 4v2 · 4v1 2v3" rotation, so the
+// pot-order positions must match exactly or the wrong teams meet on MD1.
 const GROUPS = {
   A:[["Mexico","🇲🇽"],["South Africa","🇿🇦"],["South Korea","🇰🇷"],["Czechia","🇨🇿"]],
-  B:[["Canada","🇨🇦"],["Switzerland","🇨🇭"],["Qatar","🇶🇦"],["Bosnia & Herz.","🇧🇦"]],
+  B:[["Canada","🇨🇦"],["Bosnia & Herz.","🇧🇦"],["Qatar","🇶🇦"],["Switzerland","🇨🇭"]],
   C:[["Brazil","🇧🇷"],["Morocco","🇲🇦"],["Haiti","🇭🇹"],["Scotland","🏴󠁧󠁢󠁳󠁣󠁴󠁿"]],
   D:[["USA","🇺🇸"],["Paraguay","🇵🇾"],["Australia","🇦🇺"],["Türkiye","🇹🇷"]],
   E:[["Germany","🇩🇪"],["Curaçao","🇨🇼"],["Côte d'Ivoire","🇨🇮"],["Ecuador","🇪🇨"]],
-  F:[["Netherlands","🇳🇱"],["Japan","🇯🇵"],["Tunisia","🇹🇳"],["Sweden","🇸🇪"]],
+  F:[["Netherlands","🇳🇱"],["Japan","🇯🇵"],["Sweden","🇸🇪"],["Tunisia","🇹🇳"]],
   G:[["Belgium","🇧🇪"],["Egypt","🇪🇬"],["Iran","🇮🇷"],["New Zealand","🇳🇿"]],
   H:[["Spain","🇪🇸"],["Cabo Verde","🇨🇻"],["Saudi Arabia","🇸🇦"],["Uruguay","🇺🇾"]],
-  I:[["France","🇫🇷"],["Senegal","🇸🇳"],["Norway","🇳🇴"],["Iraq","🇮🇶"]],
+  I:[["France","🇫🇷"],["Senegal","🇸🇳"],["Iraq","🇮🇶"],["Norway","🇳🇴"]],
   J:[["Argentina","🇦🇷"],["Algeria","🇩🇿"],["Austria","🇦🇹"],["Jordan","🇯🇴"]],
-  K:[["Portugal","🇵🇹"],["Uzbekistan","🇺🇿"],["Colombia","🇨🇴"],["DR Congo","🇨🇩"]],
+  K:[["Portugal","🇵🇹"],["DR Congo","🇨🇩"],["Uzbekistan","🇺🇿"],["Colombia","🇨🇴"]],
   L:[["England","🏴󠁧󠁢󠁥󠁮󠁧󠁿"],["Croatia","🇭🇷"],["Ghana","🇬🇭"],["Panama","🇵🇦"]]
 };
 
@@ -2354,7 +2358,7 @@ function viewAdmin(){
       </div></div>`;
     });
   } else if(adminTab==="leagues" && adminFocusLeague){
-    // 🛠️ Super-admin: drilled into one league. Shows every member + the picks each has made.
+    // 🛠️ Super-admin: drilled into one league. Hero + Share card + Stats + Leaderboard + Member roster.
     const lid = adminFocusLeague;
     const lg = (ALL_LEAGUES.find(l=>l.id===lid)) || (LEAGUES.find(l=>l.id===lid));
     if(!lg){ adminFocusLeague=null; html+=`<div class="empty"><div class="e">🏆</div>League not found.</div>`; }
@@ -2365,18 +2369,85 @@ function viewAdmin(){
       const totalBracket = (ALL.bracket||[]).filter(p=>p.league===lid).length;
       const totalBanter = ALL.comments.filter(c=>c.league===lid).length;
       const creator = (DB.profiles.find(p=>p.id===lg.created_by)||{}).name || "—";
-      html+=`<div class="card"><div class="spread"><button class="btn" data-backleagues style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">← All leagues</button>
-        <span class="tiny muted">invite <b style="letter-spacing:1.5px;font-family:Fredoka;color:var(--ink)">${lg.code}</b></span></div>
-        <h3 style="margin:8px 0 0">🏆 ${escapeHtml(lg.name)}</h3>
-        <div class="small muted">${members.length} member${members.length===1?'':'s'} · ${paidCount}/${members.length} paid · buy-in ${money(lg.buy_in)} · created by ${escapeHtml(creator)}</div>
-        <div class="tiny muted" style="margin-top:6px">Across this league: ${totalPicks} match picks · ${totalBracket} bracket picks · ${totalBanter} banter posts.</div>
-        <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn" data-copycode="${lg.code}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">📋 Copy code · <b>${lg.code}</b></button>
-          <button class="btn" data-copylink="${lg.code}" style="padding:6px 12px;border-color:var(--cyan);color:var(--cyan)">🔗 Copy invite link</button>
-          <button class="btn" data-delleague="${lg.id}" data-dn="${escapeHtml(lg.name)}" style="padding:6px 12px;border-color:var(--red);color:#ffb3b3">🗑️ Delete this league</button>
-        </div>
-        <div class="tiny muted" style="margin-top:6px">Share the code or the link with anyone you want in this league — opening the link auto-joins them after they pick a username.</div>
+      const pot = (lg.buy_in||0) * members.length;
+      const invUrl = (location.origin||"") + (location.pathname||"/") + "?join=" + lg.code;
+      // ── Back nav ──
+      html+=`<div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn" data-backleagues style="padding:6px 10px;border-color:var(--cyan);color:var(--cyan)">← All leagues</button>
+        <span class="tiny muted" style="align-self:center">Drilled into <b>${escapeHtml(lg.name)}</b></span>
       </div>`;
+      // ── Hero header card ──
+      html+=`<div class="card" style="background:linear-gradient(135deg,rgba(255,208,46,.10),rgba(11,111,179,.10));border-color:var(--gold)">
+        <div class="row" style="gap:14px;align-items:flex-start;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <h3 style="margin:0;font-size:24px">🏆 ${escapeHtml(lg.name)}${lg.id===LG?' <span class="tiny" style="color:var(--cyan);font-weight:400">(current)</span>':''}</h3>
+            <div class="small muted" style="margin-top:4px">Created ${lg.created_at?fmtKick(lg.created_at)+' · '+relativeTime(lg.created_at):'—'} · by <b style="color:var(--ink)">${escapeHtml(creator)}</b></div>
+            <div class="small muted">${members.length} member${members.length===1?'':'s'} · ${paidCount}/${members.length} paid · ${totalPicks} match picks · ${totalBanter} banter posts · ${totalBracket} bracket picks</div>
+          </div>
+          <div style="text-align:right;min-width:160px">
+            <div class="tiny muted" style="letter-spacing:1px">POT</div>
+            <div style="font-family:'Fredoka';font-weight:700;font-size:30px;color:var(--gold);line-height:1">${money(pot)}</div>
+            <div class="tiny muted">${money(lg.buy_in)} × ${members.length}</div>
+          </div>
+        </div>
+      </div>`;
+      // ── BIG SHARE CARD ──
+      html+=`<div class="card" style="border-color:var(--cyan)">
+        <div class="spread"><h3 style="margin:0;color:var(--cyan)">📤 Share this league</h3>
+          <span class="tiny muted">Opening the link auto-joins them after they pick a username</span>
+        </div>
+        <div class="row" style="gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div class="tiny muted" style="letter-spacing:1px;margin-bottom:3px">INVITE CODE</div>
+            <input readonly value="${lg.code}" style="font-family:'Fredoka';font-weight:700;font-size:22px;letter-spacing:4px;text-align:center;padding:10px;background:var(--card2);border-color:var(--gold);color:var(--gold)"/>
+          </div>
+          <div style="flex:2;min-width:240px">
+            <div class="tiny muted" style="letter-spacing:1px;margin-bottom:3px">INVITE LINK</div>
+            <input readonly value="${invUrl}" style="font-family:monospace;font-size:13px;padding:10px;background:var(--card2)"/>
+          </div>
+        </div>
+        <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn lime" data-copycode="${lg.code}" style="flex:1;min-width:140px;font-weight:700">📋 Copy code</button>
+          <button class="btn primary" data-copylink="${lg.code}" style="flex:2;min-width:180px;font-weight:700">🔗 Copy invite link</button>
+          <button class="btn" data-sharelg="${lg.code}" data-sharenm="${escapeHtml(lg.name)}" style="flex:1;min-width:140px;border-color:var(--cyan);color:var(--cyan);font-weight:700">📨 Share…</button>
+        </div>
+        <div class="tiny muted" style="margin-top:6px">📨 Share opens the system share sheet (WhatsApp / iMessage / Email / etc.) where supported — otherwise it copies the link to your clipboard.</div>
+      </div>`;
+      // ── Danger zone ──
+      html+=`<div class="card"><h3 style="margin:0;font-size:14px;color:var(--red)">⚠️ Danger zone</h3>
+        <button class="btn" data-delleague="${lg.id}" data-dn="${escapeHtml(lg.name)}" style="margin-top:8px;border-color:var(--red);color:#ffb3b3">🗑️ Delete this league (wipes every pick, banter, like and card scoped to it)</button>
+      </div>`;
+      // ── Leaderboard preview ──
+      const lbRows = members.map(m=>{
+        const savedLG=LG, savedDB={pred:DB.predictions,pans:DB.propAnswers,rep:DB.repicks,br:DB.bracket,cm:DB.comments,cd:DB.cards,lk:DB.likes};
+        LG=lid; scopeLeague();
+        const pts = scoreFor(m.id).pts;
+        LG=savedLG; DB.predictions=savedDB.pred; DB.propAnswers=savedDB.pans; DB.repicks=savedDB.rep; DB.bracket=savedDB.br; DB.comments=savedDB.cm; DB.cards=savedDB.cd; DB.likes=savedDB.lk;
+        return {id:m.id, name:m.name, emoji:m.emoji, avatar:m.avatar, team:m.team, pts};
+      }).sort((a,b)=>b.pts-a.pts);
+      if(lbRows.length){
+        html+=`<div class="card"><h3>📊 Standings</h3>
+          <div class="crmwrap"><table class="crm">
+            <thead><tr><th>#</th><th>Player</th><th>Nation</th><th>Pts</th><th>Joined this league</th><th></th></tr></thead>
+            <tbody>${lbRows.map((r,i)=>{
+              const fav = r.team && teamById(r.team);
+              const m = MEMBERS.find(x=>x.user===r.id && x.league===lid);
+              const joinedAt = m && m.joined_at;
+              const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
+              return `<tr>
+                <td>${medal}</td>
+                <td><div class="cellnm"><div class="avatar">${avatarInner(r)}</div><div class="nm">${escapeHtml(r.name)}</div></div></td>
+                <td>${fav?`${fav.flag} ${fav.name}`:'<span class="muted">—</span>'}</td>
+                <td style="font-family:Fredoka;color:var(--lime);font-weight:700">${r.pts}</td>
+                <td><div class="tinydate">${joinedAt?fmtKick(joinedAt):'<span class="muted">—</span>'}${joinedAt?`<span class="ago">${relativeTime(joinedAt)}</span>`:''}</div></td>
+                <td><div class="rowacts"><button class="btn" data-viewuser="${r.id}" title="Open profile" style="border-color:var(--cyan);color:var(--cyan)">👁️</button></div></td>
+              </tr>`;
+            }).join("")}</tbody>
+          </table></div>
+        </div>`;
+      }
+      // (member roster + per-member picks continues below for deep audit)
+      html+=`<div class="card"><h3>👥 Member roster</h3><div class="small muted">Every member's picks, sorted by most-picks first. Use 🟥 to remove a player from just this league.</div></div>`;
       // Each member: their stats + their saved scoreline picks for this league
       members.slice().sort((a,b)=>{
         const ap=ALL.pred.filter(x=>x.user===a.id&&x.league===lid&&!x.advance&&!x.ko).length;
@@ -2582,7 +2653,7 @@ function adminUsersTable(){
     const isMe = p.id===ME.id;
     const fav = p.team && teamById(p.team);
     const adminTag = p.is_admin ? '<span class="pilladmin" style="margin-left:6px">ADMIN</span>' : '';
-    return `<tr>
+    return `<tr data-rowuser="${p.id}" style="cursor:pointer">
       <td><div class="cellnm"><div class="avatar">${avatarInner(p)}</div><div class="nm">${escapeHtml(p.name)}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}${adminTag}</div></div></td>
       <td>${fav?`${fav.flag} ${fav.name}`:'<span class="muted">—</span>'}</td>
       <td>${p.signup_tz?prettyTZ(p.signup_tz):'<span class="muted">—</span>'}${p.signup_locale?` <span class="tiny muted">· ${escapeHtml(p.signup_locale)}</span>`:''}</td>
@@ -2591,9 +2662,9 @@ function adminUsersTable(){
       <td>${p.leagueCount}</td>
       <td>${p.pickCount}</td>
       <td>${p.banterCount}</td>
-      <td><div class="rowacts">
-        <button class="btn" data-viewuser="${p.id}" style="border-color:var(--cyan);color:var(--cyan)">👁️</button>
-        ${isMe?'':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" style="border-color:var(--red);color:#ffb3b3">🗑️</button>`}
+      <td><div class="rowacts" data-stop="1">
+        <button class="btn" data-viewuser="${p.id}" title="Open profile" style="border-color:var(--cyan);color:var(--cyan)">👁️</button>
+        ${isMe?'':`<button class="btn" data-deluser="${p.id}" data-dn="${escapeHtml(p.name)}" title="Delete user" style="border-color:var(--red);color:#ffb3b3">🗑️</button>`}
       </div></td>
     </tr>`;
   }).join("");
@@ -2651,7 +2722,8 @@ function adminLeaguesTable(){
     <th>Actions</th>
   </tr>`;
   const body = rows.map(l=>{
-    return `<tr>
+    // Whole row opens the league detail — actions (📋 🔗 🗑️) stop propagation so they don't drill in.
+    return `<tr data-rowleague="${l.id}" style="cursor:pointer">
       <td><div class="cellnm"><span style="font-size:18px">🏆</span><div class="nm">${escapeHtml(l.name)}${l.id===LG?' <span class="tiny" style="color:var(--cyan)">(current)</span>':''}</div></div></td>
       <td><b style="font-family:Fredoka;letter-spacing:1.2px">${l.code}</b></td>
       <td><div class="tinydate">${l.created_at?fmtKick(l.created_at):'<span class="muted">—</span>'}${l.created_at?`<span class="ago">${relativeTime(l.created_at)}</span>`:''}</div></td>
@@ -2661,10 +2733,10 @@ function adminLeaguesTable(){
       <td>${money(l.pot)}</td>
       <td>${l.pickCount}</td>
       <td>${l.banterCount}</td>
-      <td><div class="rowacts">
-        <button class="btn" data-copycode="${l.code}" title="Copy code" style="border-color:var(--cyan);color:var(--cyan)">📋</button>
+      <td><div class="rowacts" data-stop="1">
+        <button class="btn" data-copycode="${l.code}" title="Copy invite code" style="border-color:var(--cyan);color:var(--cyan)">📋</button>
         <button class="btn" data-copylink="${l.code}" title="Copy invite link" style="border-color:var(--cyan);color:var(--cyan)">🔗</button>
-        <button class="btn" data-viewleague="${l.id}" title="Details" style="border-color:var(--cyan);color:var(--cyan)">👁️</button>
+        <button class="btn" data-sharelg="${l.code}" data-sharenm="${escapeHtml(l.name)}" title="Share…" style="border-color:var(--cyan);color:var(--cyan)">📨</button>
         <button class="btn" data-delleague="${l.id}" data-dn="${escapeHtml(l.name)}" title="Delete" style="border-color:var(--red);color:#ffb3b3">🗑️</button>
       </div></td>
     </tr>`;
@@ -3026,6 +3098,20 @@ function wire(){
   const back=$("[data-backleagues]"); if(back) back.onclick=()=>{ adminFocusLeague=null; render(); window.scrollTo(0,0); };
   $$("[data-viewuser]").forEach(b=>b.onclick=()=>{ adminFocusUser=b.dataset.viewuser; render(); window.scrollTo(0,0); });
   const backu=$("[data-backusers]"); if(backu) backu.onclick=()=>{ adminFocusUser=null; render(); window.scrollTo(0,0); };
+  // 🖱️ Whole-row clicks open the league / user detail (action cells stop propagation).
+  $$("[data-rowleague]").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("[data-stop]")) return; adminFocusLeague=tr.dataset.rowleague; adminTab="leagues"; adminFocusUser=null; render(); window.scrollTo(0,0); });
+  $$("[data-rowuser]").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("[data-stop]")) return; adminFocusUser=tr.dataset.rowuser; render(); window.scrollTo(0,0); });
+  // 📨 Native share button — uses navigator.share where available (iOS/Android/some desktops),
+  // otherwise falls back to copying the invite link to the clipboard.
+  $$("[data-sharelg]").forEach(b=>b.onclick=async()=>{
+    const code = b.dataset.sharelg, nm = b.dataset.sharenm || "our league";
+    const url = inviteLink(code);
+    const text = `Join ${nm} on THE MASK — World Cup '26 pool. Code: ${code}\n${url}`;
+    if(navigator.share){
+      try{ await navigator.share({title:`Join ${nm}`, text, url}); }
+      catch(e){ /* user dismissed share sheet — silent */ }
+    } else { copyText(text); toast("Share sheet not available — invite copied 📋"); }
+  });
   // 📊 CRM sortable headers + search + activity filter wires
   $$("[data-sort-users]").forEach(h=>h.onclick=()=>{ adminToggleSort(adminUserSort,v=>adminUserSort=v,h.dataset.sortUsers); render(); });
   $$("[data-sort-leagues]").forEach(h=>h.onclick=()=>{ adminToggleSort(adminLeagueSort,v=>adminLeagueSort=v,h.dataset.sortLeagues); render(); });
@@ -3548,10 +3634,9 @@ function loginScreen(extra=""){
       <input id="email" placeholder="your username" autocomplete="username" value="${valU}"/>
       <div class="step"><span class="stepn">2</span><b>Password</b></div>
       <input id="pw" type="password" placeholder="your password" autocomplete="current-password" value="${valP}"/>
-      <div class="step"><span class="stepn">3</span><b>Invite code</b> <span class="muted tiny">— optional · join a new league on the way in</span></div>
-      <input id="joincode" placeholder="e.g. MASK26" autocomplete="off" style="letter-spacing:2px;text-align:center;font-family:'Fredoka',sans-serif;font-weight:700;text-transform:uppercase" value="${valJ}"/>
       <button class="btn primary block" id="loginbtn" style="margin-top:16px">Sign in →</button>
       <div class="tiny muted center" id="loginhint" style="margin-top:6px">Enter your username and password to sign in.</div>
+      <div class="tiny muted center" style="margin-top:10px;line-height:1.5">🏆 Got an invite code? You can join any league after signing in — tap the league chip up top.</div>
     `}
   </div>
   <div class="card"><h3 style="font-size:16px">📖 How it works</h3>${rulesHTML()}</div>
