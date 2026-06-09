@@ -817,6 +817,11 @@ async function adminLock(){
   // Signing out of admin mode = full sign-out (admin is its own account). The player can then sign
   // in to their own account from the regular login screen.
   ADMIN_UNLOCKED=false;
+  // 🧹 Clear WANT_ADMIN too — it was set at boot when the page first loaded at /admin, but the
+  // user is intentionally moving over to the player flow now. Leaving it true would re-trigger
+  // the "only the boss runs the show" admin prompt on the very next render() (right after the
+  // player signs in), which feels broken.
+  WANT_ADMIN=false;
   try{ localStorage.removeItem("themask_admin"); }catch(e){}
   if(MODE==="live" && supa){
     try{ await supa.auth.signOut(); }catch(e){}
