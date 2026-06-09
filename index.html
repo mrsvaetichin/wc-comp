@@ -1951,10 +1951,13 @@ function lcCard(title, sub, gotoTab, linkText, svg, legend){
 // Points progression — cumulative match points by matchday (a 0-point origin gives a line from the first matchday)
 function pointsLineCard(){
   const days=[...new Set(DB.matches.filter(m=>m.status==="finished").map(m=>dateKey(m.kickoff)))].sort();
-  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
-  let mem=leagueMembers(LG).map(p=>({name:p.name.split(" ")[0], me:p.id===ME.id,
+  // UTC-consistent day buckets (see banterLineCard for the same fix + reasoning).
+  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59Z").getTime()}));
+  if(cps.length) cps[cps.length-1].cut = Math.max(cps[cps.length-1].cut, Date.now());
+  let mem=leagueMembers(LG).map(p=>({id:p.id, name:p.name.split(" ")[0], me:p.id===ME.id,
     series:[0, ...cps.map(c=>matchPtsAsOf(p.id,c.cut))]}));            // leading 0 = pre-tournament baseline
-  mem.forEach(m=>{ m.final=m.series[m.series.length-1]; m.valLabel=`${m.final}`; });
+  // Force last point = live total for every member (defends against TZ drift).
+  mem.forEach(m=>{ if(m.series.length) m.series[m.series.length-1]=scoreFor(m.id).pts; m.final=m.series[m.series.length-1]; m.valLabel=`${m.final}`; });
   mem.sort((a,b)=> b.final-a.final || a.name.localeCompare(b.name));
   mem=mem.slice(0,10);
   const labels=days.length ? ['', ...days.map(d=>{const a=d.split("-");return (+a[1])+"/"+(+a[2]);})] : [];
@@ -1973,8 +1976,16 @@ function banterLineCard(){
   const comments = DB.comments || [];
   const author = Object.create(null);
   comments.forEach(c => { author[c.id] = c.user; });
+  // 📅 Day buckets — UTC throughout so the dateKey (UTC date) and the cut (UTC end of day)
+  //    speak the same language. The old code mixed UTC dates with local-time cuts, which
+  //    silently dropped likes whose UTC timestamp fell between the viewer's local midnight
+  //    and the next UTC midnight — chart endpoints ended up at 0 while the player's actual
+  //    total was 1+ (the visible bug).
   const days = [...new Set(likes.map(l=>dateKey(l.created)))].sort();
-  const cps  = days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
+  const cps  = days.map(d=>({d, cut:new Date(d+"T23:59:59Z").getTime()}));
+  // Belt-and-braces: the last cut is bumped to "now" so the rightmost data point reflects
+  //   every like that's hit the DB so far, even if the cut math drifted by a millisecond.
+  if(cps.length) cps[cps.length-1].cut = Math.max(cps[cps.length-1].cut, Date.now());
   // Final totals per user, computed from likes
   const totals = Object.create(null);
   likes.forEach(l => { const u = author[l.comment]; if(u) totals[u] = (totals[u]||0) + 1; });
@@ -1989,6 +2000,9 @@ function banterLineCard(){
       }
       return n;
     })];
+    // Safety net: force the line's final point to match the verified total. Cheap defence
+    // against any future date-math edge case — what the legend says is what the chart shows.
+    if(series.length) series[series.length-1] = totals[uid];
     return {
       name: p.name.split(" ")[0], me: uid===ME.id, final: totals[uid],
       valLabel: `❤️ ${totals[uid]}`, series
