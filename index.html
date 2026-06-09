@@ -634,10 +634,11 @@ const CURRENCIES = [
   ["JPY","¥ Japanese yen"],  ["KRW","₩ South Korean won"], ["INR","₹ Indian rupee"],
   ["GEL","₾ Georgian lari"], ["ZAR","R South African rand"],["MAD","DH Moroccan dirham"]
 ];
-// 💬 Banter podium. Target ratio = ~10% of a top player's total score.
-//    A typical top player scores ~210 pts from match picks + ~25 from Extras = ~235 base,
-//    so banter top ≈ 20 pts puts the Banter King at ~8% — meaningful, never league-deciding.
-const BANTER_BONUS=[20,12,6]; // 🥇+20 🥈+12 🥉+6 (ranked by ❤️ likes, must have ≥1 like)
+// 💬 Banter scoring: dead simple. Each ❤️ like you receive on a banter post = +1 point.
+//    That's it. No podium bonus, no thresholds, no "you need to be top 3" complexity.
+//    Get likes → get points. The "Banter race" chart's y-axis IS your point contribution.
+//    A typical top banterer gets ~15–30 likes = ~15–30 points ≈ 8–12% of a top player's total.
+const BANTER_PER_LIKE = 1;
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
 function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
@@ -1145,7 +1146,19 @@ function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.stat
 // 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+15 🥈+10 🥉+5).
 // Ranked by ❤️ likes; you must have at least one like to place (so nobody wins it just by existing).
 function banterRank(uid){ const ranked=topBanter().filter(x=>x.likes>0); return ranked.findIndex(x=>x.user===uid); }
-function banterBonus(uid){ const i=banterRank(uid); return (i>=0 && i<BANTER_BONUS.length) ? BANTER_BONUS[i] : 0; }
+// 💬 Banter score = exactly the number of ❤️ likes this user has received on their
+// posts. 1 like = 1 point, no podium thresholds. Counted from DB.likes via the
+// commentId→authorId mapping so admin-author posts and orphaned-comment likes
+// (deleted comments) don't accidentally count.
+function banterBonus(uid){
+  if(!uid) return 0;
+  let n = 0;
+  const likes = DB.likes||[], comments = DB.comments||[];
+  const authorMap = Object.create(null);
+  comments.forEach(c=>{ authorMap[c.id] = c.user; });
+  for(const l of likes){ if(authorMap[l.comment] === uid) n += BANTER_PER_LIKE; }
+  return n;
+}
 
 function scoreFor(profileId){
   const s=DB.settings; let pts=0;
@@ -1190,7 +1203,7 @@ function scoreFor(profileId){
   if(fav){ DB.matches.forEach(m=>{ if(m.status!=="finished")return; if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; }); }
   // half-time re-pick penalty
   pts -= REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
-  // 💬 banter bonus: top-3 funniest (by ❤️ likes) earn 🥇+BANTER_BONUS[0] 🥈+BANTER_BONUS[1] 🥉+BANTER_BONUS[2]
+  // 💬 banter bonus: every ❤️ like received = +1 pt (1-to-1, no podium thresholds)
   pts += banterBonus(profileId);
   return {pts};
 }
@@ -1778,7 +1791,7 @@ function heroLeaderboard(){
   let banter;
   if(tb.length){
     const brows=tb.map((r,i)=>{const p=profileById(r.user); if(!p)return''; const medal=i===0?'🥇':i===1?'🥈':'🥉';
-      const bonus=r.likes>0?`<span class="bbonus">+${BANTER_BONUS[i]}</span>`:'';
+      const bonus=r.likes>0?`<span class="bbonus">+${r.likes} pts</span>`:'';
       return `<div class="hlb-row ${r.user===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter <span class="tiny muted">· bonus pts</span></h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
   } else {
@@ -1864,14 +1877,35 @@ function matchPtsAsOf(uid, cutoff){
 }
 // generic line chart — always draws the axes/grid; lines only appear once there are ≥2 points.
 // labels:[strings]  mem:[{name,me,series:[nums],final}]  emptyMsg shown inside the empty frame.
+// 📈 Animated SVG line chart. The lines "draw" themselves with a stroke-dashoffset
+// animation, the leader gets a pulsing crown 👑, every endpoint dot has a soft glow,
+// and the "me" line is thicker + brighter so you can always pick yourself out of the
+// crowd at a glance. All animation is pure SVG — no JS frame loop, no perf cost.
 function lineChartSVG(labels, mem, emptyMsg){
-  const W=320,H=185,padL=22,padR=10,padT=12,padB=24;
+  const W=320,H=185,padL=22,padR=10,padT=14,padB=24;
   const hasData = labels.length>=2 && mem.length>0;
   const allv = mem.flatMap(m=>m.series);
   const yMax=Math.max(4, ...(allv.length?allv:[0]));      // default 0–4 scale on an empty board
   const yMin=Math.min(0, ...(allv.length?allv:[0]));
   const x=i=>padL+(labels.length<=1?(W-padL-padR)/2:i*(W-padL-padR)/(labels.length-1));
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
+  // 🎨 SVG defs: glow filter (soft light around dots/lines) + reusable styles + line-draw animation
+  // Every chart instance gets a unique id namespace so multiple SVGs on the page don't collide.
+  const uid = "lc"+Math.random().toString(36).slice(2,8);
+  const defs = `<defs>
+    <filter id="${uid}-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .${uid}-line{stroke-dasharray:1000;stroke-dashoffset:1000;animation:${uid}-draw 1.4s ease-out forwards}
+      .${uid}-dot{opacity:0;animation:${uid}-pop .35s ease-out forwards;animation-delay:1.2s}
+      .${uid}-leader{animation:${uid}-pulse 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+      @keyframes ${uid}-draw{to{stroke-dashoffset:0}}
+      @keyframes ${uid}-pop{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:scale(1)}}
+      @keyframes ${uid}-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+    </style>
+  </defs>`;
   let grid='';
   for(let t=0;t<=3;t++){ const val=yMin+(yMax-yMin)*t/3; const yy=y(val);
     grid+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" style="stroke:var(--line);stroke-width:.5"/><text x="${padL-4}" y="${(yy+3).toFixed(1)}" text-anchor="end" style="fill:var(--muted);font-size:8px">${Math.round(val)}</text>`; }
@@ -1881,14 +1915,30 @@ function lineChartSVG(labels, mem, emptyMsg){
     const step=Math.ceil(labels.length/6);
     labels.forEach((c,i)=>{ if(!c) return; if(i%step!==0 && i!==labels.length-1) return;
       body+=`<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="middle" style="fill:var(--muted);font-size:8px">${escapeHtml(c)}</text>`; });
-    body+=mem.map((m,idx)=>{ const me=m.me; const col=me?'#ffffff':LINE_PAL[idx%LINE_PAL.length];
-      const pts=m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-      const ex=x(labels.length-1), ey=y(m.series[m.series.length-1]);
-      return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${me?3:2}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.9}"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${me?3.5:2.5}" fill="${col}"/>`; }).join("");
+    body+=mem.map((m,idx)=>{
+      const me = m.me;
+      const col = me ? '#ffffff' : LINE_PAL[idx%LINE_PAL.length];
+      const pts = m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      const ex = x(labels.length-1), ey = y(m.series[m.series.length-1]);
+      const dotR = me ? 4 : 3;
+      const lineW = me ? 3 : 2;
+      const isLeader = idx===0;
+      const delay = (idx*0.12).toFixed(2);
+      const dotClass = `${uid}-dot${isLeader?' '+uid+'-leader':''}`;
+      // Subtle gradient fill under the line for a richer feel — only for the leader and "me"
+      let area = '';
+      if(me || isLeader){
+        const areaPts = pts + ` ${x(labels.length-1).toFixed(1)},${y(yMin).toFixed(1)} ${x(0).toFixed(1)},${y(yMin).toFixed(1)}`;
+        area = `<polygon points="${areaPts}" fill="${col}" opacity=".10" class="${uid}-line" style="stroke:none;animation-delay:${delay}s"/>`;
+      }
+      return area + `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" class="${uid}-line" style="animation-delay:${delay}s;filter:url(#${uid}-glow)"/>`
+        + `<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${dotR}" fill="${col}" class="${dotClass}" style="animation-delay:${(+delay+1.2).toFixed(2)}s${isLeader?', '+(+delay+1.6).toFixed(2)+'s':''};filter:url(#${uid}-glow)"/>`
+        + (isLeader ? `<text x="${ex.toFixed(1)}" y="${(ey-7).toFixed(1)}" text-anchor="middle" style="font-size:11px" class="${uid}-dot" style="animation-delay:${(+delay+1.4).toFixed(2)}s">👑</text>` : '');
+    }).join("");
   } else {
     body+=`<text x="${(W/2).toFixed(1)}" y="${(padT+(H-padT-padB)/2+3).toFixed(1)}" text-anchor="middle" style="fill:var(--muted);font-size:10px">${escapeHtml(emptyMsg)}</text>`;
   }
-  return `<div class="linechart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="line chart">${grid}${body}</svg></div>`;
+  return `<div class="linechart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="line chart">${defs}${grid}${body}</svg></div>`;
 }
 function lcLegend(mem){
   if(!mem.length) return '';
@@ -1914,18 +1964,42 @@ function pointsLineCard(){
 }
 // Banter progression — cumulative ❤️ likes received, by day
 function banterLineCard(){
-  const likes=DB.likes||[];
-  const authorOf=id=>{ const c=DB.comments.find(x=>x.id===id); return c?c.user:null; };
-  const days=[...new Set(likes.map(l=>dateKey(l.created)))].sort();
-  const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
-  let mem=leagueMembers(LG).map(p=>({name:p.name.split(" ")[0], me:p.id===ME.id,
-    series:[0, ...cps.map(c=>likes.filter(l=>authorOf(l.comment)===p.id && new Date(l.created).getTime()<=c.cut).length)]}));
-  mem.forEach(m=>{ m.final=m.series[m.series.length-1]; m.valLabel=`❤️ ${m.final}`; });
-  mem=mem.filter(m=>m.final>0).sort((a,b)=> b.final-a.final || a.name.localeCompare(b.name)).slice(0,10);
-  const labels=days.length ? ['', ...days.map(d=>{const a=d.split("-");return (+a[1])+"/"+(+a[2]);})] : [];
-  const svg=lineChartSVG(labels, mem, 'Lines appear once likes roll in 💬');
+  // 💬 Banter race: cumulative ❤️ likes received by each banter author, by day.
+  // Aggregate FROM the like events (not from the current league member list) so anyone
+  // who's ever received a like in this league shows up — including authors whose comments
+  // are still scored even if they were later removed from the league roster. Build a
+  // commentId→authorId index once for O(1) lookup so the chart is also a lot quicker.
+  const likes    = DB.likes    || [];
+  const comments = DB.comments || [];
+  const author = Object.create(null);
+  comments.forEach(c => { author[c.id] = c.user; });
+  const days = [...new Set(likes.map(l=>dateKey(l.created)))].sort();
+  const cps  = days.map(d=>({d, cut:new Date(d+"T23:59:59").getTime()}));
+  // Final totals per user, computed from likes
+  const totals = Object.create(null);
+  likes.forEach(l => { const u = author[l.comment]; if(u) totals[u] = (totals[u]||0) + 1; });
+  let mem = Object.keys(totals).map(uid => {
+    const p = profileById(uid);
+    if(!p || p.is_admin) return null;          // never plot admins
+    const series = [0, ...cps.map(c=>{
+      let n = 0;
+      for(const l of likes){
+        if(author[l.comment]!==uid) continue;
+        if(new Date(l.created).getTime() <= c.cut) n++;
+      }
+      return n;
+    })];
+    return {
+      name: p.name.split(" ")[0], me: uid===ME.id, final: totals[uid],
+      valLabel: `❤️ ${totals[uid]}`, series
+    };
+  }).filter(Boolean);
+  mem.sort((a,b) => b.final-a.final || a.name.localeCompare(b.name));
+  mem = mem.slice(0,10);
+  const labels = days.length ? ['', ...days.map(d=>{const a=d.split("-");return (+a[1])+"/"+(+a[2]);})] : [];
+  const svg = lineChartSVG(labels, mem, 'Lines appear once likes roll in 💬');
   const legend = (labels.length>=2 && mem.length) ? lcLegend(mem) : '';
-  return lcCard('💬 Banter race', 'Cumulative ❤️ likes · top 3 bank bonus pts', 'banter', 'League →', svg, legend);
+  return lcCard('💬 Banter race', 'Cumulative ❤️ likes received · 1 like = 1 point', 'banter', 'Banter board →', svg, legend);
 }
 function leagueCharts(){
   const lg=curLeague(); if(!lg) return '';
@@ -2231,7 +2305,7 @@ function viewBanter(){
   const tb=topBanter().filter(t=>t.likes>0);
   if(tb.length){
     html+=`<div class="card"><h3 style="font-size:15px">🏆 Top banter <span class="muted tiny">— most-liked in ${curLeague()?curLeague().name:'the league'} · top 3 bank bonus pts</span></h3>`+tb.slice(0,5).map((t,i)=>{const u=profileById(t.user);const medal=i===0?'👑':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
-      const bonus=i<BANTER_BONUS.length?`<span class="bbonus">+${BANTER_BONUS[i]}</span>`:'';
+      const bonus=t.likes>0?`<span class="bbonus">+${t.likes} pts</span>`:'';
       return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">${bonus}❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
   }
   const naughty=DB.profiles.filter(isPlayer).map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
@@ -2270,7 +2344,7 @@ function banterBoard(){
 }
 function viewBanterBoard(){
   const rows=banterBoard();
-  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts. The top 3 funniest also bank bonus points toward the main standings: <b>🥇 +${BANTER_BONUS[0]} · 🥈 +${BANTER_BONUS[1]} · 🥉 +${BANTER_BONUS[2]}</b>.</div>${boardToggle()}</div>`;
+  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts. <b>Each ❤️ = +1 point</b> toward your main standings — no thresholds, no podium-only bonus. Get a like, get a point.</div>${boardToggle()}</div>`;
   if(!rows.length || rows.every(r=>r.likes===0&&r.posts===0)){
     html+=`<div class="empty"><div class="e">💬</div>No banter yet — open the 💬 Banter tab and get the trash talk going!</div>`;
     return html;
@@ -3639,7 +3713,7 @@ function rulesHTML(){
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
     ${row("🔁",`<b>Half-time re-picks:</b> ${REPICK_MAX}× all tournament, change a pick mid-match for <b>−${REPICK_COST} pts</b> each.`)}
-    ${row("💬",`<b>Banter bonus:</b> 3 funniest people (most ❤️ likes on their posts) bank 🥇 <b>+${BANTER_BONUS[0]}</b> · 🥈 <b>+${BANTER_BONUS[1]}</b> · 🥉 <b>+${BANTER_BONUS[2]}</b>.`)}
+    ${row("💬",`<b>Banter bonus:</b> Every ❤️ like you receive on a banter post = <b>+1 point</b> toward your main standings. Get 20 likes → +20 pts. Simple.`)}
     ${row("🔥",`<b>Streaks &amp; badges</b> for bragging rights.`)}
 
     <h4>The money 💰</h4>
