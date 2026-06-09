@@ -491,6 +491,11 @@
   .pod.p3 .podbar{background:linear-gradient(180deg,#e6a86b,#c47f3d)}
   .podsc{font-family:'Fredoka';font-size:13px;margin-top:2px}
   .cdcard{background:linear-gradient(135deg,var(--pink),var(--purple))!important;border:none!important}
+  /* ⏱ Side-by-side countdown row (kickoff + round lock-in). Inherits .herogrid's
+     1-col mobile / 2-col desktop layout — just zero out the .card margin so the
+     grid gap controls spacing. */
+  .cdrow > .card{margin:0}
+  .cdrow{margin:10px 0}
   .cdbig{font-family:'Fredoka';font-size:30px;color:#fff;margin:2px 0;letter-spacing:.5px}
   .big2{font-family:'Fredoka';font-size:30px;color:var(--gold)}
   .badges span{cursor:default}
@@ -1936,29 +1941,41 @@ function viewPicks(){
   [1,2,3].forEach(n=>{ const ms=DB.matches.filter(m=>m.md===n); const picked=ms.filter(m=>mine[m.id]).length;
     segs.push(["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`, false]); });
   KO_ROUND_ORDER.forEach(stg=>{ segs.push([stg, KO_ROUND_LABEL[stg], !groupDone]); });
-  // Front-page composition: top-5 hero leaderboard → per-round picks tracker → charts.
-  // The picks tracker only renders for group rounds (KO rounds open later).
+  // Front-page composition (top to bottom):
+  //   hero leaderboard (top-5) → per-round picks tracker → league charts
+  //   → "Next kickoff" + "Round locks in" countdowns SIDE BY SIDE
+  //   → "Make your picks" info card (anchor for the Picks tab scroll)
+  //   → round-filter tab strip → list of picks
   let html=heroLeaderboard();
   if(isGroupRound) html += pickProgressCard(round);
   html += leagueCharts();
+  // ── Side-by-side countdowns: next kickoff | this round locks in ──
   const nm=nextMatch();
-  if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
-    html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
+  const nextCard = (function(){
+    if(!nm) return '';
+    const nh=teamById(nm.home),na=teamById(nm.away);
+    return `<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">⏱ NEXT KICKOFF</div>
       <div class="cdbig" data-tick="kickoff" data-cd="${nm.kickoff}">${countdown(nm.kickoff)||"KICKOFF!"}</div>
       <div class="small" style="color:#fff">${nh.flag} ${nh.name} <span style="opacity:.7">vs</span> ${na.name} ${na.flag}</div>
       <div class="tiny" style="color:#dfeaff;opacity:.85;margin-top:4px">🕐 ${fmtKick(nm.kickoff)} <span style="opacity:.7">· your local time</span></div></div>`;
-  }
-  // pick progress + round countdown (group rounds only — KO rounds get their own block below)
+  })();
+  const roundCard = (function(){
+    if(!isGroupRound) return '';
+    const rdc=roundCountdown(round), rdLocked=roundLocked(round);
+    return `<div class="card center cdcard ${rdLocked?'':'cdopen'}"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
+      <div class="cdbig" data-tick="round" data-md="${round}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+      <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
+  })();
+  if(nextCard || roundCard) html += `<div class="herogrid cdrow">${nextCard}${roundCard}</div>`;
+  // ── Anchor + "Make your picks" info card (this is where the Picks tab scrolls to) ──
   if(isGroupRound){
     const roundMatches=DB.matches.filter(m=>m.md===round);
     const pickedRound=roundMatches.filter(m=>hasPicked(m.id)).length;
-    const rdc=roundCountdown(round), rdLocked=roundLocked(round);
-    html+=`<div class="card"><h3>⚽ Make your picks</h3>
+    html+=`<div id="pickssec"></div><div class="card"><h3>⚽ Make your picks · Round ${round}</h3>
       <div class="small muted">Predict a scoreline for <b>every match in the round</b> (${DB.settings.pts_exact} pts spot-on, ${DB.settings.pts_result} for the right result). Pick <b>one match per round</b> as your ⭐ <b>Banker</b> for double points. <b>Edit freely until 30 min before the round's first kickoff</b> — then everything in that round freezes.</div>
-      <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>
-      <div class="card center cdcard ${rdLocked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
-        <div class="cdbig" data-tick="round" data-md="${round}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
-        <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
+      <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${roundMatches.length} for Round ${round}</div></div>`;
+  } else {
+    html+=`<div id="pickssec"></div>`;
   }
   // Tab strip — group rounds first, knockout rounds after (locked with 🔒 until group stage ends)
   html+=`<div class="seg seg-rounds">${segs.map(s=>{
@@ -3129,7 +3146,19 @@ function adminHeader(){
 
 function wire(){
   // nav
-  $$("[data-tab]").forEach(b=>b.onclick=()=>{VIEW=b.dataset.tab;render();window.scrollTo(0,0);});
+  $$("[data-tab]").forEach(b=>b.onclick=()=>{
+    const tab=b.dataset.tab;
+    VIEW=tab; render();
+    // 🖱️ For the Picks tab, scroll past the dashboard cards straight to the picks section.
+    // For every other tab, jump to the top of the page.
+    if(tab==="picks"){
+      const target=document.getElementById("pickssec");
+      if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
+      else window.scrollTo(0,0);
+    } else {
+      window.scrollTo(0,0);
+    }
+  });
   // hero leaderboard → jump to the right Board sub-tab
   $$("[data-goboard]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.goboard; VIEW="board"; render(); window.scrollTo(0,0); });
   // admin lock / unlock
