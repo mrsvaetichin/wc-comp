@@ -4092,13 +4092,26 @@ async function liveLoad(user){
   ALL.bracket  = (bracketPicks||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
+  // 🎩 Is this the dedicated admin account? Detect by the pseudo-email — survives
+  // race conditions (auth listener firing liveLoad before our adminUnlock upserts is_admin),
+  // and auto-corrects any stale is_admin=false row in the DB on every load.
+  const userEmail = (user.email||"").toLowerCase();
+  const isAdminAccount = userEmail === (pseudoEmail(ADMIN_USERNAME)||"").toLowerCase();
   if(!mine){
-    const isAdmin=ADMIN_EMAILS.includes((user.email||"").toLowerCase());
+    const isAdmin = isAdminAccount || ADMIN_EMAILS.includes(userEmail);
     mine={id:user.id,name:(user.email||"Player").split("@")[0],emoji:"🫵",email:user.email,is_admin:isAdmin};
     DB.profiles.push(mine);
     await sbUpsert("profiles",{id:user.id,email:user.email,display_name:mine.name,emoji:mine.emoji,is_admin:isAdmin,paid:false});
   }
   ME=mine;
+  // Locally force is_admin=true for the admin pseudo-email; also push a correction to the DB
+  // (fire-and-forget) if the stored row says false — this self-heals if the upsert in
+  // adminUnlock raced against the auth listener.
+  if(isAdminAccount){
+    ME.is_admin = true;
+    mine.is_admin = true;
+    if(supa){ try{ supa.from("profiles").upsert({id:user.id, is_admin:true, display_name:ADMIN_DISPLAY_NAME, emoji:ADMIN_EMOJI}); }catch(e){} }
+  }
   // 📊 Touch last_seen_at fire-and-forget on every load so admin can see active vs
   // inactive players. Also backfill signup_tz / signup_locale for any pre-existing profile
   // that hasn't been captured yet (these were added after some users had already signed up).
