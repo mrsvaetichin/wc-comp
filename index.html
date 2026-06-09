@@ -2973,9 +2973,40 @@ function openResetPasswordModal(uid, name){
     if(np.length<6){ toast("Password must be 6+ characters"); return; }
     const btn=$("#dorpw",root); btn.disabled=true; btn.textContent="Resetting…";
     try{
-      const {data:sess}=await supa.auth.getSession();
-      const token=sess && sess.session && sess.session.access_token;
-      if(!token){ toast("Sign in as admin first"); btn.disabled=false; btn.textContent="🔑 Reset password"; return; }
+      if(MODE!=="live" || !supa){
+        toast("Password reset needs live mode (Supabase) — not available in demo");
+        btn.disabled=false; btn.textContent="🔑 Reset password"; return;
+      }
+      // Pull the admin's session JWT. Try a few fallbacks because Supabase sometimes
+      // returns null on the very first getSession() right after sign-in, even when a
+      // valid session exists in localStorage.
+      let token = null;
+      try{
+        const g = await supa.auth.getSession();
+        token = g && g.data && g.data.session && g.data.session.access_token;
+      }catch(e){ console.warn("getSession failed", e); }
+      if(!token){
+        // Try a refresh — picks up sessions cached in localStorage even when getSession returns null.
+        try{
+          const r = await supa.auth.refreshSession();
+          token = r && r.data && r.data.session && r.data.session.access_token;
+        }catch(e){ console.warn("refreshSession failed", e); }
+      }
+      if(!token){
+        // Last resort: getUser triggers an internal session check; if it works we have a session somewhere.
+        try{
+          const u = await supa.auth.getUser();
+          if(u && u.data && u.data.user){
+            const g2 = await supa.auth.getSession();
+            token = g2 && g2.data && g2.data.session && g2.data.session.access_token;
+          }
+        }catch(e){ console.warn("getUser fallback failed", e); }
+      }
+      if(!token){
+        console.error("No JWT — supa client has no live session");
+        toast("Admin session expired — sign out + sign back in at /admin, then try again");
+        btn.disabled=false; btn.textContent="🔑 Reset password"; return;
+      }
       const r=await fetch("/api/admin-reset-password", {
         method:"POST",
         headers:{ "Authorization":"Bearer "+token, "Content-Type":"application/json" },
@@ -2987,6 +3018,7 @@ function openResetPasswordModal(uid, name){
       } else {
         let errMsg = r.status + " " + r.statusText;
         try{ const j=await r.json(); if(j && j.error) errMsg=j.error; }catch(e){}
+        console.error("Reset failed", r.status, errMsg);
         toast("Reset failed: "+errMsg);
         btn.disabled=false; btn.textContent="🔑 Reset password";
       }
