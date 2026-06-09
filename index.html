@@ -87,7 +87,9 @@
   .brandrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
   /* ----- unified top bar: stacks on mobile, one row on desktop ----- */
   .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .tb-brand{display:flex;align-items:center;gap:7px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px}
+  .tb-brand{display:flex;align-items:center;gap:7px;font-family:'Fredoka';font-weight:700;font-size:20px;letter-spacing:.5px;cursor:pointer;transition:filter .15s, transform .08s;background:none;border:none;padding:0;color:inherit;font:inherit}
+  .tb-brand:hover{filter:brightness(1.12)}
+  .tb-brand:active{transform:scale(.98)}
   .tb-brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
   .tb-meta{margin-left:auto;display:flex;align-items:center;gap:8px}
   .tb-pill{display:none}
@@ -1720,7 +1722,7 @@ function header(){
     <div class="swstripe"></div>
     <div class="hwrap">
       <div class="topbar">
-        <div class="tb-brand"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></div>
+        <button class="tb-brand" data-home title="Back to dashboard"><span class="ball">⚽</span><b>${DB.settings.app_title||"THE MASK"}</b><span class="mascot" title="Do the Gyökeres!">🦇</span></button>
         <button class="tb-league" data-leagues title="Switch / manage leagues">
           <span class="tbl-ic">🏆</span>
           <span class="tbl-name"><span class="tbl-label">LEAGUE</span><span class="tbl-title">${lg?lg.name:"Pick a league"}</span></span>
@@ -3275,7 +3277,7 @@ function render(){
 // because admin work is server-side and signing out doesn't lose anything.
 function adminHeader(){
   return `<header class="top adminhdr"><div class="brandrow"><div class="topbar">
-    <div class="tb-brand">${ADMIN_EMOJI} <b>admin</b></div>
+    <button class="tb-brand" data-home title="Back to Overview">${ADMIN_EMOJI} <b>admin</b></button>
     <div class="tb-meta">
       <span class="badge-admin">ADMIN MODE</span>
       <button class="lockbtn" data-rules title="Pool rules">ℹ️</button>
@@ -3285,6 +3287,13 @@ function adminHeader(){
 }
 
 function wire(){
+  // 🏠 Click the brand/logo in the top bar → back to dashboard.
+  // For players this is the Picks dashboard; for the admin account it's the Overview tab.
+  $$("[data-home]").forEach(b=>b.onclick=()=>{
+    if(ME && ME.is_admin){ adminTab="overview"; adminFocusUser=null; adminFocusLeague=null; }
+    else { VIEW="picks"; }
+    render(); window.scrollTo({top:0, behavior:"smooth"});
+  });
   // nav
   $$("[data-tab]").forEach(b=>b.onclick=()=>{
     const tab=b.dataset.tab;
