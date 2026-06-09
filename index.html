@@ -1709,7 +1709,6 @@ function header(){
           ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
           <button class="lockbtn" data-rules title="How to play">ℹ️</button>
           <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
-          <button class="lockbtn" data-adminlock title="Admin">${ADMIN_UNLOCKED?'🛠️':'🔒'}</button>
           <button class="lockbtn" data-signout title="Sign out">🚪</button>
           <button class="avatar avbtn" data-profile title="Your profile">${avatarInner(ME)}</button>
         </div>
@@ -3134,6 +3133,8 @@ function wire(){
   // hero leaderboard → jump to the right Board sub-tab
   $$("[data-goboard]").forEach(b=>b.onclick=()=>{ boardTab=b.dataset.goboard; VIEW="board"; render(); window.scrollTo(0,0); });
   // admin lock / unlock
+  // Admin access used to be a 🔒 button in the top bar — now it's strictly the /admin URL.
+  // (Handler kept for safety in case any older view still renders a [data-adminlock] element.)
   const lk=$("[data-adminlock]"); if(lk) lk.onclick=()=>{ if(ADMIN_UNLOCKED){VIEW="admin";render();window.scrollTo(0,0);} else promptAdmin(); };
   const dl=$("[data-dolock]"); if(dl) dl.onclick=async()=>{ await adminLock(); toast("Out of admin mode 🚪"); VIEW="picks"; render(); };
   // 🚪 One-click admin logout. No confirm modal — admin work is server-side and signing out
