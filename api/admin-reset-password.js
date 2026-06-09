@@ -45,18 +45,31 @@ export default async function handler(req, res){
     return res.status(500).json({error:'Could not verify caller: ' + e.message});
   }
 
-  // ── 2. Verify the caller has is_admin=true in the profiles table ────────
-  try{
-    const profRes = await fetch(`${url}/rest/v1/profiles?id=eq.${encodeURIComponent(caller.id)}&select=is_admin`, {
-      headers: { apikey: anonKey, Authorization: `Bearer ${token}` }
+  // ── 2. Authorize the caller as an admin. Two paths, in order:
+  //       a) Their auth email is the dedicated admin pseudo-email (the canonical signal —
+  //          Supabase auth is the source of truth, no DB race can fool this).
+  //       b) Failing that, their profiles row has is_admin=true (legacy / safety net).
+  //       Either path passes. If both fail → 403.
+  // ────────────────────────────────────────────────────────────────────────
+  const ADMIN_EMAIL = 'admin@themask.local';
+  const callerEmail = String(caller.email || '').toLowerCase();
+  let isAdmin = (callerEmail === ADMIN_EMAIL);
+
+  if(!isAdmin){
+    try{
+      const profRes = await fetch(`${url}/rest/v1/profiles?id=eq.${encodeURIComponent(caller.id)}&select=is_admin`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${token}` }
+      });
+      if(profRes.ok){
+        const rows = await profRes.json();
+        if(rows[0] && rows[0].is_admin) isAdmin = true;
+      }
+    } catch(e){ console.error('profile lookup', e); }
+  }
+  if(!isAdmin){
+    return res.status(403).json({
+      error: `Caller is not an admin. Auth email: ${callerEmail || '(none)'} · Expected: ${ADMIN_EMAIL}. Sign in at /admin first.`
     });
-    if(!profRes.ok) return res.status(500).json({error:'Could not load caller profile'});
-    const rows = await profRes.json();
-    if(!rows[0] || !rows[0].is_admin){
-      return res.status(403).json({error:'Caller is not an admin'});
-    }
-  } catch(e){
-    return res.status(500).json({error:'Profile check failed: ' + e.message});
   }
 
   // ── 3. Read and validate the payload ─────────────────────────────────────
