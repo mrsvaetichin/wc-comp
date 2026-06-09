@@ -70,8 +70,26 @@ Your files sit at the repo root, so there's no Root Directory to set.
   no build command. Deploy.
 - **CLI:** run `vercel` in the folder, then `vercel --prod`.
 
-The included `vercel.json` serves the app and routes `/admin` correctly. No auth redirect URLs
-to configure — anonymous login doesn't need them.
+The included `vercel.json` serves the app and routes `/admin` correctly. The `api/` folder
+gets picked up automatically by Vercel as serverless functions.
+
+### Step 4b — Wire the admin password-reset function (Vercel env vars)
+The admin → "🔑 Reset password" button calls a tiny serverless function at
+`/api/admin-reset-password`. It needs three environment variables so it can talk to Supabase
+securely (the service-role key gives full DB access — **never** put it in `index.html`):
+
+1. Supabase dashboard → **Project Settings → API** → copy:
+   - **Project URL** (e.g. `https://xxxxx.supabase.co`)
+   - **anon public** key (the one that's already in `index.html`)
+   - **service_role secret** (the powerful one — keep it private)
+2. Vercel dashboard → your project → **Settings → Environment Variables** → add these three
+   (apply to Production + Preview + Development):
+   - `SUPABASE_URL`             → the Project URL
+   - `SUPABASE_ANON_KEY`        → the anon key
+   - `SUPABASE_SERVICE_ROLE_KEY`→ the service_role secret
+3. Redeploy (Vercel → **Deployments → ⋯ → Redeploy**, or `vercel --prod` again).
+
+That's it — admin can now reset any player's password from the user-detail page.
 
 ### Step 5 — Invite your friends
 Send them the link. Each person types a **name**, picks an emoji badge, taps **Join the pool**,
