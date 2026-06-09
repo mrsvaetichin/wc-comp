@@ -496,7 +496,15 @@
      grid gap controls spacing. */
   .cdrow > .card{margin:0}
   .cdrow{margin:10px 0}
-  .cdbig{font-family:'Fredoka';font-size:30px;color:#fff;margin:2px 0;letter-spacing:.5px}
+  /* 🕐 Live countdown: tabular-nums keeps digits the same width, so the layout
+     doesn't shift every second when seconds tick over. */
+  .cdbig{font-family:'Fredoka';font-size:30px;color:#fff;margin:2px 0;letter-spacing:.5px;
+    font-variant-numeric:tabular-nums;font-feature-settings:'tnum';
+    display:inline-flex;align-items:center;gap:8px}
+  /* Subtle live indicator inside countdown cards — a soft pulsing green dot in the corner */
+  .cdcard{position:relative}
+  .cdcard::before{content:"";position:absolute;top:10px;right:12px;width:7px;height:7px;border-radius:50%;background:#3ddc84;box-shadow:0 0 0 0 rgba(61,220,132,.7);animation:livepulse 1.6s ease-out infinite}
+  @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.6)}70%{box-shadow:0 0 0 10px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
   .big2{font-family:'Fredoka';font-size:30px;color:var(--gold)}
   .badges span{cursor:default}
   /* robust match layout (teams row + centered score inputs) — mobile-safe */
@@ -1034,9 +1042,7 @@ const ROUND_LOCK_BEFORE_MS = 30*60*1000;
 function roundDeadline(md){ const ms=DB.matches.filter(x=>x.md===md); if(!ms.length) return null;
   const earliest=Math.min(...ms.map(x=>new Date(x.kickoff).getTime())); return earliest - ROUND_LOCK_BEFORE_MS; }
 function roundLocked(md){ const dl=roundDeadline(md); return dl==null ? false : Date.now()>=dl; }
-function roundCountdown(md){ const dl=roundDeadline(md); if(dl==null) return null; const ms=dl-Date.now(); if(ms<=0) return null;
-  const d=Math.floor(ms/86400000), h=Math.floor((ms%86400000)/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000);
-  if(d>0) return `${d}d ${h}h ${m}m`; if(h>0) return `${h}h ${m}m`; if(m>0) return `${m}m ${s}s`; return `${s}s`; }
+function roundCountdown(md){ const dl=roundDeadline(md); if(dl==null) return null; return fmtCountdown(dl-Date.now()); }
 
 /* ============================================================================
    🏆  KNOCKOUT BRACKET — a 32-team seeded tree fed by your group-stage picks.
@@ -1242,9 +1248,7 @@ const EXTRAS_LOCK_BEFORE_MS = 60*60*1000;
 function tournamentStart(){ const ks=DB.matches.map(m=>new Date(m.kickoff).getTime()).filter(t=>!isNaN(t)); return ks.length?Math.min(...ks):null; }
 function extrasDeadline(){ const t=tournamentStart(); return t==null?null:t-EXTRAS_LOCK_BEFORE_MS; }
 function extrasLocked(){ const dl=extrasDeadline(); return dl!=null && Date.now()>=dl; }
-function extrasCountdown(){ const dl=extrasDeadline(); if(dl==null) return null; const ms=dl-Date.now(); if(ms<=0) return null;
-  const d=Math.floor(ms/86400000), h=Math.floor((ms%86400000)/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000);
-  if(d>0) return `${d}d ${h}h ${m}m`; if(h>0) return `${h}h ${m}m`; if(m>0) return `${m}m ${s}s`; return `${s}s`; }
+function extrasCountdown(){ const dl=extrasDeadline(); if(dl==null) return null; return fmtCountdown(dl-Date.now()); }
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
 function koActual(){ const k=DB.settings.ko||{}; return {r16:k.r16||[],qf:k.qf||[],sf:k.sf||[],final:k.final||[]}; }
@@ -1658,16 +1662,22 @@ function fmtKick(iso){
   try{ return d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})+" "+tzShort(d); }
   catch(e){ return d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
 }
-function countdown(iso){
-  const ms=new Date(iso)-Date.now();
+// 🕐 Format a remaining-milliseconds value into a live countdown string.
+// Always includes seconds (the live ticker updates every 1s), and zero-pads each
+// unit-after-the-largest so the text doesn't visually jitter as digits change.
+function fmtCountdown(ms){
   if(ms<=0) return null;
-  const dys=Math.floor(ms/864e5), hrs=Math.floor(ms%864e5/36e5);
-  const mins=Math.floor(ms%36e5/6e4), secs=Math.floor(ms%6e4/1000);
-  if(dys>0) return `${dys}d ${hrs}h ${mins}m`;
-  if(hrs>0) return `${hrs}h ${mins}m ${secs}s`;
-  if(mins>0) return `${mins}m ${secs}s`;
-  return `${secs}s`;
+  const d=Math.floor(ms/864e5);
+  const h=Math.floor((ms%864e5)/36e5);
+  const m=Math.floor((ms%36e5)/6e4);
+  const s=Math.floor((ms%6e4)/1000);
+  const pad=n=>String(n).padStart(2,'0');
+  if(d>0) return `${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+  if(h>0) return `${h}h ${pad(m)}m ${pad(s)}s`;
+  if(m>0) return `${m}m ${pad(s)}s`;
+  return `${s}s`;
 }
+function countdown(iso){ return fmtCountdown(new Date(iso)-Date.now()); }
 // 🕐 Live ticker — re-evaluates every countdown element on the page once per second.
 // Tag a span/div with data-tick=… so its text refreshes without a full re-render (keeps focus, inputs, scroll).
 //   data-tick="kickoff" data-cd="<iso>"             → countdown(iso)
