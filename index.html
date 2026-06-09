@@ -121,6 +121,19 @@
   .pill.coins .v{color:var(--gold)}
   .pill.rank .v{color:var(--cyan)}
 
+  /* 📝 Per-round picks progress (front-page card showing who's submitted) */
+  .pickprog .ppsummary{margin:6px 0 10px}
+  .pickprog .ppdots{display:flex;flex-wrap:wrap;gap:8px}
+  .pickprog .ppdot{position:relative;display:flex;flex-direction:column;align-items:center;width:54px;cursor:default}
+  .pickprog .ppdot .avatar{border-width:2px}
+  .pickprog .ppdot.done .avatar{border-color:var(--lime);box-shadow:0 0 0 3px rgba(198,255,61,.18)}
+  .pickprog .ppdot.partial .avatar{border-color:var(--gold);box-shadow:0 0 0 3px rgba(255,208,46,.18)}
+  .pickprog .ppdot.none .avatar{border-color:var(--line);opacity:.6}
+  .pickprog .ppdot .ppstate{position:absolute;top:-3px;right:6px;width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:800;display:grid;place-items:center;background:var(--card2);border:1px solid var(--line);font-family:'Fredoka'}
+  .pickprog .ppdot.done    .ppstate{background:var(--lime);color:#0c2a08;border-color:var(--lime)}
+  .pickprog .ppdot.partial .ppstate{background:var(--gold);color:#2a1a00;border-color:var(--gold)}
+  .pickprog .ppdot.none    .ppstate{color:var(--muted)}
+  .pickprog .ppdot .ppname{font-size:11px;color:var(--muted);font-weight:600;margin-top:4px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
   /* 🛠️ Admin CRM — KPI cards, sortable tables, activity feed, search */
   .kpigrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0 16px}
   .kpicard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px;text-align:center;position:relative}
@@ -1726,11 +1739,13 @@ function heroLeaderboard(){
   const lg=curLeague(); if(!lg) return '';
   const lb=leaderboard(); if(!lb.length) return '';
   const me=lb.find(x=>x.id===ME.id);
-  // ── Points standings ──
-  let rows=lb.slice(0,3).map(r=>{const medal=r.rank===1?'🥇':r.rank===2?'🥈':'🥉';
-    return `<div class="hlb-row ${r.id===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}</span><span class="hlb-pts">${r.pts} pts</span></div>`;}).join("");
-  if(me && me.rank>3) rows+=`<div class="hlb-row me you"><span class="hlb-pos">${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
-  const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings</h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
+  // ── Points standings: top 5 + a "you" row if I'm 6th or lower ──
+  const medalFor=(rank)=>rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">#${rank}</span>`;
+  let rows=lb.slice(0,5).map(r=>
+    `<div class="hlb-row ${r.id===ME.id?'me':''}"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${r.pts} pts</span></div>`
+  ).join("");
+  if(me && me.rank>5) rows+=`<div class="hlb-row me you"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
+  const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings <span class="tiny muted">(top 5)</span></h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
   // ── Banter leaderboard ──
   const tb=topBanter().filter(x=>x.likes>0||x.posts>0).slice(0,3);
   let banter;
@@ -1754,6 +1769,51 @@ function barChart(items, fillClass){
   }).join("")+`</div>`;
 }
 function medalFor(rank){ return rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">${rank}</span>`; }
+
+// 📝 Per-round picks progress: a quick "X of Y have submitted" card with one
+// dot per member, color-coded by status (✅ all in · 🟡 partial · ⚪ nothing yet).
+// Hover/tap any dot to see the player's name + count. Helps the commissioner (and
+// everyone) see at a glance who still owes picks before the round locks.
+function pickProgressCard(round){
+  const lg = curLeague(); if(!lg) return '';
+  const members = leagueMembers(lg.id);
+  if(!members.length) return '';
+  const roundMatches = DB.matches.filter(m=>m.md===round);
+  const total = roundMatches.length;
+  // For each member: how many of the round's matches do they have a saved pick for (any league)?
+  // Use the league-scoped predictions DB.predictions (already scopeLeague'd).
+  const memberStatus = members.map(p=>{
+    const picks = DB.predictions.filter(x=>x.user===p.id && !x.advance && !x.ko &&
+      roundMatches.some(m=>m.id===x.match)).length;
+    return {p, picks};
+  }).sort((a,b)=> b.picks-a.picks || a.p.name.localeCompare(b.p.name));
+  const allInCount = memberStatus.filter(x=>x.picks>=total).length;
+  const partialCount = memberStatus.filter(x=>x.picks>0 && x.picks<total).length;
+  const noneCount = memberStatus.filter(x=>x.picks===0).length;
+  const rdLocked = roundLocked(round);
+  const dots = memberStatus.map(({p,picks})=>{
+    const state = picks>=total ? 'done' : picks>0 ? 'partial' : 'none';
+    const tip = `${p.name} — ${picks}/${total} pick${total===1?'':'s'}`;
+    return `<div class="ppdot ${state}" title="${escapeHtml(tip)}">
+      <div class="avatar" style="width:34px;height:34px;font-size:16px">${avatarInner(p)}</div>
+      <span class="ppstate">${state==='done'?'✓':state==='partial'?picks:'·'}</span>
+      <span class="ppname">${escapeHtml(p.name.split(' ')[0])}</span>
+    </div>`;
+  }).join("");
+  return `<div class="card pickprog">
+    <div class="spread">
+      <h3 style="font-size:16px;margin:0">📝 Round ${round} picks · ${escapeHtml(lg.name)}</h3>
+      <span class="tiny" style="color:${rdLocked?'var(--gold)':'var(--cyan)'};font-weight:700">${rdLocked?'🔒 LOCKED':`${allInCount}/${members.length} in`}</span>
+    </div>
+    <div class="ppsummary tiny muted">
+      ${total} match${total===1?'':'es'} this round ·
+      <span style="color:var(--lime)">✓ ${allInCount} all in</span> ·
+      <span style="color:var(--gold)">${partialCount} partial</span> ·
+      <span style="color:var(--muted)">⚪ ${noneCount} nothing yet</span>
+    </div>
+    <div class="ppdots">${dots}</div>
+  </div>`;
+}
 
 // ── Points progression line chart (each player a line, cumulative match points by matchday) ──
 const LINE_PAL=['#5cc8ff','#c6ff3d','#ff8a3d','#3ddc84','#b388ff','#ff5c8a','#4dd0e1','#ffd02e','#9fa8da','#80cbc4'];
@@ -1877,7 +1937,11 @@ function viewPicks(){
   [1,2,3].forEach(n=>{ const ms=DB.matches.filter(m=>m.md===n); const picked=ms.filter(m=>mine[m.id]).length;
     segs.push(["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`, false]); });
   KO_ROUND_ORDER.forEach(stg=>{ segs.push([stg, KO_ROUND_LABEL[stg], !groupDone]); });
-  let html=heroLeaderboard()+leagueCharts();
+  // Front-page composition: top-5 hero leaderboard → per-round picks tracker → charts.
+  // The picks tracker only renders for group rounds (KO rounds open later).
+  let html=heroLeaderboard();
+  if(isGroupRound) html += pickProgressCard(round);
+  html += leagueCharts();
   const nm=nextMatch();
   if(nm){ const nh=teamById(nm.home),na=teamById(nm.away);
     html+=`<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1px">⏱ NEXT KICKOFF</div>
