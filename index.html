@@ -3611,7 +3611,14 @@ async function logout(){
 function openProfile(){
   const root=$("#modal-root");
   let pendAvatar=ME.avatar||null, pendEmoji=ME.emoji||"🙂", pendName=ME.name||"", pendTeam=ME.team||null;
-  const locked=!!ME.team; // supported team is locked once chosen
+  // 🔓 Team picker stays UNLOCKED until the first match of the tournament finishes.
+  // Reasoning: (a) people change their mind during the prep window, (b) the schema
+  // pot-position fix re-ordered B/F/I/K teams, so anyone who picked Switzerland /
+  // Sweden / Norway / Iraq / Uzbekistan / Colombia / DR Congo / Bosnia before the
+  // fix has their fav_team pointing at the wrong team now — they need to re-pick.
+  // Once any match has been finalised, the pick is frozen for the tournament.
+  const anyMatchDone = (DB.matches||[]).some(m=>m.status==="finished");
+  const locked = !!ME.team && anyMatchDone;
   const draw=()=>{
     const ft=pendTeam?teamById(pendTeam):null;
     const shortId = (ME.id||"").length>10 ? (ME.id.slice(0,4)+"…"+ME.id.slice(-4)) : (ME.id||"—");
@@ -3663,7 +3670,7 @@ function openProfile(){
             <input id="pvname" value="${pendName.replace(/"/g,'&quot;')}" placeholder="Your name"/>
             <label class="fld" style="text-align:left">Or pick an emoji badge</label>
             <div class="emojipick">${EMOJIS.map(e=>`<button class="ep ${pendEmoji===e&&!pendAvatar?'on':''}" data-pe="${e}">${e}</button>`).join("")}</div>
-            <label class="fld" style="text-align:left">⚽ Your team <span class="muted tiny">(+${FAN_BONUS} pts every time they win — ${locked?'locked in 🔒':'choose once, then locked'})</span></label>
+            <label class="fld" style="text-align:left">⚽ Your team <span class="muted tiny">(+${FAN_BONUS} pts every time they win — ${locked?'locked in 🔒 (tournament started)':'change any time until the first match kicks off'})</span></label>
             ${locked
               ? `<div class="opt" style="opacity:.95"><span class="flag">${ft?ft.flag:'🌍'}</span><span>${ft?ft.name:'—'}</span><span style="margin-left:auto" class="tiny muted">🔒</span></div>`
               : `<button class="btn block" id="pvteam" type="button">${ft?`${ft.flag} ${ft.name}`:'🌍 Tap to choose your team'}</button>`}
