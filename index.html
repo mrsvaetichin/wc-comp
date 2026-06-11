@@ -1944,10 +1944,14 @@ function matchPtsAsOf(uid, cutoff){
 }
 // generic line chart — always draws the axes/grid; lines only appear once there are ≥2 points.
 // labels:[strings]  mem:[{name,me,series:[nums],final}]  emptyMsg shown inside the empty frame.
-// 📈 Animated SVG line chart. The lines "draw" themselves with a stroke-dashoffset
-// animation, the leader gets a pulsing crown 👑, every endpoint dot has a soft glow,
-// and the "me" line is thicker + brighter so you can always pick yourself out of the
-// crowd at a glance. All animation is pure SVG — no JS frame loop, no perf cost.
+// 🎭 THE RACE CHART. Every render is a tiny comedy: all lines launch flat off the
+// baseline, then sprint toward the WRONG endings (first chaos phase literally hands
+// the lead to the last-placed player), swap destinations twice more like they're
+// chasing each other, overshoot dramatically… and only then snap into their true,
+// correct final positions. The leader's 👑 rides (and wobbles on) the winning line
+// the whole way; a floating ❓ hangs over the chart until the dust settles. The final
+// resting state is ALWAYS the real data — only the journey is nonsense.
+// Pure SVG/SMIL (animate on polyline points) — no JS frame loop, no perf cost.
 function lineChartSVG(labels, mem, emptyMsg){
   const W=320,H=185,padL=22,padR=10,padT=14,padB=24;
   const hasData = labels.length>=2 && mem.length>0;
@@ -1956,21 +1960,21 @@ function lineChartSVG(labels, mem, emptyMsg){
   const yMin=Math.min(0, ...(allv.length?allv:[0]));
   const x=i=>padL+(labels.length<=1?(W-padL-padR)/2:i*(W-padL-padR)/(labels.length-1));
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
-  // 🎨 SVG defs: glow filter (soft light around dots/lines) + reusable styles + line-draw animation
-  // Every chart instance gets a unique id namespace so multiple SVGs on the page don't collide.
+  // 🎨 SVG defs: glow filter + styles. Unique id namespace per chart instance.
   const uid = "lc"+Math.random().toString(36).slice(2,8);
+  const RACE_DUR=4.6;   // seconds of total drama before the truth lands
   const defs = `<defs>
     <filter id="${uid}-glow" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur stdDeviation="2.2" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <style>
-      .${uid}-line{stroke-dasharray:1000;stroke-dashoffset:1000;animation:${uid}-draw 1.4s ease-out forwards}
-      .${uid}-dot{opacity:0;animation:${uid}-pop .35s ease-out forwards;animation-delay:1.2s}
-      .${uid}-leader{animation:${uid}-pulse 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
-      @keyframes ${uid}-draw{to{stroke-dashoffset:0}}
-      @keyframes ${uid}-pop{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:scale(1)}}
+      .${uid}-leader{animation:${uid}-pulse 1.6s ease-in-out infinite;animation-delay:${RACE_DUR}s;transform-origin:center;transform-box:fill-box}
+      .${uid}-crown{animation:${uid}-wob .5s ease-in-out infinite alternate;transform-origin:center;transform-box:fill-box}
+      .${uid}-q{animation:${uid}-wob .55s ease-in-out infinite alternate, ${uid}-qfade ${(RACE_DUR*0.92).toFixed(1)}s linear forwards;transform-origin:center;transform-box:fill-box}
       @keyframes ${uid}-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+      @keyframes ${uid}-wob{from{transform:rotate(-16deg) scale(1)}to{transform:rotate(16deg) scale(1.22)}}
+      @keyframes ${uid}-qfade{0%,78%{opacity:1}100%{opacity:0}}
     </style>
   </defs>`;
   let grid='';
@@ -1982,26 +1986,51 @@ function lineChartSVG(labels, mem, emptyMsg){
     const step=Math.ceil(labels.length/6);
     labels.forEach((c,i)=>{ if(!c) return; if(i%step!==0 && i!==labels.length-1) return;
       body+=`<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="middle" style="fill:var(--muted);font-size:8px">${escapeHtml(c)}</text>`; });
+    // ── Build the chaos phases ──────────────────────────────────────────────
+    // Each phase hands every line a "fake finish" stolen from the SHUFFLED list of
+    // real finals — so the pack visibly chases each other's endings before the truth.
+    const N=labels.length;
+    const finals=mem.map(mm=>mm.series[mm.series.length-1]);
+    const shuffle=a=>{ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+    const fakeA=finals.slice().reverse();              // phase 1: dead-last takes the lead 🤡
+    const fakeB=shuffle(finals), fakeC=shuffle(finals); // phases 2–3: total anarchy
+    const noise=()=> (Math.random()-0.5)*yMax*0.16;     // jittery, panicky lines
+    const clampV=v=> Math.max(yMin, Math.min(yMax*1.04, v));
+    const traj=target=> Array.from({length:N},(_,i)=> i===0?0:clampV(i/(N-1)*target+noise()));
+    const ptsOf=vals=>vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const keyTimes="0;0.24;0.46;0.68;0.88;1";           // flat → chaos×3 → overshoot → truth
+    const keySplines=Array(5).fill(".42 0 .58 1").join(";");
     body+=mem.map((m,idx)=>{
       const me = m.me;
       const col = me ? '#ffffff' : LINE_PAL[idx%LINE_PAL.length];
-      const pts = m.series.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-      const ex = x(labels.length-1), ey = y(m.series[m.series.length-1]);
+      const flat=m.series.map(()=>0);
+      const over=m.series.map((v,i)=> i===0?v:clampV(v*1.22+yMax*0.03));  // elastic overshoot before settling
+      const sets=[flat, traj(fakeA[idx]), traj(fakeB[idx]), traj(fakeC[idx]), over, m.series];
+      const begin=(idx*0.12).toFixed(2);                // staggered launch, like sprinters
+      const anim=(attr,values)=>`<animate attributeName="${attr}" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${values}"/>`;
+      const ex=x(N-1);
+      const eyVals=sets.map(s=>y(s[s.length-1]).toFixed(1)).join(";");
       const dotR = me ? 4 : 3;
       const lineW = me ? 3 : 2;
       const isLeader = idx===0;
-      const delay = (idx*0.12).toFixed(2);
-      const dotClass = `${uid}-dot${isLeader?' '+uid+'-leader':''}`;
-      // Subtle gradient fill under the line for a richer feel — only for the leader and "me"
+      // Subtle gradient fill under the line — only for the leader and "me" (races along too)
       let area = '';
       if(me || isLeader){
-        const areaPts = pts + ` ${x(labels.length-1).toFixed(1)},${y(yMin).toFixed(1)} ${x(0).toFixed(1)},${y(yMin).toFixed(1)}`;
-        area = `<polygon points="${areaPts}" fill="${col}" opacity=".10" class="${uid}-line" style="stroke:none;animation-delay:${delay}s"/>`;
+        const base=` ${x(N-1).toFixed(1)},${y(yMin).toFixed(1)} ${x(0).toFixed(1)},${y(yMin).toFixed(1)}`;
+        area = `<polygon points="${ptsOf(flat)+base}" fill="${col}" opacity=".10">${anim('points', sets.map(s=>ptsOf(s)+base).join(";"))}</polygon>`;
       }
-      return area + `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" class="${uid}-line" style="animation-delay:${delay}s;filter:url(#${uid}-glow)"/>`
-        + `<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="${dotR}" fill="${col}" class="${dotClass}" style="animation-delay:${(+delay+1.2).toFixed(2)}s${isLeader?', '+(+delay+1.6).toFixed(2)+'s':''};filter:url(#${uid}-glow)"/>`
-        + (isLeader ? `<text x="${ex.toFixed(1)}" y="${(ey-7).toFixed(1)}" text-anchor="middle" style="font-size:11px" class="${uid}-dot" style="animation-delay:${(+delay+1.4).toFixed(2)}s">👑</text>` : '');
+      // 👑 glued to the eventual winner's tip for the WHOLE race — it gets dragged
+      // through every fake lead change, wobbling in disbelief, before landing on top.
+      const crown = isLeader
+        ? `<text x="${ex.toFixed(1)}" y="${(y(0)-8).toFixed(1)}" text-anchor="middle" style="font-size:12px" class="${uid}-crown">👑${anim('y', sets.map(s=>(y(s[s.length-1])-8).toFixed(1)).join(";"))}</text>`
+        : '';
+      return area
+        + `<polyline points="${ptsOf(flat)}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" style="filter:url(#${uid}-glow)">${anim('points', sets.map(ptsOf).join(";"))}</polyline>`
+        + `<circle cx="${ex.toFixed(1)}" cy="${y(0).toFixed(1)}" r="${dotR}" fill="${col}" class="${isLeader?uid+'-leader':''}" style="filter:url(#${uid}-glow)">${anim('cy', eyVals)}</circle>`
+        + crown;
     }).join("");
+    // ❓ hovers over the chart while the race is still anyone's guess, then pops away.
+    body+=`<text x="${(W/2).toFixed(1)}" y="${(padT+12).toFixed(1)}" text-anchor="middle" style="font-size:15px" class="${uid}-q">❓</text>`;
   } else {
     body+=`<text x="${(W/2).toFixed(1)}" y="${(padT+(H-padT-padB)/2+3).toFixed(1)}" text-anchor="middle" style="fill:var(--muted);font-size:10px">${escapeHtml(emptyMsg)}</text>`;
   }
