@@ -1993,7 +1993,7 @@ function lineChartSVG(labels, mem, emptyMsg){
   const yMin=Math.min(0, ...(allv.length?allv:[0]));
   const x=i=>padL+(labels.length<=1?(W-padL-padR)/2:i*(W-padL-padR)/(labels.length-1));
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
-  // 🎨 SVG defs: glow filter + styles. Unique id namespace per chart instance.
+  // 🎨 SVG defs: animation styles. Unique id namespace per chart instance.
   const uid = "lc"+Math.random().toString(36).slice(2,8);
   const RACE_DUR=9;   // seconds of total drama before the truth lands — slow-burn comedy
   // ⚡ Perf note: no SVG blur filters here — feGaussianBlur on elements that morph every
@@ -2075,12 +2075,12 @@ function lineChartSVG(labels, mem, emptyMsg){
       const face = `<g transform="translate(${ex.toFixed(1)},${y(0).toFixed(1)})">
         <animateTransform attributeName="transform" type="translate" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${tVals}"/>
         <g class="${uid}-face" style="animation-duration:${(0.55+(idx%5)*0.09).toFixed(2)}s">
-          <circle r="9" fill="var(--card)" stroke="${col}" stroke-width="2" class="${isLeader?uid+'-leader':''}" style="filter:url(#${uid}-glow)"/>
+          <circle r="9" fill="var(--card)" stroke="${col}" stroke-width="2" class="${isLeader?uid+'-leader':''}"/>
           ${faceInner}${crown}
         </g>
       </g>`;
       return area
-        + `<path d="${pathOf(flat)}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" style="filter:url(#${uid}-glow)">${anim('d', sets.map(pathOf).join(";"))}</path>`
+        + `<path d="${pathOf(flat)}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}">${anim('d', sets.map(pathOf).join(";"))}</path>`
         + face;
     }).join("");
     // ❓ hovers over the chart while the race is still anyone's guess, then pops away.
