@@ -193,12 +193,29 @@ drop policy if exists bp_ins on bracket_picks;  create policy bp_ins on bracket_
 drop policy if exists bp_upd on bracket_picks;  create policy bp_upd on bracket_picks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 drop policy if exists bp_del on bracket_picks;  create policy bp_del on bracket_picks for delete to authenticated using (user_id = auth.uid());
 
+-- ⏱ Lock-time helpers — mirror the app's reveal rules so the DB and UI agree:
+--   · extras_locked(): TRUE once the tournament's Round-1 lock has passed (30 min
+--     before the earliest kickoff). From then on, ALL extras answers are visible to
+--     fellow league members — they're frozen, so there's nothing left to copy.
+--   · round_locked(mid): TRUE once that match's matchday has locked (30 min before
+--     the matchday's earliest kickoff) — the app's blind-reveal moment for match picks.
+create or replace function public.extras_locked() returns boolean
+  language sql security definer stable set search_path = public as $$
+  select coalesce((select min(kickoff) - interval '30 minutes' from matches) <= now(), false); $$;
+create or replace function public.round_locked(mid text) returns boolean
+  language sql security definer stable set search_path = public as $$
+  select coalesce((select min(m2.kickoff) - interval '30 minutes' from matches m2
+                    where m2.md = (select m1.md from matches m1 where m1.id = mid)) <= now(), false); $$;
+grant execute on function public.extras_locked(), public.round_locked(text) to authenticated, anon;
+
 -- 🛠️ SUPER-ADMIN escape hatches — when profiles.is_admin = true, the admin can SEE and DELETE every row.
 -- Pairs with the in-app password gate (admin/1234) which flips your is_admin flag on unlock and back off on exit.
 -- READ overrides — admin sees data in EVERY league, not just the ones they're a member of.
 drop policy if exists mb_read on memberships;       create policy mb_read on memberships     for select to authenticated using (user_id = auth.uid() or is_member(league_id) or is_admin());
-drop policy if exists pred_read on predictions;     create policy pred_read on predictions   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_pick(match_id, league_id) or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now())))));
-drop policy if exists pa_read on prop_answers;      create policy pa_read on prop_answers   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_answer(prop_id, league_id) or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled'))));
+-- Picks: yours always · others' once you picked the same match, it kicked off, OR its round locked (the app's blind-reveal moment).
+drop policy if exists pred_read on predictions;     create policy pred_read on predictions   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_pick(match_id, league_id) or public.round_locked(match_id) or exists (select 1 from matches m where m.id = predictions.match_id and (m.status='finished' or m.kickoff <= now())))));
+-- Extras: yours always · others' once you answered the same prop, it settled, OR extras locked (Round-1 lock — then the whole league's calls are mutually visible).
+drop policy if exists pa_read on prop_answers;      create policy pa_read on prop_answers   for select to authenticated using (is_admin() or (is_member(league_id) and (user_id = auth.uid() or public.has_answer(prop_id, league_id) or public.extras_locked() or exists (select 1 from props p where p.id = prop_answers.prop_id and p.status='settled'))));
 drop policy if exists adv_read on advances;         create policy adv_read on advances       for select to authenticated using (is_member(league_id) or is_admin());
 drop policy if exists ko_read on ko_picks;          create policy ko_read on ko_picks         for select to authenticated using (is_member(league_id) or is_admin());
 drop policy if exists rp_read on repicks;           create policy rp_read on repicks         for select to authenticated using (is_member(league_id) or is_admin());

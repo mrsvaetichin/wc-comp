@@ -1227,13 +1227,37 @@ function scoreFor(profileId){
   pts += banterBonus(profileId);
   return {pts};
 }
+// ⚡ Provisional points from matches currently IN PLAY, scored against the live feed
+// (m.lhs/m.las) as if the whistle blew right now. Display-only — official totals
+// (scoreFor) still only count finished matches, so nothing pays out early.
+function livePtsFor(profileId){
+  let pts=0; const s=DB.settings;
+  const fav=(DB.profiles.find(p=>p.id===profileId)||{}).team;
+  DB.matches.forEach(m=>{
+    if(!inPlay(m) || m.lhs==null || m.las==null) return;
+    const pr=effectivePick(profileId,m.id);
+    if(pr&&pr.hp!=null&&pr.ap!=null){
+      const exact=pr.hp===m.lhs&&pr.ap===m.las;
+      const out=Math.sign(pr.hp-pr.ap)===Math.sign(m.lhs-m.las);
+      let add=exact?s.pts_exact:out?s.pts_result:0;
+      if(pr.banker) add*=2;
+      pts+=add;
+    }
+    if(fav && ((m.home===fav&&m.lhs>m.las)||(m.away===fav&&m.las>m.lhs))) pts+=FAN_BONUS;
+  });
+  return pts;
+}
+
 // advance picks stored separately for clarity
 let ADV=[]; // {user, grp, team}
 function loadAdv(){ ADV = DB.predictions.filter(p=>p.advance).map(p=>({user:p.user,grp:p.grp,team:p.team})); }
 
 function leaderboard(){
-  const rows=leagueMembers(LG).map(p=>({...p, pts:scoreFor(p.id).pts}));
-  rows.sort((a,b)=> b.pts-a.pts || a.name.localeCompare(b.name));
+  // ⚡ lp = provisional points from in-play matches. The table ranks by PROJECTED total
+  // (pts+lp) so the standings move with the live scores, exactly like real league tables
+  // do during a matchday. lp is 0 when nothing is live → identical to the old behavior.
+  const rows=leagueMembers(LG).map(p=>({...p, pts:scoreFor(p.id).pts, lp:livePtsFor(p.id)}));
+  rows.sort((a,b)=> (b.pts+b.lp)-(a.pts+a.lp) || b.pts-a.pts || a.name.localeCompare(b.name));
   rows.forEach((r,i)=>r.rank=i+1);
   return rows;
 }
@@ -1881,10 +1905,11 @@ function heroLeaderboard(){
   const me=lb.find(x=>x.id===ME.id);
   // ── Points standings: top 5 + a "you" row if I'm 6th or lower ──
   const medalFor=(rank)=>rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">#${rank}</span>`;
+  const ptsCell=r=>`${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts`;
   let rows=lb.slice(0,5).map(r=>
-    `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${r.pts} pts</span></div>`
+    `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${ptsCell(r)}</span></div>`
   ).join("");
-  if(me && me.rank>5) rows+=`<div class="hlb-row me you" data-vp="${me.id}" style="cursor:pointer"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
+  if(me && me.rank>5) rows+=`<div class="hlb-row me you" data-vp="${me.id}" style="cursor:pointer"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${ptsCell(me)}</span></div>`;
   const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings <span class="tiny muted">(top 5)</span></h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
   // ── Banter leaderboard ──
   const tb=topBanter().filter(x=>x.likes>0||x.posts>0).slice(0,3);
@@ -2299,8 +2324,19 @@ function matchCard(m){
   } else if(base){   // you have a saved pick
     const live=inPlay(m);
     const rndOpen = !roundLocked(m.md) && !isLocked(m);
-    inner=`${teams}<div class="scorerow"><span class="lockedpick">${eff.hp} – ${eff.ap}${eff.banker?' <span title="Banker (2×)">⭐</span>':''}${eff.repick?' <span title="Re-picked">🔁</span>':''}</span></div>
-      <div class="small muted center">${live?'🟢 LIVE — in play':(rndOpen?'💾 Saved · editable until round locks':'🔒 Locked')}${(!live&&cd)?` · in <span data-tick="kickoff" data-cd="${m.kickoff}" data-kickoff-label="kickoff!">${cd}</span>`:''}</div>`;
+    // ⚡ live score banner — the feed's current score + what your pick is worth if it stays
+    let liveSc='';
+    if(live){
+      let worth='';
+      if(m.lhs!=null && eff && eff.hp!=null){
+        const exact=eff.hp===m.lhs&&eff.ap===m.las, out=Math.sign(eff.hp-eff.ap)===Math.sign(m.lhs-m.las);
+        let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(eff.banker) got*=2;
+        worth=` <span class="tiny" style="color:${got>0?'var(--lime)':'var(--muted)'}">⚡+${got} if it stays</span>`;
+      }
+      liveSc=`<div class="small center" style="color:#ff8a8a;font-weight:700;margin:2px 0">🔴 LIVE ${m.lhs!=null?`<span class="result-score" style="font-size:20px;padding:0 5px;color:var(--ink)">${m.lhs} – ${m.las}</span>`:'<span class="muted" style="font-weight:400">score syncing…</span>'}${worth}</div>`;
+    }
+    inner=`${teams}${liveSc}<div class="scorerow"><span class="lockedpick">${eff.hp} – ${eff.ap}${eff.banker?' <span title="Banker (2×)">⭐</span>':''}${eff.repick?' <span title="Re-picked">🔁</span>':''}</span></div>
+      <div class="small muted center">${live?'your pick':(rndOpen?'💾 Saved · editable until round locks':'🔒 Locked')}${(!live&&cd)?` · in <span data-tick="kickoff" data-cd="${m.kickoff}" data-kickoff-label="kickoff!">${cd}</span>`:''}</div>`;
     if(rndOpen){
       inner+=`<div class="row" style="margin-top:8px;gap:8px"><button class="btn block" style="flex:1;border-color:var(--cyan);color:var(--cyan)" data-unlock="${m.id}">🔓 Unlock &amp; edit</button></div>`;
     }
@@ -2325,7 +2361,10 @@ function matchCard(m){
     }
     inner+=revealBlock(m);
   } else if(isLocked(m) || roundLocked(m.md)){   // round locked or match kicked off, you never picked
-    inner=`${teams}<div class="scorerow"><span class="vsmid">🔒 ${roundLocked(m.md)&&!isLocked(m)?'round locked':'kicked off'}</span></div><div class="small muted center">You didn't save a pick for this one.</div>${revealBlock(m)}`;
+    const liveSc = inPlay(m)
+      ? `<span class="result-score">${m.lhs!=null?`${m.lhs} – ${m.las}`:'· – ·'}</span><span class="tiny" style="color:var(--red);font-weight:800;margin-left:7px">🔴 LIVE</span>`
+      : `<span class="vsmid">🔒 ${roundLocked(m.md)&&!isLocked(m)?'round locked':'kicked off'}</span>`;
+    inner=`${teams}<div class="scorerow">${liveSc}</div><div class="small muted center">You didn't save a pick for this one.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form, freely editable until the round deadline
     const d=draft(m.id), canBank=canBankMatch(m);
     const blockedByDraft = !canBank && !bankerLockedInRound(m.md) && draftBankerInRound(m.md, m.id);
@@ -2352,7 +2391,7 @@ function matchCard(m){
       <div class="tiny muted" style="margin-top:4px">✏️ Edit freely until the round locks${rdc?` · ⏱ <span data-tick="round-inline" data-md="${m.md}">${rdc}</span> left`:''}</div>`;
   }
   const tag = m.status==="finished"?'<span class="chip done">FT</span>'
-    : (base&&inPlay(m))?'<span class="chip live">🟢 LIVE</span>'
+    : inPlay(m)?'<span class="chip live">🔴 LIVE</span>'
     : base?(roundLocked(m.md)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
     : (roundLocked(m.md)||isLocked(m))?'<span class="chip">🔒</span>'
     :`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
@@ -2583,7 +2622,8 @@ function viewBoard(){
   const top=lb[0], last=lb[lb.length-1];
   const trashTop=[`is making everyone else look like they picked with their feet 🦶`,`has clearly bribed the football gods 😤`,`is running away with it. Someone stop them! 🏃`][top.rank%3];
   const trashLast=[`is holding up the table like a true legend 🛗`,`still believes in the comeback 🫡`,`picked vibes over logic 🔮`][last.id.length%3];
-  let html=`<div class="card center"><h3>📊 ${curLeague()?curLeague().name+" · ":""}The Table</h3><div class="small muted">${curLeague()?leagueMembers(LG).length+" players · ":""}most points takes the pot.</div>
+  const anyLive=lb.some(r=>r.lp>0);
+  let html=`<div class="card center"><h3>📊 ${curLeague()?curLeague().name+" · ":""}The Table</h3><div class="small muted">${curLeague()?leagueMembers(LG).length+" players · ":""}most points takes the pot.${anyLive?' <b style="color:var(--gold)">⚡ Standings include live scores</b> — ⚡ points are provisional and become official at full time.':''}</div>
       ${boardToggle()}
       <button class="btn block" data-sync style="margin-top:8px">🔄 Sync live results</button></div>`;
   html+=liveNowCard();
@@ -2603,7 +2643,7 @@ function viewBoard(){
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
       <div class="nm">${r.name}${r.team&&teamById(r.team)?` <span title="Supports ${teamById(r.team).name}">${teamById(r.team).flag}</span>`:''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small class="badges">${badges||'&nbsp;'}</small></div>
-      <div class="sc">${r.pts} pts</div>
+      <div class="sc">${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts</div>
     </div>`;
   });
   html+=`<div class="card small muted center">🪦 ${last.emoji} <b>${last.name}</b> ${trashLast}</div>`;
