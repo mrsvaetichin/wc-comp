@@ -638,11 +638,12 @@ const CURRENCIES = [
   ["JPY","¥ Japanese yen"],  ["KRW","₩ South Korean won"], ["INR","₹ Indian rupee"],
   ["GEL","₾ Georgian lari"], ["ZAR","R South African rand"],["MAD","DH Moroccan dirham"]
 ];
-// 💬 Banter scoring: dead simple. Each ❤️ like you receive on a banter post = +1 point.
-//    That's it. No podium bonus, no thresholds, no "you need to be top 3" complexity.
-//    Get likes → get points. The "Banter race" chart's y-axis IS your point contribution.
-//    A typical top banterer gets ~15–30 likes = ~15–30 points ≈ 8–12% of a top player's total.
+// 💬 Banter scoring: each ❤️ on a non-sent-off post = +1 point, BUT capped at a small
+//    total so banter stays a fun side-bonus, never decides the league. With ~300 typical
+//    total points, BANTER_CAP=6 puts the maximum banter contribution at ~2% — enough to
+//    swing a podium spot for the funniest people, never enough to overrule picks.
 const BANTER_PER_LIKE = 1;
+const BANTER_CAP      = 6;
 // format money: symbol currencies prefix ($50), word currencies suffix (50 GEL)
 function money(n){ const c=(curLeague()&&curLeague().currency)||DB.settings.currency||"$"; n=(n||0).toLocaleString(); return c.length<=1 ? c+n : n+" "+c; }
 
@@ -1166,7 +1167,8 @@ function banterBonus(uid){
     if(redMap[l.comment]) continue;                  // 🟥 sent-off post → 0 pts
     if(authorMap[l.comment] === uid) n += BANTER_PER_LIKE;
   }
-  return n;
+  // Capped at BANTER_CAP so banter stays a ~2% side bonus, never league-deciding.
+  return Math.min(BANTER_CAP, n);
 }
 
 function scoreFor(profileId){
@@ -1586,13 +1588,19 @@ function userCards(uid){
 }
 function myCardOn(commentId){ return DB.cards.find(c=>c.from===ME.id&&c.comment===commentId); }
 function likeCount(commentId){ return DB.likes.filter(l=>l.comment===commentId).length; }
+// 🆕 Earning likes = the likes that actually contribute points. Red-carded posts
+// contribute 0 even if they have likes (those are "wiped" — visible in the UI
+// with strikethrough). Used by leaderboards, the chart, and per-user stat cards.
+function earningLikeCount(commentId){ return isCommentRedCarded(commentId) ? 0 : likeCount(commentId); }
 function iLiked(commentId){ return DB.likes.some(l=>l.comment===commentId&&l.user===ME.id); }
 // best-banter ranking: total likes received on your posts (separate from the points Board).
 // 🛡️ Admins are filtered out — banter is a player-only league.
 function topBanter(){
+  // 'likes' here = EARNING likes (skips red-carded posts) so the ranking matches the
+  // scoring. The Banter board and chart both read this; consistent everywhere.
   const authors=[...new Set(DB.comments.map(c=>c.user))].filter(u=>isPlayer(profileById(u)));
   return authors.map(u=>{ const posts=DB.comments.filter(c=>c.user===u);
-    return {user:u, posts:posts.length, likes:posts.reduce((s,c)=>s+likeCount(c.id),0)}; })
+    return {user:u, posts:posts.length, likes:posts.reduce((s,c)=>s+earningLikeCount(c.id),0)}; })
     .sort((a,b)=> b.likes-a.likes || b.posts-a.posts);
 }
 async function toggleLike(commentId){
@@ -2015,27 +2023,33 @@ function banterLineCard(){
   // commentId→authorId index once for O(1) lookup so the chart is also a lot quicker.
   const likes    = DB.likes    || [];
   const comments = DB.comments || [];
+  const cards    = DB.cards    || [];
   const author = Object.create(null);
   comments.forEach(c => { author[c.id] = c.user; });
+  // Skip likes on sent-off (red-carded) posts — they earn 0 in scoring, so they shouldn't
+  // inflate the chart either. We do this once via a Set lookup for speed.
+  const redSet = new Set();
+  cards.forEach(cd => { if(cd.kind==="red") redSet.add(cd.comment); });
+  const usableLikes = likes.filter(l => !redSet.has(l.comment));
   // 📅 Day buckets — UTC throughout so the dateKey (UTC date) and the cut (UTC end of day)
   //    speak the same language. The old code mixed UTC dates with local-time cuts, which
   //    silently dropped likes whose UTC timestamp fell between the viewer's local midnight
   //    and the next UTC midnight — chart endpoints ended up at 0 while the player's actual
   //    total was 1+ (the visible bug).
-  const days = [...new Set(likes.map(l=>dateKey(l.created)))].sort();
+  const days = [...new Set(usableLikes.map(l=>dateKey(l.created)))].sort();
   const cps  = days.map(d=>({d, cut:new Date(d+"T23:59:59Z").getTime()}));
   // Belt-and-braces: the last cut is bumped to "now" so the rightmost data point reflects
   //   every like that's hit the DB so far, even if the cut math drifted by a millisecond.
   if(cps.length) cps[cps.length-1].cut = Math.max(cps[cps.length-1].cut, Date.now());
-  // Final totals per user, computed from likes
+  // Final totals per user, computed from EARNING likes (red-carded ones already excluded above)
   const totals = Object.create(null);
-  likes.forEach(l => { const u = author[l.comment]; if(u) totals[u] = (totals[u]||0) + 1; });
+  usableLikes.forEach(l => { const u = author[l.comment]; if(u) totals[u] = (totals[u]||0) + 1; });
   let mem = Object.keys(totals).map(uid => {
     const p = profileById(uid);
     if(!p || p.is_admin) return null;          // never plot admins
     const series = [0, ...cps.map(c=>{
       let n = 0;
-      for(const l of likes){
+      for(const l of usableLikes){
         if(author[l.comment]!==uid) continue;
         if(new Date(l.created).getTime() <= c.cut) n++;
       }
@@ -2046,7 +2060,7 @@ function banterLineCard(){
     if(series.length) series[series.length-1] = totals[uid];
     return {
       name: p.name.split(" ")[0], me: uid===ME.id, final: totals[uid],
-      valLabel: `❤️ ${totals[uid]}`, series
+      valLabel: `❤️ ${totals[uid]}${totals[uid]>=BANTER_CAP?` · capped at ${BANTER_CAP}`:''}`, series
     };
   }).filter(Boolean);
   mem.sort((a,b) => b.final-a.final || a.name.localeCompare(b.name));
@@ -2349,7 +2363,7 @@ function viewBanter(){
   const me=userCards(ME.id);
   const feed=[...DB.comments].sort((a,b)=>new Date(b.created)-new Date(a.created));
   let html=`<div class="card"><h3>💬 Banter${curLeague()?` · ${curLeague().name}`:''}</h3>
-    <div class="small muted">Trash-talk your league. Each ❤️ <b>= +1 point</b> for the poster. Don't like a post? <b>🟨 book it</b>. After <b>2 yellows</b> stack on a post, the next dissenter sends a <b>🟥 red</b> — the post is "sent off" and its likes earn 0. Likes &amp; cards freeze when the round changes — old posts are locked in. Behave 😇🦇</div></div>`;
+    <div class="small muted">Trash-talk your league. Each ❤️ <b>= +1 point</b> for the poster (capped at <b>+${BANTER_CAP} pts</b> total — banter is bragging rights, never the deciding factor). Don't like a post? <b>🟨 book it</b>. After <b>2 yellows</b> stack on a post, the next dissenter sends a <b>🟥 red</b> — the post is "sent off" and its likes earn 0. Likes &amp; cards freeze when the round changes. Behave 😇🦇</div></div>`;
   if(me.sentOff){
     const mins=Math.max(1,Math.ceil((me.until-Date.now())/60000));
     html+=`<div class="card center" style="border-color:var(--red)"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:20px">You're sent off!</div><div class="small muted">Cool it — back in about ${mins} min. No posting till then.</div></div>`;
@@ -2413,14 +2427,15 @@ function viewBanter(){
 let boardTab="points";
 function boardToggle(){ return `<div class="toggle" style="margin-top:8px"><button class="${boardTab==='points'?'on':''}" data-boardtab="points">🏅 Points</button><button class="${boardTab==='banter'?'on':''}" data-boardtab="banter">💬 Banter</button></div>`; }
 function banterBoard(){
+  // 'likes' here = EARNING likes (skips red-carded posts) so ranking + bonus stay in sync.
   return leagueMembers(LG).map(p=>{ const posts=DB.comments.filter(c=>c.user===p.id);
     const uc=userCards(p.id);
-    return {user:p.id, posts:posts.length, likes:posts.reduce((s,c)=>s+likeCount(c.id),0), yellow:uc.yellow, red:uc.red, sentOff:uc.sentOff};
+    return {user:p.id, posts:posts.length, likes:posts.reduce((s,c)=>s+earningLikeCount(c.id),0), yellow:uc.yellow, red:uc.red, sentOff:uc.sentOff};
   }).sort((a,b)=> b.likes-a.likes || b.posts-a.posts || a.user.localeCompare(b.user));
 }
 function viewBanterBoard(){
   const rows=banterBoard();
-  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Each ❤️ = <b>+1 point</b> on your main standings. <b>2 yellows on a post → 3rd dissenter can give a red 🟥 — that post earns 0</b>. Likes &amp; cards lock when the round changes (old posts are frozen).</div>${boardToggle()}</div>`;
+  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Each ❤️ = <b>+1 point</b> on your main standings (capped at <b>+${BANTER_CAP} pts</b> total — ~2% of the typical winning score). <b>2 yellows on a post → 3rd dissenter can give a 🟥 red — that post earns 0</b>. Likes &amp; cards lock when the round changes.</div>${boardToggle()}</div>`;
   if(!rows.length || rows.every(r=>r.likes===0&&r.posts===0)){
     html+=`<div class="empty"><div class="e">💬</div>No banter yet — open the 💬 Banter tab and get the trash talk going!</div>`;
     return html;
@@ -3223,7 +3238,9 @@ function adminUserDetail(uid){
   const allProps   = ALL.pans.filter(x=>x.user===uid);
   const allBanter  = ALL.comments.filter(c=>c.user===uid);
   const allRepicks = ALL.rep.filter(r=>r.user===uid);
-  const banterRcvd = ALL.likes.filter(l=>{ const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid; }).length;
+  // Earning likes only — red-carded posts don't contribute to the player's score.
+  const redSet = new Set(); ALL.cards.forEach(cd=>{ if(cd.kind==="red") redSet.add(cd.comment); });
+  const banterRcvd = ALL.likes.filter(l=>{ if(redSet.has(l.comment)) return false; const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid; }).length;
   const banterGiven = ALL.likes.filter(l=>l.user===uid).length;
   const cardsGivenY = ALL.cards.filter(c=>c.from===uid && c.kind==="yellow").length;
   const cardsGivenR = ALL.cards.filter(c=>c.from===uid && c.kind==="red").length;
@@ -3643,7 +3660,9 @@ function openPlayerCard(uid){
   const props  = ALL.pans.filter(x=>x.user===uid && x.league===lid).length;
   const bracket= (ALL.bracket||[]).filter(x=>x.user===uid && x.league===lid).length;
   const banter = ALL.comments.filter(c=>c.user===uid && c.league===lid).length;
-  const liked  = ALL.likes.filter(l=>{ const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid && c.league===lid; }).length;
+  // Earning likes only — red-carded posts don't contribute to the player's score.
+  const redSet_pc = new Set(); ALL.cards.forEach(cd=>{ if(cd.kind==="red") redSet_pc.add(cd.comment); });
+  const liked  = ALL.likes.filter(l=>{ if(redSet_pc.has(l.comment)) return false; const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid && c.league===lid; }).length;
   const givenL = ALL.likes.filter(l=>l.user===uid && l.league===lid).length;
   const cards  = ALL.cards.filter(c=>c.target===uid && c.league===lid);
   const yc = cards.filter(c=>c.kind==="yellow").length;
@@ -3858,7 +3877,7 @@ function rulesHTML(){
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
     ${row("🔁",`<b>Half-time re-picks:</b> ${REPICK_MAX}× all tournament, change a pick mid-match for <b>−${REPICK_COST} pts</b> each.`)}
-    ${row("💬",`<b>Banter bonus:</b> Every ❤️ like on your banter post = <b>+1 point</b>. Anyone can 🟨 book a post; after <b>2 yellows</b>, the next dissenter sends a 🟥 red — the post is "sent off" and earns <b>0 points</b> regardless of its likes. <b>Likes &amp; cards freeze when the round changes</b> — old posts can't be liked or booked any more, the score on them is locked in.`)}
+    ${row("💬",`<b>Banter bonus:</b> Each ❤️ on your banter post = <b>+1 point</b>, but capped at <b>+${BANTER_CAP} pts total</b> — banter is bragging rights, ~2% of a top score, never league-deciding. Anyone can 🟨 book a post; after <b>2 yellows</b> the next dissenter sends a 🟥 red — the post is "sent off" and earns <b>0 points</b>. Likes &amp; cards freeze when the round changes — old posts are locked in.`)}
     ${row("🔥",`<b>Streaks &amp; badges</b> for bragging rights.`)}
 
     <h4>The money 💰</h4>
