@@ -1694,9 +1694,15 @@ async function giveCard(commentId, kind){
   else toast(`🟨 Yellow card for ${nm}!`);
 }
 
-/* ---------- live results auto-sync (TheSportsDB free API) ---------- */
-const SPORTSDB_KEY="3", SPORTSDB_LEAGUE="4429", SPORTSDB_SEASON="2026"; // 4429 = FIFA World Cup
-const TEAM_ALIASES={"united states":"usa","korea republic":"south korea","czech republic":"czechia","ivory coast":"côte d'ivoire","cote d'ivoire":"côte d'ivoire","turkey":"türkiye","cape verde":"cabo verde","cape verde islands":"cabo verde","congo dr":"dr congo","democratic republic of congo":"dr congo","dr congo":"dr congo","bosnia and herzegovina":"bosnia & herz","bosnia-herzegovina":"bosnia & herz"};
+/* ---------- live results auto-sync (ESPN public scoreboard) ----------
+   Why ESPN: TheSportsDB's free tier caps season listings at 15 events and only
+   updates scores long after full time — useless for live. ESPN's scoreboard API is
+   keyless, CORS-open, near-real-time, and carries the World Cup as "fifa.world".
+   It buckets matches by US/Eastern calendar date, so we query the ET date(s) of
+   the fixtures we care about. ---------------------------------------------- */
+// Normalized-name aliases (feed name → OUR normalized team name). Values must be in
+// nrm()'s post-strip form: lowercase, no [.&], single spaces (so "bosnia herz").
+const TEAM_ALIASES={"united states":"usa","korea republic":"south korea","czech republic":"czechia","ivory coast":"côte d'ivoire","cote d'ivoire":"côte d'ivoire","turkey":"türkiye","cape verde":"cabo verde","cape verde islands":"cabo verde","congo dr":"dr congo","democratic republic of congo":"dr congo","dr congo":"dr congo","bosnia and herzegovina":"bosnia herz","bosnia-herzegovina":"bosnia herz","bosnia herzegovina":"bosnia herz"};
 function nrm(n){ n=(n||"").toLowerCase().replace(/[.&]/g,"").replace(/\s+/g," ").trim(); return TEAM_ALIASES[n]||n; }
 let _lastSync=0;
 async function syncResults(manual){
@@ -1704,31 +1710,44 @@ async function syncResults(manual){
   if(!manual && Date.now()-_lastSync<120000) return; // throttle auto-sync to ~2 min
   _lastSync=Date.now();
   try{
-    const r=await fetch(`https://www.thesportsdb.com/api/v1/json/${SPORTSDB_KEY}/eventsseason.php?id=${SPORTSDB_LEAGUE}&s=${SPORTSDB_SEASON}`);
-    const data=await r.json(); const evs=(data&&data.events)||[]; let n=0;
-    let liveN=0;
-    evs.forEach(e=>{
-      if(e.intHomeScore==null||e.intHomeScore===""||e.intAwayScore==null||e.intAwayScore==="") return;
-      const eh=nrm(e.strHomeTeam), ea=nrm(e.strAwayTeam);
-      const m=DB.matches.find(x=>{const h=nrm(teamById(x.home).name),a=nrm(teamById(x.away).name);return (h===eh&&a===ea)||(h===ea&&a===eh);});
-      if(!m) return;
-      const hHome=nrm(teamById(m.home).name)===eh;
-      const hs=hHome?+e.intHomeScore:+e.intAwayScore, as=hHome?+e.intAwayScore:+e.intHomeScore;
-      // 🔴 Only FINALIZE when the feed says the match is over (or it's clearly past full
-      // time). A live in-play score is stored separately (m.lhs/m.las) so the ⚡ LIVE strip
-      // can show it — without freezing re-picks or paying out points early.
-      const st=(e.strStatus||"").toLowerCase();
-      const isFinal = /\bft\b|finished|aet|pen/.test(st)
-        || (!st && Date.now() > new Date(m.kickoff).getTime() + 110*60*1000);
-      if(isFinal){
-        if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; n++;
-          if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
-      } else if(m.status!=="finished" && new Date(m.kickoff)<=Date.now()){
-        if(m.lhs!==hs||m.las!==as){ m.lhs=hs; m.las=as; liveN++; }
-      }
-    });
+    // Which dates to ask ESPN about: fixtures that kicked off in the last 48h (results
+    // backfill) up to 30 min from now (about to go live), and aren't finished yet.
+    const now=Date.now();
+    const cand=DB.matches.filter(m=>{ const t=new Date(m.kickoff).getTime();
+      return m.status!=="finished" && t < now+30*60*1000 && t > now-48*3600*1000; });
+    if(!cand.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
+    const dates=[...new Set(cand.map(m=>{ const et=new Date(new Date(m.kickoff).getTime()-4*3600*1000);
+      return et.toISOString().slice(0,10).replace(/-/g,""); }))];
+    let n=0, liveN=0;
+    for(const d of dates){
+      const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${d}`);
+      if(!r.ok) continue;
+      const data=await r.json();
+      (data.events||[]).forEach(e=>{
+        const comp=e.competitions&&e.competitions[0]; if(!comp) return;
+        const home=(comp.competitors||[]).find(c=>c.homeAway==="home");
+        const away=(comp.competitors||[]).find(c=>c.homeAway==="away");
+        if(!home||!away||!home.team||!away.team) return;
+        const eh=nrm(home.team.displayName), ea=nrm(away.team.displayName);
+        const m=DB.matches.find(x=>{const h=nrm(teamById(x.home).name),a=nrm(teamById(x.away).name);return (h===eh&&a===ea)||(h===ea&&a===eh);});
+        if(!m) return;
+        const hHome=nrm(teamById(m.home).name)===eh;
+        const hs=hHome?parseInt(home.score,10):parseInt(away.score,10);
+        const as=hHome?parseInt(away.score,10):parseInt(home.score,10);
+        if(isNaN(hs)||isNaN(as)) return;
+        const state=(e.status&&e.status.type&&e.status.type.state)||"";   // pre | in | post
+        // 🔴 FINALIZE only on "post" — a live in-play score goes to m.lhs/m.las so the
+        // ⚡ LIVE strip + provisional points work without paying out or freezing re-picks early.
+        if(state==="post"){
+          if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; n++;
+            if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
+        } else if(state==="in" && m.status!=="finished"){
+          if(m.lhs!==hs||m.las!==as){ m.lhs=hs; m.las=as; liveN++; }
+        }
+      });
+    }
     if(n||liveN){ saveLocal(); render(); }
-    if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:"No new results yet — check back after kickoff");
+    if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:liveN?`⚡ Live scores updated`:"No new scores yet — check back after kickoff");
   }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
 }
 
@@ -1907,7 +1926,7 @@ function heroLeaderboard(){
   const medalFor=(rank)=>rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">#${rank}</span>`;
   const ptsCell=r=>`${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts`;
   let rows=lb.slice(0,5).map(r=>
-    `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${ptsCell(r)}</span></div>`
+    `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" title="${escapeHtml(r.name)}" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${ptsCell(r)}</span></div>`
   ).join("");
   if(me && me.rank>5) rows+=`<div class="hlb-row me you" data-vp="${me.id}" style="cursor:pointer"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${ptsCell(me)}</span></div>`;
   const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings <span class="tiny muted">(top 5)</span></h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
@@ -1917,7 +1936,7 @@ function heroLeaderboard(){
   if(tb.length){
     const brows=tb.map((r,i)=>{const p=profileById(r.user); if(!p)return''; const medal=i===0?'🥇':i===1?'🥈':'🥉';
       const bonus=r.likes>0?`<span class="bbonus">+${r.likes} pts</span>`:'';
-      return `<div class="hlb-row ${r.user===ME.id?'me':''}" data-vp="${r.user}" style="cursor:pointer"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
+      return `<div class="hlb-row ${r.user===ME.id?'me':''}" data-vp="${r.user}" style="cursor:pointer"><span class="hlb-pos">${medal}</span><span class="avatar" title="${escapeHtml(p.name)}" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter <span class="tiny muted">· bonus pts</span></h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
   } else {
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-tab="banter">Start →</button></div><div class="small muted" style="padding:8px 2px">No banter yet — fire the first shot in the 💬 Banter tab.</div></div>`;
@@ -2098,6 +2117,7 @@ function lineChartSVG(labels, mem, emptyMsg){
         : `<text y="3.5" text-anchor="middle" style="font-size:11px">${m.emoji||'🙂'}</text>`;
       const crown = isLeader ? `<text y="-13" text-anchor="middle" style="font-size:11px" class="${uid}-crown">👑</text>` : '';
       const face = `<g transform="translate(${ex.toFixed(1)},${y(0).toFixed(1)})">
+        <title>${escapeHtml(m.name)}${m.me?' (you)':''} · ${escapeHtml(m.valLabel||String(m.final??''))}</title>
         <animateTransform attributeName="transform" type="translate" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${tVals}"/>
         <g class="${uid}-face" style="animation-duration:${(0.55+(idx%5)*0.09).toFixed(2)}s">
           <circle r="9" fill="var(--card)" stroke="${col}" stroke-width="2" class="${isLeader?uid+'-leader':''}"/>
@@ -2596,7 +2616,7 @@ function viewBanterBoard(){
     if(rows.length>=3 && rows[2].likes>0){
       const order=[1,0,2];
       html+=`<div class="card"><div class="podium">`+order.map(i=>{const r=rows[i];const u=profileById(r.user);const place=i+1;const hgt=place===1?98:place===2?74:60;
-        return `<div class="pod p${place}"><div class="podav">${u.emoji}</div><div class="podname">${u.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">❤️${r.likes}</div></div></div>`;}).join("")+`</div>
+        return `<div class="pod p${place}"><div class="podav" title="${escapeHtml(u.name)}">${u.emoji}</div><div class="podname">${u.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">❤️${r.likes}</div></div></div>`;}).join("")+`</div>
         <div class="trash center">🎤 ${king.emoji} <b>${escapeHtml(king.name)}</b> is the league's Banter King 👑</div></div>`;
     } else {
       html+=`<div class="card center"><div style="font-size:32px">👑</div><div style="font-family:'Fredoka';font-size:18px">${escapeHtml(king.name)} — Banter King 🎤</div><div class="small muted">❤️ ${rows[0].likes} like${rows[0].likes===1?'':'s'} · top of the banter league</div></div>`;
@@ -2608,7 +2628,7 @@ function viewBanterBoard(){
     const bonus=banterBonus(r.user);
     html+=`<div class="lbrow ${me}" data-vp="${r.user}" style="cursor:pointer">
       <div class="pos medal">${medal}</div>
-      <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(u)}</div>
+      <div class="avatar" title="${escapeHtml(u.name)}" style="width:30px;height:30px;font-size:15px">${avatarInner(u)}</div>
       <div class="nm">${escapeHtml(u.name)}${r.sentOff?' <span class="advtag miss">🟥 off</span>':''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} <small class="badges">${r.posts} post${r.posts===1?'':'s'}${cards?' · '+cards:''}${bonus?' · <span style="color:var(--lime)">+'+bonus+' pts</span>':''}</small></div>
       <div class="sc">❤️ ${r.likes}</div>
     </div>`;
@@ -2631,7 +2651,7 @@ function viewBoard(){
   if(lb.length>=3){
     const order=[1,0,2]; // render 2nd, 1st, 3rd
     html+=`<div class="card"><div class="podium">`+order.map(i=>{const r=lb[i];const place=i+1;const hgt=place===1?98:place===2?74:60;
-      return `<div class="pod p${place}"><div class="podav">${r.emoji}</div><div class="podname">${r.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">${r.pts}p</div></div></div>`;}).join("")+`</div>
+      return `<div class="pod p${place}"><div class="podav" title="${escapeHtml(r.name)}">${r.emoji}</div><div class="podname">${r.name.split(" ")[0]}</div><div class="podbar" style="height:${hgt}px">${place===1?'👑':place===2?'🥈':'🥉'}<div class="podsc">${r.pts}p</div></div></div>`;}).join("")+`</div>
       <div class="trash center">👑 ${top.emoji} <b>${top.name}</b> ${trashTop}</div></div>`;
   }
   lb.forEach(r=>{
@@ -2641,7 +2661,7 @@ function viewBoard(){
     const badges=r.badges.map(b=>`<span title="${b[1]}: ${b[2]}">${b[0]}</span>`).join("");
     html+=`<div class="lbrow ${me}" data-vp="${r.id}" style="cursor:pointer">
       <div class="pos medal">${medal}</div>
-      <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
+      <div class="avatar" title="${escapeHtml(r.name)}" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
       <div class="nm">${r.name}${r.team&&teamById(r.team)?` <span title="Supports ${teamById(r.team).name}">${teamById(r.team).flag}</span>`:''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small class="badges">${badges||'&nbsp;'}</small></div>
       <div class="sc">${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts</div>
     </div>`;
