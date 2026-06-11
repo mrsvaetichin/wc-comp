@@ -1682,6 +1682,7 @@ async function syncResults(manual){
   try{
     const r=await fetch(`https://www.thesportsdb.com/api/v1/json/${SPORTSDB_KEY}/eventsseason.php?id=${SPORTSDB_LEAGUE}&s=${SPORTSDB_SEASON}`);
     const data=await r.json(); const evs=(data&&data.events)||[]; let n=0;
+    let liveN=0;
     evs.forEach(e=>{
       if(e.intHomeScore==null||e.intHomeScore===""||e.intAwayScore==null||e.intAwayScore==="") return;
       const eh=nrm(e.strHomeTeam), ea=nrm(e.strAwayTeam);
@@ -1689,10 +1690,20 @@ async function syncResults(manual){
       if(!m) return;
       const hHome=nrm(teamById(m.home).name)===eh;
       const hs=hHome?+e.intHomeScore:+e.intAwayScore, as=hHome?+e.intAwayScore:+e.intHomeScore;
-      if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; n++;
-        if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
+      // 🔴 Only FINALIZE when the feed says the match is over (or it's clearly past full
+      // time). A live in-play score is stored separately (m.lhs/m.las) so the ⚡ LIVE strip
+      // can show it — without freezing re-picks or paying out points early.
+      const st=(e.strStatus||"").toLowerCase();
+      const isFinal = /\bft\b|finished|aet|pen/.test(st)
+        || (!st && Date.now() > new Date(m.kickoff).getTime() + 110*60*1000);
+      if(isFinal){
+        if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; n++;
+          if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
+      } else if(m.status!=="finished" && new Date(m.kickoff)<=Date.now()){
+        if(m.lhs!==hs||m.las!==as){ m.lhs=hs; m.las=as; liveN++; }
+      }
     });
-    if(n){ saveLocal(); render(); }
+    if(n||liveN){ saveLocal(); render(); }
     if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:"No new results yet — check back after kickoff");
   }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
 }
@@ -1842,6 +1853,28 @@ function nav(){
 let pickFilter="md1"; // 'md1'|'md2'|'md3'|'r32'|'r16'|'qf'|'sf'|'f'  — group rounds + knockout rounds
 const KO_ROUND_LABEL = { r32:"Round of 32", r16:"Round of 16", qf:"Quarter-finals", sf:"Semi-finals", f:"Final" };
 const KO_ROUND_ORDER = ["r32","r16","qf","sf","f"];
+// 🔴 LIVE NOW strip — every in-play match with its current score (from the live feed;
+// "· – ·" until the first sync lands one). Shown on the dashboard + the Board tab so the
+// leaderboard always carries what's happening on the pitch right now.
+function liveNowCard(){
+  const live=DB.matches.filter(m=>inPlay(m)).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+  if(!live.length) return '';
+  const rows=live.map(m=>{
+    const h=teamById(m.home), a=teamById(m.away);
+    const sc=(m.lhs!=null&&m.las!=null)?`${m.lhs} – ${m.las}`:'· – ·';
+    const eff=effectivePick(ME.id,m.id);
+    const mine=eff&&eff.hp!=null?`<span class="tiny muted" style="white-space:nowrap">you: ${eff.hp}–${eff.ap}${eff.banker?' ⭐':''}</span>`:'<span class="tiny muted">no pick</span>';
+    return `<div class="standrow">
+      <span class="chip live" style="flex:none">🔴 LIVE</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.flag} ${escapeHtml(h.name)} <b class="display" style="color:var(--lime);font-size:17px;padding:0 4px">${sc}</b> ${escapeHtml(a.name)} ${a.flag}</span>
+      ${mine}
+    </div>`;
+  }).join("");
+  return `<div class="card" style="border-color:var(--red)">
+    <div class="spread"><h3 style="font-size:15px;margin:0">⚡ Live now</h3><span class="tiny muted">scores refresh automatically · points land at full time</span></div>
+    <div style="margin-top:4px">${rows}</div>
+  </div>`;
+}
 function heroLeaderboard(){
   const lg=curLeague(); if(!lg) return '';
   const lb=leaderboard(); if(!lb.length) return '';
@@ -1864,7 +1897,7 @@ function heroLeaderboard(){
   } else {
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-tab="banter">Start →</button></div><div class="small muted" style="padding:8px 2px">No banter yet — fire the first shot in the 💬 Banter tab.</div></div>`;
   }
-  return `<div class="herogrid">${standings}${banter}</div>`;
+  return liveNowCard()+`<div class="herogrid">${standings}${banter}</div>`;
 }
 // horizontal bar chart: items=[{name,value,valLabel,medal,me}], fillClass = bar gradient
 function barChart(items, fillClass){
@@ -1962,18 +1995,19 @@ function lineChartSVG(labels, mem, emptyMsg){
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
   // 🎨 SVG defs: glow filter + styles. Unique id namespace per chart instance.
   const uid = "lc"+Math.random().toString(36).slice(2,8);
-  const RACE_DUR=4.6;   // seconds of total drama before the truth lands
+  const RACE_DUR=9;   // seconds of total drama before the truth lands — slow-burn comedy
+  // ⚡ Perf note: no SVG blur filters here — feGaussianBlur on elements that morph every
+  // frame forces Chrome to re-render the filter region continuously and tanks the page
+  // during the 9s race. Plain strokes animate cheaply on the GPU-friendly path.
   const defs = `<defs>
-    <filter id="${uid}-glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="2.2" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <style>
       .${uid}-leader{animation:${uid}-pulse 1.6s ease-in-out infinite;animation-delay:${RACE_DUR}s;transform-origin:center;transform-box:fill-box}
-      .${uid}-crown{animation:${uid}-wob .5s ease-in-out infinite alternate;transform-origin:center;transform-box:fill-box}
-      .${uid}-q{animation:${uid}-wob .55s ease-in-out infinite alternate, ${uid}-qfade ${(RACE_DUR*0.92).toFixed(1)}s linear forwards;transform-origin:center;transform-box:fill-box}
+      .${uid}-crown{animation:${uid}-wob .8s ease-in-out infinite alternate;transform-origin:center;transform-box:fill-box}
+      .${uid}-face{animation:${uid}-bob .7s ease-in-out infinite alternate;transform-origin:center;transform-box:fill-box}
+      .${uid}-q{animation:${uid}-wob .8s ease-in-out infinite alternate, ${uid}-qfade ${(RACE_DUR*0.92).toFixed(1)}s linear forwards;transform-origin:center;transform-box:fill-box}
       @keyframes ${uid}-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
       @keyframes ${uid}-wob{from{transform:rotate(-16deg) scale(1)}to{transform:rotate(16deg) scale(1.22)}}
+      @keyframes ${uid}-bob{from{transform:rotate(-9deg)}to{transform:rotate(9deg)}}
       @keyframes ${uid}-qfade{0%,78%{opacity:1}100%{opacity:0}}
     </style>
   </defs>`;
@@ -1997,8 +2031,22 @@ function lineChartSVG(labels, mem, emptyMsg){
     const noise=()=> (Math.random()-0.5)*yMax*0.16;     // jittery, panicky lines
     const clampV=v=> Math.max(yMin, Math.min(yMax*1.04, v));
     const traj=target=> Array.from({length:N},(_,i)=> i===0?0:clampV(i/(N-1)*target+noise()));
-    const ptsOf=vals=>vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    const keyTimes="0;0.24;0.46;0.68;0.88;1";           // flat → chaos×3 → overshoot → truth
+    // 🌊 Smooth Catmull-Rom → cubic-Bézier path. Every phase has the same point count,
+    // so the path command structure is identical and SMIL can morph `d` between phases.
+    const pathOf=vals=>{
+      const P=vals.map((v,i)=>[x(i),y(v)]);
+      let d=`M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
+      for(let i=0;i<P.length-1;i++){
+        const p0=P[i-1]||P[i], p1=P[i], p2=P[i+1], p3=P[i+2]||p2;
+        const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+        const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+        d+=` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+      }
+      return d;
+    };
+    const yBase=y(yMin).toFixed(1);
+    const areaOf=vals=> pathOf(vals)+` L${x(N-1).toFixed(1)} ${yBase} L${x(0).toFixed(1)} ${yBase} Z`;
+    const keyTimes="0;0.22;0.44;0.66;0.87;1";           // flat → chaos×3 → overshoot → truth
     const keySplines=Array(5).fill(".42 0 .58 1").join(";");
     body+=mem.map((m,idx)=>{
       const me = m.me;
@@ -2006,28 +2054,34 @@ function lineChartSVG(labels, mem, emptyMsg){
       const flat=m.series.map(()=>0);
       const over=m.series.map((v,i)=> i===0?v:clampV(v*1.22+yMax*0.03));  // elastic overshoot before settling
       const sets=[flat, traj(fakeA[idx]), traj(fakeB[idx]), traj(fakeC[idx]), over, m.series];
-      const begin=(idx*0.12).toFixed(2);                // staggered launch, like sprinters
+      const begin=(idx*0.25).toFixed(2);                // staggered launch, like sprinters
       const anim=(attr,values)=>`<animate attributeName="${attr}" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${values}"/>`;
-      const ex=x(N-1);
-      const eyVals=sets.map(s=>y(s[s.length-1]).toFixed(1)).join(";");
-      const dotR = me ? 4 : 3;
+      const ex=Math.min(x(N-1), W-11);                  // keep the face badge inside the frame
       const lineW = me ? 3 : 2;
       const isLeader = idx===0;
-      // Subtle gradient fill under the line — only for the leader and "me" (races along too)
+      // Subtle gradient fill under the curve — only for the leader and "me" (races along too)
       let area = '';
       if(me || isLeader){
-        const base=` ${x(N-1).toFixed(1)},${y(yMin).toFixed(1)} ${x(0).toFixed(1)},${y(yMin).toFixed(1)}`;
-        area = `<polygon points="${ptsOf(flat)+base}" fill="${col}" opacity=".10">${anim('points', sets.map(s=>ptsOf(s)+base).join(";"))}</polygon>`;
+        area = `<path d="${areaOf(flat)}" fill="${col}" stroke="none" opacity=".10">${anim('d', sets.map(areaOf).join(";"))}</path>`;
       }
-      // 👑 glued to the eventual winner's tip for the WHOLE race — it gets dragged
-      // through every fake lead change, wobbling in disbelief, before landing on top.
-      const crown = isLeader
-        ? `<text x="${ex.toFixed(1)}" y="${(y(0)-8).toFixed(1)}" text-anchor="middle" style="font-size:12px" class="${uid}-crown">👑${anim('y', sets.map(s=>(y(s[s.length-1])-8).toFixed(1)).join(";"))}</text>`
-        : '';
+      // 🏃 The player's FACE rides the tip of their line for the whole race — photo
+      // avatar if they uploaded one, emoji badge otherwise — bobbing side to side,
+      // dragged through every fake lead change. Leader's 👑 sits on top of their face.
+      const tVals=sets.map(s=>`${ex.toFixed(1)} ${y(s[s.length-1]).toFixed(1)}`).join(";");
+      const faceInner = m.avatar
+        ? `<clipPath id="${uid}-fc${idx}"><circle r="8"/></clipPath><image x="-8" y="-8" width="16" height="16" preserveAspectRatio="xMidYMid slice" href="${m.avatar}" clip-path="url(#${uid}-fc${idx})"/>`
+        : `<text y="3.5" text-anchor="middle" style="font-size:11px">${m.emoji||'🙂'}</text>`;
+      const crown = isLeader ? `<text y="-13" text-anchor="middle" style="font-size:11px" class="${uid}-crown">👑</text>` : '';
+      const face = `<g transform="translate(${ex.toFixed(1)},${y(0).toFixed(1)})">
+        <animateTransform attributeName="transform" type="translate" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${tVals}"/>
+        <g class="${uid}-face" style="animation-duration:${(0.55+(idx%5)*0.09).toFixed(2)}s">
+          <circle r="9" fill="var(--card)" stroke="${col}" stroke-width="2" class="${isLeader?uid+'-leader':''}" style="filter:url(#${uid}-glow)"/>
+          ${faceInner}${crown}
+        </g>
+      </g>`;
       return area
-        + `<polyline points="${ptsOf(flat)}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" style="filter:url(#${uid}-glow)">${anim('points', sets.map(ptsOf).join(";"))}</polyline>`
-        + `<circle cx="${ex.toFixed(1)}" cy="${y(0).toFixed(1)}" r="${dotR}" fill="${col}" class="${isLeader?uid+'-leader':''}" style="filter:url(#${uid}-glow)">${anim('cy', eyVals)}</circle>`
-        + crown;
+        + `<path d="${pathOf(flat)}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linejoin="round" stroke-linecap="round" opacity="${me?1:.92}" style="filter:url(#${uid}-glow)">${anim('d', sets.map(pathOf).join(";"))}</path>`
+        + face;
     }).join("");
     // ❓ hovers over the chart while the race is still anyone's guess, then pops away.
     body+=`<text x="${(W/2).toFixed(1)}" y="${(padT+12).toFixed(1)}" text-anchor="middle" style="font-size:15px" class="${uid}-q">❓</text>`;
@@ -2051,6 +2105,7 @@ function pointsLineCard(){
   const cps=days.map(d=>({d, cut:new Date(d+"T23:59:59Z").getTime()}));
   if(cps.length) cps[cps.length-1].cut = Math.max(cps[cps.length-1].cut, Date.now());
   let mem=leagueMembers(LG).map(p=>({id:p.id, name:p.name.split(" ")[0], me:p.id===ME.id,
+    emoji:p.emoji, avatar:p.avatar||null,                              // 🏃 face badge that races on the line tip
     series:[0, ...cps.map(c=>matchPtsAsOf(p.id,c.cut))]}));            // leading 0 = pre-tournament baseline
   // Force last point = live total for every member (defends against TZ drift).
   mem.forEach(m=>{ if(m.series.length) m.series[m.series.length-1]=scoreFor(m.id).pts; m.final=m.series[m.series.length-1]; m.valLabel=`${m.final}`; });
@@ -2107,6 +2162,7 @@ function banterLineCard(){
     if(series.length) series[series.length-1] = totals[uid];
     return {
       name: p.name.split(" ")[0], me: uid===ME.id, final: totals[uid],
+      emoji: p.emoji, avatar: p.avatar||null,   // 🏃 face badge that races on the line tip
       valLabel: `❤️ ${totals[uid]}${totals[uid]>=BANTER_CAP?` · capped at ${BANTER_CAP}`:''}`, series
     };
   }).filter(Boolean);
@@ -2530,6 +2586,7 @@ function viewBoard(){
   let html=`<div class="card center"><h3>📊 ${curLeague()?curLeague().name+" · ":""}The Table</h3><div class="small muted">${curLeague()?leagueMembers(LG).length+" players · ":""}most points takes the pot.</div>
       ${boardToggle()}
       <button class="btn block" data-sync style="margin-top:8px">🔄 Sync live results</button></div>`;
+  html+=liveNowCard();
   // 🏆 podium of the top 3
   if(lb.length>=3){
     const order=[1,0,2]; // render 2nd, 1st, 3rd
@@ -4326,6 +4383,9 @@ async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDI
 async function boot(){
   WANT_ADMIN = isAdminRoute();
   startTicker();   // 🕐 once-only setInterval that ticks every countdown on the page
+  // 🔴 Auto-refresh live scores while any match is in play (syncResults throttles itself
+  // to ~1 call per 2 min and only re-renders when something actually changed).
+  setInterval(()=>{ try{ if(ME && DB.matches.some(m=>inPlay(m))) syncResults(false); }catch(e){} }, 150000);
   try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
   if(haveKeys){
