@@ -350,13 +350,17 @@
   .advtag.miss{background:rgba(226,75,74,.18);color:#ffb3b3}
   .advhint{font-size:12px;color:var(--cyan);font-weight:600;white-space:nowrap}
   /* 💬 banter feed */
-  .bmsg{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px;margin:8px 0}
+  .bmsg{display:flex;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px;margin:8px 0;transition:opacity .2s, border-color .2s}
+  .bmsg-red{border-color:var(--red);background:linear-gradient(180deg,rgba(255,90,90,.10),var(--card))}
+  .bmsg-red .bbody{opacity:.55;text-decoration:line-through;text-decoration-color:var(--red)}
+  .bmsg-locked{opacity:.78;border-style:dashed}
   .bmsg .bmain{flex:1;min-width:0}
   .bhead{display:flex;align-items:center;gap:4px;font-size:14px}
   .btime{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
   .bbody{font-size:15px;margin:3px 0 0;overflow-wrap:anywhere;white-space:pre-wrap}
   .bactions{display:flex;align-items:center;gap:7px;margin-top:8px;flex-wrap:wrap}
   .likecount{font-size:13px;color:var(--muted);font-weight:600}
+  .likecount.wiped{color:var(--red);text-decoration:line-through}
   .likebtn{font-size:12px;font-weight:700;border-radius:8px;padding:5px 11px;border:1px solid var(--line);background:var(--bg);color:var(--muted)}
   .likebtn.on{border-color:var(--pink);background:rgba(255,107,157,.15);color:#ffd0e0}
   .cardbtn{font-size:13px;font-weight:700;border-radius:8px;padding:5px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
@@ -1146,17 +1150,22 @@ function groupComplete(g){return DB.matches.filter(m=>m.grp===g).every(m=>m.stat
 // 💬 banter bonus: the top-3 most-liked banterers earn extra standings points (🥇+15 🥈+10 🥉+5).
 // Ranked by ❤️ likes; you must have at least one like to place (so nobody wins it just by existing).
 function banterRank(uid){ const ranked=topBanter().filter(x=>x.likes>0); return ranked.findIndex(x=>x.user===uid); }
-// 💬 Banter score = exactly the number of ❤️ likes this user has received on their
-// posts. 1 like = 1 point, no podium thresholds. Counted from DB.likes via the
-// commentId→authorId mapping so admin-author posts and orphaned-comment likes
-// (deleted comments) don't accidentally count.
+// 💬 Banter score = ❤️ likes received on each of your posts, EXCEPT posts that
+// have been red-carded (sent off by 2 yellows + a red). Those posts earn nothing
+// at all — every like on them is wiped. Likes on orphaned (deleted) comments
+// don't count either. Counted via commentId→authorId + redCard maps for speed.
 function banterBonus(uid){
   if(!uid) return 0;
   let n = 0;
-  const likes = DB.likes||[], comments = DB.comments||[];
+  const likes = DB.likes||[], comments = DB.comments||[], cards = DB.cards||[];
   const authorMap = Object.create(null);
+  const redMap    = Object.create(null);
   comments.forEach(c=>{ authorMap[c.id] = c.user; });
-  for(const l of likes){ if(authorMap[l.comment] === uid) n += BANTER_PER_LIKE; }
+  cards.forEach(cd=>{ if(cd.kind==="red") redMap[cd.comment] = true; });
+  for(const l of likes){
+    if(redMap[l.comment]) continue;                  // 🟥 sent-off post → 0 pts
+    if(authorMap[l.comment] === uid) n += BANTER_PER_LIKE;
+  }
   return n;
 }
 
@@ -1543,7 +1552,26 @@ async function loadLeagueData(){
   persistLG(); scopeLeague();
 }
 /* ---------- 💬 banter feed + 🟨🟥 cards ---------- */
-const CARD_SENDOFF_REDS=3, CARD_SENDOFF_MS=30*60*1000; // 3 reds → sent off 30 min (2 yellows = 1 red)
+// 🆕 Per-post card rules (v2): each ❤️ = +1 pt for the post's author. Anyone can
+// give the post a 🟨 yellow card. After 2 yellows have stacked on a post, the next
+// dissenter sends a 🟥 red — which nullifies that post entirely (its likes earn 0).
+//   No new likes / no new cards / no new reds on a comment from a previous round —
+//   they freeze the moment the round changes.
+//   The user-level "sent off" suspension stays as a separate fun mechanic
+//   (3 user-level red-equivalents → no posting for 30 min).
+const CARD_SENDOFF_REDS=3, CARD_SENDOFF_MS=30*60*1000;
+// Current "banter round" — group rounds (md1/md2/md3) while we're still in the group
+// stage, then a single "ko" bucket for all knockout banter (simple + low-coordination).
+function currentBanterRound(){ return groupStageFinished() ? "ko" : ("md"+currentMD()); }
+function isCommentLocked(c){ return !!(c && c.round && c.round !== currentBanterRound()); }
+function commentYellows(commentId){ return DB.cards.filter(c=>c.comment===commentId && c.kind==="yellow").length; }
+function commentReds(commentId){    return DB.cards.filter(c=>c.comment===commentId && c.kind==="red").length; }
+function isCommentRedCarded(commentId){ return commentReds(commentId) > 0; }
+// "What card can the next person give on this post?" → 'yellow', 'red', or null
+function nextCardKind(commentId){
+  if(isCommentRedCarded(commentId)) return null;
+  return commentYellows(commentId) >= 2 ? "red" : "yellow";
+}
 function userCards(uid){
   const mine=DB.cards.filter(c=>c.target===uid);
   const yellow=mine.filter(c=>c.kind==="yellow").length, red=mine.filter(c=>c.kind==="red").length;
@@ -1568,7 +1596,11 @@ function topBanter(){
     .sort((a,b)=> b.likes-a.likes || b.posts-a.posts);
 }
 async function toggleLike(commentId){
-  if(!DB.comments.find(x=>x.id===commentId)) return;
+  const c = DB.comments.find(x=>x.id===commentId); if(!c) return;
+  // 🔒 Round-locked or sent-off posts can't accept new likes (and the old ones still
+  // count, except a sent-off post earns 0 regardless — see banterBonus).
+  if(isCommentLocked(c)){ toast("🔒 Locked — post is from a previous round"); return; }
+  if(isCommentRedCarded(commentId)){ toast("🟥 This post got sent off — no more likes"); return; }
   const ex=DB.likes.find(l=>l.comment===commentId&&l.user===ME.id);
   if(ex){ ALL.likes=ALL.likes.filter(l=>l.id!==ex.id); scopeLeague(); if(MODE==="live"&&supa){ try{ await supa.from("likes").delete().eq("id",ex.id); }catch(e){console.error(e);} } }
   else { const l={id:`${ME.id}-${commentId}-l`,league:LG,comment:commentId,user:ME.id,created:new Date().toISOString()}; ALL.likes.push(l); scopeLeague(); if(MODE==="live") await sbInsert("likes",{id:l.id,league_id:LG,comment_id:commentId,user_id:ME.id,created_at:l.created}); }
@@ -1576,7 +1608,7 @@ async function toggleLike(commentId){
 }
 async function reloadComments(){ if(MODE!=="live"||!supa)return;
   const {data:cm}=await supa.from("comments").select("*"); const {data:cd}=await supa.from("cards").select("*"); const {data:lk}=await supa.from("likes").select("*");
-  if(cm) ALL.comments=cm.map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
+  if(cm) ALL.comments=cm.map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at,round:c.round||'md1'}));
   if(cd) ALL.cards=cd.map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
   if(lk) ALL.likes=lk.map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
   scopeLeague();
@@ -1584,23 +1616,32 @@ async function reloadComments(){ if(MODE!=="live"||!supa)return;
 async function postComment(body){
   body=(body||"").trim().slice(0,500); if(!body||!LG) return false;
   if(userCards(ME.id).sentOff){ toast("🟥 You're sent off — no posting right now"); return false; }
-  const c={id:`${ME.id}-${LG}-${Date.now()}`,league:LG,user:ME.id,body,created:new Date().toISOString()};
+  const round = currentBanterRound();
+  const c={id:`${ME.id}-${LG}-${Date.now()}`,league:LG,user:ME.id,body,created:new Date().toISOString(),round};
   ALL.comments.push(c); scopeLeague();
-  if(MODE==="live") await sbInsert("comments",{id:c.id,league_id:LG,user_id:ME.id,body,created_at:c.created});
+  if(MODE==="live") await sbInsert("comments",{id:c.id,league_id:LG,user_id:ME.id,body,created_at:c.created,round});
   saveLocal(); return true;
 }
 async function giveCard(commentId, kind){
   const cm=DB.comments.find(x=>x.id===commentId); if(!cm) return;
   if(cm.user===ME.id){ toast("You can't card your own message 😅"); return; }
   if(myCardOn(commentId)){ toast("You already carded that message"); return; }
+  // 🆕 Round/state guards. Cards lock with the round and stop once a red is in.
+  if(isCommentLocked(cm)){ toast("🔒 Locked — can't card a previous-round post"); return; }
+  if(isCommentRedCarded(commentId)){ toast("🟥 Already sent off — no more cards"); return; }
+  // Yellow → red progression: must give 🟨 until 2 yellows; only THEN can a 🟥 come.
+  const yc = commentYellows(commentId);
+  if(kind === "yellow" && yc >= 2){ toast("Two 🟨 already — next card has to be a 🟥 red"); return; }
+  if(kind === "red"    && yc <  2){ toast("Need 2 🟨 yellows first before a 🟥 red"); return; }
   const before=userCards(cm.user).sentOff;
   const card={id:`${ME.id}-${commentId}-c`,league:LG,comment:commentId,from:ME.id,target:cm.user,kind,created:new Date().toISOString()};
   ALL.cards.push(card); scopeLeague();
   if(MODE==="live") await sbInsert("cards",{id:card.id,league_id:LG,comment_id:commentId,from_id:ME.id,target_id:cm.user,kind,created_at:card.created});
   saveLocal();
   const after=userCards(cm.user), nm=(profileById(cm.user)||{}).name||"Player";
-  if(after.sentOff && !before) celebrate(`🟥 ${nm} SENT OFF!`);
-  else toast(`${kind==="red"?"🟥 Red":"🟨 Yellow"} card for ${nm}!`);
+  if(kind === "red") celebrate(`🟥 POST SENT OFF — ${nm}'s likes wiped from that one`);
+  else if(after.sentOff && !before) celebrate(`🟥 ${nm} SENT OFF!`);
+  else toast(`🟨 Yellow card for ${nm}!`);
 }
 
 /* ---------- live results auto-sync (TheSportsDB free API) ---------- */
@@ -2308,7 +2349,7 @@ function viewBanter(){
   const me=userCards(ME.id);
   const feed=[...DB.comments].sort((a,b)=>new Date(b.created)-new Date(a.created));
   let html=`<div class="card"><h3>💬 Banter${curLeague()?` · ${curLeague().name}`:''}</h3>
-    <div class="small muted">Trash-talk your league. See a cheeky post? Book it — 🟨 or 🟥. <b>2 yellows = a red</b>, and <b>${CARD_SENDOFF_REDS} reds = sent off</b> (no posting for 30 min). Behave 😇🦇</div></div>`;
+    <div class="small muted">Trash-talk your league. Each ❤️ <b>= +1 point</b> for the poster. Don't like a post? <b>🟨 book it</b>. After <b>2 yellows</b> stack on a post, the next dissenter sends a <b>🟥 red</b> — the post is "sent off" and its likes earn 0. Likes &amp; cards freeze when the round changes — old posts are locked in. Behave 😇🦇</div></div>`;
   if(me.sentOff){
     const mins=Math.max(1,Math.ceil((me.until-Date.now())/60000));
     html+=`<div class="card center" style="border-color:var(--red)"><div style="font-size:36px">🟥</div><div style="font-family:'Fredoka';font-size:20px">You're sent off!</div><div class="small muted">Cool it — back in about ${mins} min. No posting till then.</div></div>`;
@@ -2329,17 +2370,38 @@ function viewBanter(){
   if(!feed.length){ html+=`<div class="empty"><div class="e">💬</div>No banter yet — break the ice!</div>`; return html; }
   feed.forEach(c=>{
     const u=profileById(c.user), mine=c.user===ME.id, myc=myCardOn(c.id), uc=userCards(c.user);
-    const badge = uc.sentOff?'<span class="advtag miss" style="margin-left:6px">🟥 off</span>' : (uc.red||uc.yellow?`<span class="tiny" style="margin-left:6px;color:var(--muted)">${uc.yellow?'🟨'+uc.yellow:''}${uc.red?' 🟥'+uc.red:''}</span>`:'');
-    html+=`<div class="bmsg">
+    const locked = isCommentLocked(c);
+    const redOnPost = isCommentRedCarded(c.id);
+    const yc = commentYellows(c.id);
+    const next = nextCardKind(c.id);                 // 'yellow' | 'red' | null
+    const userTag = uc.sentOff?'<span class="advtag miss" style="margin-left:6px">🟥 off</span>' : (uc.red||uc.yellow?`<span class="tiny" style="margin-left:6px;color:var(--muted)">${uc.yellow?'🟨'+uc.yellow:''}${uc.red?' 🟥'+uc.red:''}</span>`:'');
+    // Per-post status badge — overrides the per-user tag once the post itself is dead/locked.
+    let postTag = '';
+    if(redOnPost)    postTag = `<span class="advtag miss" style="margin-left:6px">🟥 SENT OFF · 0 pts</span>`;
+    else if(locked)  postTag = `<span class="tiny" style="margin-left:6px;color:var(--gold)">🔒 locked (${c.round||'?'})</span>`;
+    else if(yc)      postTag = `<span class="tiny" style="margin-left:6px;color:var(--gold)">🟨 ${yc}/2</span>`;
+    html+=`<div class="bmsg${redOnPost?' bmsg-red':''}${locked?' bmsg-locked':''}">
       <div class="avatar avbtn" data-vp="${c.user}" title="View ${escapeHtml(u?u.name:'')}'s profile" style="width:34px;height:34px;font-size:16px;flex:none;cursor:pointer">${avatarInner(u)}</div>
       <div class="bmain">
-        <div class="bhead"><b data-vp="${c.user}" style="cursor:pointer">${escapeHtml(u?u.name:'?')}${mine?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</b>${badge}<span class="btime">${timeAgo(c.created)}</span></div>
+        <div class="bhead"><b data-vp="${c.user}" style="cursor:pointer">${escapeHtml(u?u.name:'?')}${mine?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</b>${userTag}${postTag}<span class="btime">${timeAgo(c.created)}</span></div>
         <div class="bbody">${escapeHtml(c.body)}</div>
         <div class="bactions" data-stop="1">
-          ${likeCount(c.id)?`<span class="likecount">❤️ ${likeCount(c.id)}</span>`:''}
-          ${mine?(likeCount(c.id)?'':'<span class="tiny muted">your post</span>')
-            :`<button class="likebtn ${iLiked(c.id)?'on':''}" data-like="${c.id}">${iLiked(c.id)?'❤️ Liked':'🤍 Like'}</button>
-              ${myc?`<span class="tiny muted">you showed ${myc.kind==='red'?'🟥':'🟨'}</span>`:`<button class="cardbtn yel" data-card="yellow" data-cm="${c.id}">🟨</button><button class="cardbtn redc" data-card="red" data-cm="${c.id}">🟥</button>`}`}
+          ${likeCount(c.id)?`<span class="likecount${redOnPost?' wiped':''}" title="${redOnPost?'Likes earn 0 pts on a sent-off post':'❤️ from the crowd'}">❤️ ${likeCount(c.id)}${redOnPost?' · wiped':''}</span>`:''}
+          ${mine
+            ? (likeCount(c.id)?'':'<span class="tiny muted">your post</span>')
+            : redOnPost
+              ? '<span class="tiny muted">🟥 sent off · no actions</span>'
+              : locked
+                ? '<span class="tiny muted">🔒 round locked</span>'
+                : `<button class="likebtn ${iLiked(c.id)?'on':''}" data-like="${c.id}">${iLiked(c.id)?'❤️ Liked':'🤍 Like'}</button>
+                   ${myc
+                     ? `<span class="tiny muted">you showed ${myc.kind==='red'?'🟥':'🟨'}</span>`
+                     : next==='red'
+                       ? `<button class="cardbtn redc" data-card="red" data-cm="${c.id}" title="Two 🟨 already — your 🟥 sends it off">🟥 Send off (2/2 already)</button>`
+                       : next==='yellow'
+                         ? `<button class="cardbtn yel" data-card="yellow" data-cm="${c.id}" title="${yc?'1 yellow already — yours makes 2':'First yellow on this post'}">🟨 Book (${yc}/2)</button>`
+                         : ''}`
+          }
         </div>
       </div>
     </div>`;
@@ -2358,7 +2420,7 @@ function banterBoard(){
 }
 function viewBanterBoard(){
   const rows=banterBoard();
-  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Ranked by ❤️ likes on your posts. <b>Each ❤️ = +1 point</b> toward your main standings — no thresholds, no podium-only bonus. Get a like, get a point.</div>${boardToggle()}</div>`;
+  let html=`<div class="card center"><h3>💬 ${curLeague()?curLeague().name+" · ":""}Banter League</h3><div class="small muted">Each ❤️ = <b>+1 point</b> on your main standings. <b>2 yellows on a post → 3rd dissenter can give a red 🟥 — that post earns 0</b>. Likes &amp; cards lock when the round changes (old posts are frozen).</div>${boardToggle()}</div>`;
   if(!rows.length || rows.every(r=>r.likes===0&&r.posts===0)){
     html+=`<div class="empty"><div class="e">💬</div>No banter yet — open the 💬 Banter tab and get the trash talk going!</div>`;
     return html;
@@ -3796,7 +3858,7 @@ function rulesHTML(){
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
     ${row("🔁",`<b>Half-time re-picks:</b> ${REPICK_MAX}× all tournament, change a pick mid-match for <b>−${REPICK_COST} pts</b> each.`)}
-    ${row("💬",`<b>Banter bonus:</b> Every ❤️ like you receive on a banter post = <b>+1 point</b> toward your main standings. Get 20 likes → +20 pts. Simple.`)}
+    ${row("💬",`<b>Banter bonus:</b> Every ❤️ like on your banter post = <b>+1 point</b>. Anyone can 🟨 book a post; after <b>2 yellows</b>, the next dissenter sends a 🟥 red — the post is "sent off" and earns <b>0 points</b> regardless of its likes. <b>Likes &amp; cards freeze when the round changes</b> — old posts can't be liked or booked any more, the score on them is locked in.`)}
     ${row("🔥",`<b>Streaks &amp; badges</b> for bragging rights.`)}
 
     <h4>The money 💰</h4>
@@ -4257,7 +4319,7 @@ async function liveLoad(user){
     .concat((kopicks||[]).map(k=>({id:k.id,user:k.user_id,league:k.league_id,ko:true,stage:k.stage,team:k.team,created:k.created_at})));
   ALL.pans = answers.map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer,created:a.created_at}));
   ALL.rep  = (reps||[]).map(r=>({id:r.id,user:r.user_id,league:r.league_id,match:r.match_id,hp:r.hp,ap:r.ap}));
-  ALL.comments = (comments||[]).map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at}));
+  ALL.comments = (comments||[]).map(c=>({id:c.id,league:c.league_id,user:c.user_id,body:c.body,created:c.created_at,round:c.round||'md1'}));
   ALL.cards    = (cards||[]).map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
   ALL.likes    = (likes||[]).map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
   ALL.bracket  = (bracketPicks||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));

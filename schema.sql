@@ -17,6 +17,12 @@ alter table predictions  add column if not exists created_at timestamptz default
 alter table prop_answers add column if not exists created_at timestamptz default now();
 alter table advances     add column if not exists created_at timestamptz default now();
 alter table ko_picks     add column if not exists created_at timestamptz default now();
+-- 💬 Banter v2: each comment carries the round it was posted in ("md1"/"md2"/"md3"/"ko").
+-- Likes + cards lock when the next round starts, so old jokes can't be retroactively
+-- buried (or boosted) by a player having a bad gameweek. Default 'md1' for any
+-- pre-v2 row so they're treated as the earliest round (locked unless we're still in md1).
+alter table comments add column if not exists round text default 'md1';
+update comments set round = 'md1' where round is null;
 create table if not exists settings (
   id int primary key default 1, app_title text default 'THE MASK', starting_coins int default 1000,
   pts_exact int default 5, pts_result int default 2, pts_advance int default 4,
