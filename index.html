@@ -2056,7 +2056,7 @@ function lineChartSVG(labels, mem, emptyMsg){
   const y=v=>padT+(1-(v-yMin)/((yMax-yMin)||1))*(H-padT-padB);
   // 🎨 SVG defs: animation styles. Unique id namespace per chart instance.
   const uid = "lc"+Math.random().toString(36).slice(2,8);
-  const RACE_DUR=9;   // seconds of total drama before the truth lands — slow-burn comedy
+  const RACE_DUR=6;   // seconds of total drama before the truth lands — quick enough to not overstay the joke
   // ⚡ Perf note: no SVG blur filters here — feGaussianBlur on elements that morph every
   // frame forces Chrome to re-render the filter region continuously and tanks the page
   // during the 9s race. Plain strokes animate cheaply on the GPU-friendly path.
@@ -2124,7 +2124,7 @@ function lineChartSVG(labels, mem, emptyMsg){
     };
     const yBase=y(yMin).toFixed(1);
     const areaOf=vals=> pathOf(vals)+` L${(W-padR).toFixed(1)} ${yBase} L${padL.toFixed(1)} ${yBase} Z`;
-    const keyTimes="0;0.22;0.44;0.66;0.87;1";           // flat → chaos×3 → overshoot → truth
+    const keyTimes="0;0.2;0.4;0.6;0.84;1";              // flat → chaos×3 → overshoot → truth (settles sooner)
     const keySplines=Array(5).fill(".42 0 .58 1").join(";");
     body+=mem.map((m,idx)=>{
       const me = m.me;
@@ -2132,7 +2132,7 @@ function lineChartSVG(labels, mem, emptyMsg){
       const flat=new Array(R).fill(0);
       const over=resample(m.series.map((v,i)=> i===0?v:clampV(v*1.22+yMax*0.03)), true);  // elastic overshoot before settling
       const sets=[flat, traj(fakeA[idx]), traj(fakeB[idx]), traj(fakeC[idx]), over, resample(m.series,true)];
-      const begin=(idx*0.25).toFixed(2);                // staggered launch, like sprinters
+      const begin=(idx*0.15).toFixed(2);                // staggered launch, like sprinters
       const anim=(attr,values)=>`<animate attributeName="${attr}" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${values}"/>`;
       const ex=Math.min(x(N-1), W-11);                  // keep the face badge inside the frame
       const lineW = me ? 3 : 2;
