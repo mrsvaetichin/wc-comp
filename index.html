@@ -2094,11 +2094,25 @@ function lineChartSVG(labels, mem, emptyMsg){
     const fakeB=shuffle(finals), fakeC=shuffle(finals); // phases 2–3: total anarchy
     const noise=()=> (Math.random()-0.5)*yMax*0.16;     // jittery, panicky lines
     const clampV=v=> Math.max(yMin, Math.min(yMax*1.04, v));
-    const traj=target=> Array.from({length:N},(_,i)=> i===0?0:clampV(i/(N-1)*target+noise()));
-    // 🌊 Smooth Catmull-Rom → cubic-Bézier path. Every phase has the same point count,
+    // 🌊 Guaranteed curviness, even on day 1. A cumulative line between two real data
+    // points is mathematically straight — so every series is UPSAMPLED (≥2 interior
+    // points per segment) and the interior points get a gentle alternating sine "bow".
+    // Lines still pass EXACTLY through the true data values at every matchday knot;
+    // only the path between knots sways. Chaos phases are generated at the same
+    // resolution, so the morphs get wavier too.
+    const R=Math.max(12,(N-1)*3+1);                     // render resolution
+    const resample=(vals,wavy)=>Array.from({length:R},(_,j)=>{
+      const f=j*(N-1)/(R-1), i0=Math.floor(f), i1=Math.min(N-1,i0+1), t=f-i0;
+      let v=vals[i0]*(1-t)+vals[i1]*t;
+      if(wavy && t>0.01 && t<0.99) v+=Math.sin(Math.PI*t)*((i0%2)?-1:1)*(yMax-yMin)*0.03;
+      return v;
+    });
+    const traj=target=> Array.from({length:R},(_,j)=> j===0?0:clampV(j/(R-1)*target+noise()));
+    // Smooth Catmull-Rom → cubic-Bézier path. Every phase has the same point count,
     // so the path command structure is identical and SMIL can morph `d` between phases.
     const pathOf=vals=>{
-      const P=vals.map((v,i)=>[x(i),y(v)]);
+      const X=i=>padL+i*(W-padL-padR)/(vals.length-1);
+      const P=vals.map((v,i)=>[X(i),y(v)]);
       let d=`M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
       for(let i=0;i<P.length-1;i++){
         const p0=P[i-1]||P[i], p1=P[i], p2=P[i+1], p3=P[i+2]||p2;
@@ -2109,15 +2123,15 @@ function lineChartSVG(labels, mem, emptyMsg){
       return d;
     };
     const yBase=y(yMin).toFixed(1);
-    const areaOf=vals=> pathOf(vals)+` L${x(N-1).toFixed(1)} ${yBase} L${x(0).toFixed(1)} ${yBase} Z`;
+    const areaOf=vals=> pathOf(vals)+` L${(W-padR).toFixed(1)} ${yBase} L${padL.toFixed(1)} ${yBase} Z`;
     const keyTimes="0;0.22;0.44;0.66;0.87;1";           // flat → chaos×3 → overshoot → truth
     const keySplines=Array(5).fill(".42 0 .58 1").join(";");
     body+=mem.map((m,idx)=>{
       const me = m.me;
       const col = me ? '#ffffff' : LINE_PAL[idx%LINE_PAL.length];
-      const flat=m.series.map(()=>0);
-      const over=m.series.map((v,i)=> i===0?v:clampV(v*1.22+yMax*0.03));  // elastic overshoot before settling
-      const sets=[flat, traj(fakeA[idx]), traj(fakeB[idx]), traj(fakeC[idx]), over, m.series];
+      const flat=new Array(R).fill(0);
+      const over=resample(m.series.map((v,i)=> i===0?v:clampV(v*1.22+yMax*0.03)), true);  // elastic overshoot before settling
+      const sets=[flat, traj(fakeA[idx]), traj(fakeB[idx]), traj(fakeC[idx]), over, resample(m.series,true)];
       const begin=(idx*0.25).toFixed(2);                // staggered launch, like sprinters
       const anim=(attr,values)=>`<animate attributeName="${attr}" dur="${RACE_DUR}s" begin="${begin}s" fill="freeze" calcMode="spline" keyTimes="${keyTimes}" keySplines="${keySplines}" values="${values}"/>`;
       const ex=Math.min(x(N-1), W-11);                  // keep the face badge inside the frame
