@@ -1782,9 +1782,9 @@ function heroLeaderboard(){
   // ── Points standings: top 5 + a "you" row if I'm 6th or lower ──
   const medalFor=(rank)=>rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">#${rank}</span>`;
   let rows=lb.slice(0,5).map(r=>
-    `<div class="hlb-row ${r.id===ME.id?'me':''}"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${r.pts} pts</span></div>`
+    `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${r.pts} pts</span></div>`
   ).join("");
-  if(me && me.rank>5) rows+=`<div class="hlb-row me you"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
+  if(me && me.rank>5) rows+=`<div class="hlb-row me you" data-vp="${me.id}" style="cursor:pointer"><span class="hlb-pos">#${me.rank}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(me)}</span><span class="hlb-nm">${escapeHtml(me.name)} <span class="tiny" style="color:var(--cyan)">(you)</span></span><span class="hlb-pts">${me.pts} pts</span></div>`;
   const standings=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">🏆 ${escapeHtml(lg.name)} · standings <span class="tiny muted">(top 5)</span></h3><button class="hlb-link" data-goboard="points">Full table →</button></div><div class="hlb-rows">${rows}</div></div>`;
   // ── Banter leaderboard ──
   const tb=topBanter().filter(x=>x.likes>0||x.posts>0).slice(0,3);
@@ -1792,7 +1792,7 @@ function heroLeaderboard(){
   if(tb.length){
     const brows=tb.map((r,i)=>{const p=profileById(r.user); if(!p)return''; const medal=i===0?'🥇':i===1?'🥈':'🥉';
       const bonus=r.likes>0?`<span class="bbonus">+${r.likes} pts</span>`:'';
-      return `<div class="hlb-row ${r.user===ME.id?'me':''}"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
+      return `<div class="hlb-row ${r.user===ME.id?'me':''}" data-vp="${r.user}" style="cursor:pointer"><span class="hlb-pos">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span class="hlb-nm">${escapeHtml(p.name)}${r.user===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${bonus}<span class="tiny muted">❤️ ${r.likes}</span></span></div>`;}).join("");
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter <span class="tiny muted">· bonus pts</span></h3><button class="hlb-link" data-goboard="banter">Banter league →</button></div><div class="hlb-rows">${brows}</div></div>`;
   } else {
     banter=`<div class="card herolb"><div class="spread"><h3 style="font-size:16px">💬 Top banter</h3><button class="hlb-link" data-tab="banter">Start →</button></div><div class="small muted" style="padding:8px 2px">No banter yet — fire the first shot in the 💬 Banter tab.</div></div>`;
@@ -2320,22 +2320,22 @@ function viewBanter(){
   if(tb.length){
     html+=`<div class="card"><h3 style="font-size:15px">🏆 Top banter <span class="muted tiny">— most-liked in ${curLeague()?curLeague().name:'the league'} · top 3 bank bonus pts</span></h3>`+tb.slice(0,5).map((t,i)=>{const u=profileById(t.user);const medal=i===0?'👑':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
       const bonus=t.likes>0?`<span class="bbonus">+${t.likes} pts</span>`:'';
-      return `<div class="standrow"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">${bonus}❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
+      return `<div class="standrow" data-vp="${u.id}" style="cursor:pointer"><span style="width:24px;text-align:center">${medal}</span><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(u)}</span><span>${escapeHtml(u.name)}${i===0?' <span class="tiny" style="color:var(--gold)">Banter King 👑</span>':''}</span><span class="gp">${bonus}❤️ ${t.likes}</span></div>`;}).join("")+`</div>`;
   }
   const naughty=DB.profiles.filter(isPlayer).map(p=>({p,c:userCards(p.id)})).filter(x=>x.c.yellow||x.c.red).sort((a,b)=>b.c.reds-a.c.reds||b.c.yellow-a.c.yellow);
   if(naughty.length){
-    html+=`<div class="card"><h3 style="font-size:15px">📋 Ref's book</h3>`+naughty.map(({p,c})=>`<div class="standrow"><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span>${escapeHtml(p.name)}${c.sentOff?' <span class="advtag miss">🟥 SENT OFF</span>':''}</span><span class="gp">${c.yellow?'🟨'.repeat(Math.min(c.yellow,6)):''}${c.red?'🟥'.repeat(Math.min(c.red,6)):''}</span></div>`).join("")+`</div>`;
+    html+=`<div class="card"><h3 style="font-size:15px">📋 Ref's book</h3>`+naughty.map(({p,c})=>`<div class="standrow" data-vp="${p.id}" style="cursor:pointer"><span class="avatar" style="width:26px;height:26px;font-size:13px">${avatarInner(p)}</span><span>${escapeHtml(p.name)}${c.sentOff?' <span class="advtag miss">🟥 SENT OFF</span>':''}</span><span class="gp">${c.yellow?'🟨'.repeat(Math.min(c.yellow,6)):''}${c.red?'🟥'.repeat(Math.min(c.red,6)):''}</span></div>`).join("")+`</div>`;
   }
   if(!feed.length){ html+=`<div class="empty"><div class="e">💬</div>No banter yet — break the ice!</div>`; return html; }
   feed.forEach(c=>{
     const u=profileById(c.user), mine=c.user===ME.id, myc=myCardOn(c.id), uc=userCards(c.user);
     const badge = uc.sentOff?'<span class="advtag miss" style="margin-left:6px">🟥 off</span>' : (uc.red||uc.yellow?`<span class="tiny" style="margin-left:6px;color:var(--muted)">${uc.yellow?'🟨'+uc.yellow:''}${uc.red?' 🟥'+uc.red:''}</span>`:'');
     html+=`<div class="bmsg">
-      <div class="avatar" style="width:34px;height:34px;font-size:16px;flex:none">${avatarInner(u)}</div>
+      <div class="avatar avbtn" data-vp="${c.user}" title="View ${escapeHtml(u?u.name:'')}'s profile" style="width:34px;height:34px;font-size:16px;flex:none;cursor:pointer">${avatarInner(u)}</div>
       <div class="bmain">
-        <div class="bhead"><b>${escapeHtml(u?u.name:'?')}${mine?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</b>${badge}<span class="btime">${timeAgo(c.created)}</span></div>
+        <div class="bhead"><b data-vp="${c.user}" style="cursor:pointer">${escapeHtml(u?u.name:'?')}${mine?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</b>${badge}<span class="btime">${timeAgo(c.created)}</span></div>
         <div class="bbody">${escapeHtml(c.body)}</div>
-        <div class="bactions">
+        <div class="bactions" data-stop="1">
           ${likeCount(c.id)?`<span class="likecount">❤️ ${likeCount(c.id)}</span>`:''}
           ${mine?(likeCount(c.id)?'':'<span class="tiny muted">your post</span>')
             :`<button class="likebtn ${iLiked(c.id)?'on':''}" data-like="${c.id}">${iLiked(c.id)?'❤️ Liked':'🤍 Like'}</button>
@@ -2378,7 +2378,7 @@ function viewBanterBoard(){
     const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':`<span class="muted">${i+1}</span>`;
     const cards=`${r.yellow?'🟨'+r.yellow:''}${r.red?' 🟥'+r.red:''}`;
     const bonus=banterBonus(r.user);
-    html+=`<div class="lbrow ${me}">
+    html+=`<div class="lbrow ${me}" data-vp="${r.user}" style="cursor:pointer">
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(u)}</div>
       <div class="nm">${escapeHtml(u.name)}${r.sentOff?' <span class="advtag miss">🟥 off</span>':''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} <small class="badges">${r.posts} post${r.posts===1?'':'s'}${cards?' · '+cards:''}${bonus?' · <span style="color:var(--lime)">+'+bonus+' pts</span>':''}</small></div>
@@ -2409,7 +2409,7 @@ function viewBoard(){
     const medal=r.rank===1?'🥇':r.rank===2?'🥈':r.rank===3?'🥉':`<span class="muted">${r.rank}</span>`;
     const fire=r.st.streak>=2?`<span class="fire">🔥${r.st.streak}</span>`:'';
     const badges=r.badges.map(b=>`<span title="${b[1]}: ${b[2]}">${b[0]}</span>`).join("");
-    html+=`<div class="lbrow ${me}">
+    html+=`<div class="lbrow ${me}" data-vp="${r.id}" style="cursor:pointer">
       <div class="pos medal">${medal}</div>
       <div class="avatar" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
       <div class="nm">${r.name}${r.team&&teamById(r.team)?` <span title="Supports ${teamById(r.team).name}">${teamById(r.team).flag}</span>`:''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small class="badges">${badges||'&nbsp;'}</small></div>
@@ -3375,6 +3375,13 @@ function adminHeader(){
 }
 
 function wire(){
+  // 👁️ Click any avatar / row that's tagged data-vp → open the player card modal
+  // (big avatar + their stats in this league). Skip clicks that came from a button
+  // inside the row by checking for data-stop on the click target chain.
+  $$("[data-vp]").forEach(el=>el.onclick=e=>{
+    if(e.target.closest("[data-stop]")) return;
+    openPlayerCard(el.dataset.vp);
+  });
   // 🏠 Click the brand/logo in the top bar → back to dashboard.
   // For players this is the Picks dashboard; for the admin account it's the Overview tab.
   $$("[data-home]").forEach(b=>b.onclick=()=>{
@@ -3554,6 +3561,61 @@ function wire(){
 }
 
 /* ---------- team picker modal ---------- */
+// 👁️ Click any avatar / name / row in a leaderboard, banter board, podium etc. → opens
+// this modal. Big avatar (photo if uploaded, big emoji otherwise), current-league stats,
+// rank, points, picks, banker uses, banter activity. Read-only — just a player card.
+function openPlayerCard(uid){
+  const p = profileById(uid);
+  if(!p) return;
+  const root = $("#modal-root"); if(!root) return;
+  const lid = LG;
+  const isMe = uid === ME.id;
+  const fav = p.team && teamById(p.team);
+  // Stats are scoped to the current league
+  const lb  = leaderboard();
+  const r   = lb.find(x=>x.id===uid);
+  const picks  = ALL.pred.filter(x=>x.user===uid && x.league===lid && !x.advance && !x.ko).length;
+  const banker = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.banker).length;
+  const adv    = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.advance).length;
+  const ko     = ALL.pred.filter(x=>x.user===uid && x.league===lid && x.ko).length;
+  const props  = ALL.pans.filter(x=>x.user===uid && x.league===lid).length;
+  const bracket= (ALL.bracket||[]).filter(x=>x.user===uid && x.league===lid).length;
+  const banter = ALL.comments.filter(c=>c.user===uid && c.league===lid).length;
+  const liked  = ALL.likes.filter(l=>{ const c=ALL.comments.find(x=>x.id===l.comment); return c && c.user===uid && c.league===lid; }).length;
+  const givenL = ALL.likes.filter(l=>l.user===uid && l.league===lid).length;
+  const cards  = ALL.cards.filter(c=>c.target===uid && c.league===lid);
+  const yc = cards.filter(c=>c.kind==="yellow").length;
+  const rc = cards.filter(c=>c.kind==="red").length;
+  // Big avatar — photo wins; emoji shown in a circle if no photo
+  const bigAvatar = p.avatar
+    ? `<img src="${p.avatar}" alt="" style="width:160px;height:160px;border-radius:50%;border:4px solid var(--gold);box-shadow:0 8px 28px rgba(0,0,0,.45);object-fit:cover;display:block"/>`
+    : `<div style="width:160px;height:160px;border-radius:50%;border:4px solid var(--gold);background:var(--card2);display:grid;place-items:center;font-size:80px;line-height:1;box-shadow:0 8px 28px rgba(0,0,0,.45)">${p.emoji||"🙂"}</div>`;
+  const stat = (k,v,col) => `<div class="card" style="margin:0;padding:10px 8px;text-align:center"><div class="tiny muted">${k}</div><div style="font-family:'Fredoka';font-size:22px;font-weight:700${col?';color:'+col:''}">${v}</div></div>`;
+  root.innerHTML = `<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b>👤 Player card</b><button class="x" data-close>×</button></div>
+    <div class="mbody center">
+      <div style="margin:6px auto 14px;display:inline-block">${bigAvatar}</div>
+      <div style="font-family:'Fredoka';font-size:24px;font-weight:700;line-height:1.2">${escapeHtml(p.name)}${isMe?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</div>
+      <div class="small muted" style="margin-top:4px">${fav?`<b style="color:var(--ink)">${fav.flag} ${fav.name}</b> · +${FAN_BONUS} pts every time they win`:'<span style="color:var(--gold)">No nation picked yet</span>'}</div>
+      ${r ? `<div style="margin-top:10px"><span style="font-family:'Fredoka';font-size:32px;color:var(--lime);font-weight:700">${r.pts}</span> <span class="muted">pts</span><div class="small muted">${medalFor(r.rank)} · #${r.rank} of ${lb.length} in ${escapeHtml(curLeague()?curLeague().name:'this league')}</div></div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px">
+        ${stat('⚽ Match picks', picks, 'var(--cyan)')}
+        ${stat('⭐ Banker', banker, 'var(--gold)')}
+        ${stat('📊 Group calls', adv)}
+        ${stat('🏆 KO picks', ko)}
+        ${stat('🃏 Extras', props)}
+        ${stat('🌳 Bracket', bracket)}
+        ${stat('💬 Banter posts', banter, 'var(--pink)')}
+        ${stat('❤️ Likes received', liked, 'var(--pink)')}
+        ${stat('❤️ Likes given', givenL)}
+      </div>
+      ${(yc||rc) ? `<div class="small" style="margin-top:10px;padding:6px 10px;background:var(--card2);border-radius:8px;display:inline-block"><b>Discipline:</b> ${yc?'🟨 '+yc:''}${yc&&rc?' · ':''}${rc?'🟥 '+rc:''}</div>` : ''}
+    </div></div></div>`;
+  const close = ()=>{ root.innerHTML=""; };
+  $("[data-close]",root).onclick=close;
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+}
+
 function openTeamPicker(cb, onlyGrp){
   const teams=onlyGrp?DB.teams.filter(t=>t.grp===onlyGrp):DB.teams;
   const root=$("#modal-root");
