@@ -1801,6 +1801,25 @@ function notifFeed(){
   return items.sort((a,b)=>b.t-a.t).slice(0,30);
 }
 function notifCount(){ return notifFeed().filter(n=>n.fresh).length; }
+// 🟨🟥 live card alerts — the 25s poll calls this; when somebody cards YOU while you're
+// on the site, you hear about it immediately (not just a silent badge tick). First call
+// only sets the baseline so old cards never re-alert.
+let _seenCardIds=null;
+function notifyNewCards(){
+  if(!ME) return;
+  const mine=(ALL.cards||[]).filter(c=>c.target===ME.id&&c.from!==ME.id);
+  const ids=new Set(mine.map(c=>c.id));
+  if(_seenCardIds===null){ _seenCardIds=ids; return; }
+  const fresh=mine.filter(c=>!_seenCardIds.has(c.id));
+  _seenCardIds=ids;
+  if(!fresh.length) return;
+  const sentOff=userCards(ME.id).sentOff;
+  const reds=fresh.filter(c=>c.kind==="red");
+  if(sentOff)          celebrate("🟥 YOU'VE BEEN SENT OFF! 30 min in the stands");
+  else if(reds.length){ const nm=(profileById(reds[0].from)||{}).name||"Someone"; celebrate(`🟥 ${nm} SENT YOUR POST OFF — likes wiped`); }
+  else { const c=fresh[0]; const nm=(profileById(c.from)||{}).name||"Someone";
+    toast(`🟨 ${nm} booked your banter post!${fresh.length>1?` (+${fresh.length-1} more)`:''}`); }
+}
 // 🔄 in-place badge refresh — touches only the two badge spans, never re-renders the
 // page (so polling can't eat whatever you're typing).
 function updateNotifBadges(){
@@ -4766,6 +4785,7 @@ async function boot(){
     if(MODE!=="live"||!supa||!ME||ME.is_admin||!LG) return;
     await reloadMessages(); await reloadComments();
     updateNotifBadges();
+    notifyNewCards();
     if(typeof _refreshOpenConvo==="function"&&_refreshOpenConvo) _refreshOpenConvo();
   }catch(e){} }, 25000);
   try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
