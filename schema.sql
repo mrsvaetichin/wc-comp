@@ -69,6 +69,17 @@ create table if not exists cards (id text primary key,
 create table if not exists likes (id text primary key,
   league_id text references leagues(id) on delete cascade,
   comment_id text, user_id uuid references auth.users(id) on delete cascade, created_at timestamptz default now());
+-- ✉️ personal messages — private, league-scoped DMs between two members.
+--    read_at is the read receipt: NULL = unread; the recipient stamps it when they open
+--    the conversation. RLS keeps every row strictly sender-or-recipient only (not even
+--    the admin can read DM bodies — see policies below).
+create table if not exists messages (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  from_id uuid references auth.users(id) on delete cascade,
+  to_id uuid references auth.users(id) on delete cascade,
+  body text, created_at timestamptz default now(), read_at timestamptz);
+create index if not exists idx_messages_to     on messages (to_id, read_at);
+create index if not exists idx_messages_league on messages (league_id);
 -- 🏆 knockout bracket picks (one winner per tie, per user, per league — drag-drop tree)
 create table if not exists bracket_picks (id text primary key,
   league_id text references leagues(id) on delete cascade,
@@ -107,6 +118,7 @@ alter table memberships enable row level security;
 alter table comments enable row level security;
 alter table cards enable row level security;
 alter table likes enable row level security;
+alter table messages enable row level security;
 alter table bracket_picks enable row level security;
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
@@ -187,6 +199,12 @@ drop policy if exists cd_ins on cards;       create policy cd_ins on cards for i
 drop policy if exists lk_read on likes;      create policy lk_read on likes for select to authenticated using (is_member(league_id));
 drop policy if exists lk_ins on likes;       create policy lk_ins on likes for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
 drop policy if exists lk_del on likes;       create policy lk_del on likes for delete to authenticated using (user_id = auth.uid());
+-- ✉️ messages: strictly two-party. Read = you sent it or it's addressed to you.
+--    Insert = you're the sender, you're in the league, the recipient is in the SAME
+--    league, and you're not messaging yourself. Update = recipient only (read receipt).
+drop policy if exists msg_read on messages;  create policy msg_read on messages for select to authenticated using (from_id = auth.uid() or to_id = auth.uid());
+drop policy if exists msg_ins on messages;   create policy msg_ins on messages for insert to authenticated with check (from_id = auth.uid() and from_id <> to_id and is_member(league_id) and exists (select 1 from memberships mb where mb.league_id = messages.league_id and mb.user_id = messages.to_id));
+drop policy if exists msg_upd on messages;   create policy msg_upd on messages for update to authenticated using (to_id = auth.uid()) with check (to_id = auth.uid());
 -- 🏆 bracket picks: read in your leagues; you can only insert/update/delete your own.
 drop policy if exists bp_read on bracket_picks; create policy bp_read on bracket_picks for select to authenticated using (is_member(league_id));
 drop policy if exists bp_ins on bracket_picks;  create policy bp_ins on bracket_picks for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
@@ -233,6 +251,9 @@ drop policy if exists bp_admin_del on bracket_picks;     create policy bp_admin_
 drop policy if exists cm_admin_del on comments;          create policy cm_admin_del on comments          for delete to authenticated using (is_admin());
 drop policy if exists cd_admin_del on cards;             create policy cd_admin_del on cards             for delete to authenticated using (is_admin());
 drop policy if exists lk_admin_del on likes;             create policy lk_admin_del on likes             for delete using (user_id = auth.uid() or is_admin());
+-- ✉️ messages: sender can delete their own; admin can delete (moderation/user-wipe) but
+--    deliberately CANNOT read other people's DMs — no admin read override here.
+drop policy if exists msg_del on messages;               create policy msg_del on messages               for delete to authenticated using (from_id = auth.uid() or is_admin());
 drop policy if exists mb_admin_del on memberships;       create policy mb_admin_del on memberships       for delete to authenticated using (user_id = auth.uid() or is_admin() or exists(select 1 from leagues l where l.id = league_id and l.created_by = auth.uid()));
 drop policy if exists lg_del on leagues;                 create policy lg_del on leagues                 for delete to authenticated using (created_by = auth.uid() or is_admin());
 drop policy if exists p_del on profiles;                 create policy p_del on profiles                 for delete to authenticated using (is_admin());

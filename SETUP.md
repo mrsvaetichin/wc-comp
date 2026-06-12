@@ -12,6 +12,15 @@ with an invite code/link** (`…/?join=CODE`). You can be in several leagues at 
 between them with the 🏆 chip in the header. Predictions, leaderboards and the pot are
 **separate in each league**; the real World Cup results are shared and sync in automatically.
 
+### ✉️ Personal messages + 🔔 notifications
+Every league member can DM any other member of the same league — tap the **✉️ envelope** in
+the header for your inbox, or hit **✉️ Message** on anyone's player card. Threads are private
+and league-scoped; read receipts show as "seen ✓". The **🔔 bell** collects unread DMs plus
+❤️ likes on your banter posts and 🟨🟥 cards you receive, with a red badge for anything new.
+New messages and replies poll in automatically every ~25 s. Privacy note: the security rules
+make DMs strictly two-party — **not even the admin can read them** (the admin can only delete
+rows for moderation).
+
 There are two ways to use it.
 
 ---
@@ -35,7 +44,7 @@ You're using **Supabase** (database + login) and **Vercel** (hosting). Here's th
 In your Supabase project: **SQL Editor → New query**, paste all of **`schema.sql`**, click
 **Run**. This builds every table, the security rules, and seeds all 48 teams + 72 fixtures +
 the prop bets. (Safe to re-run — and you **must** re-run it after any update, e.g. to apply the
-blind-pick / immutable-pick rules and the Banker column.)
+blind-pick / immutable-pick rules, the Banker column, or the new ✉️ `messages` table for DMs.)
 
 ### Step 2 — Turn on username + password login (no email)
 THE MASK uses username + password — friends never have to give an email address. Behind the

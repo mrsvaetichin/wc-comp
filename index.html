@@ -366,6 +366,27 @@
   .cardbtn{font-size:13px;font-weight:700;border-radius:8px;padding:5px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
   .cardbtn.yel{color:#3a2e00;background:#ffd02e;border-color:#caa314}
   .cardbtn.redc{color:#fff;background:var(--red);border-color:#b03636}
+  /* ✉️ DMs + 🔔 notifications */
+  .nbtn{position:relative}
+  .nbadge{position:absolute;top:-5px;right:-6px;background:var(--red);color:#fff;font-size:10px;font-weight:800;min-width:16px;height:16px;line-height:16px;border-radius:999px;padding:0 4px;text-align:center;font-family:'Fredoka'}
+  .convo-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;margin:6px 0;color:var(--ink);cursor:pointer;transition:border-color .12s}
+  .convo-row:hover{border-color:var(--cyan)}
+  .convo-prev{flex:1;min-width:0}
+  .convo-prev .nm{display:block;font-weight:700;font-size:14px}
+  .convo-prev .pv{display:block;font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .convo-unread{border-color:var(--gold)}
+  .convo-unread .pv{color:var(--ink);font-weight:600}
+  .dm-thread{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;padding:4px 2px}
+  .dm-bub{max-width:78%;padding:8px 12px;border-radius:14px;font-size:14.5px;overflow-wrap:anywhere;white-space:pre-wrap}
+  .dm-bub .dm-t{display:block;font-size:10px;color:var(--muted);margin-top:2px;text-align:right}
+  .dm-mine{align-self:flex-end;background:rgba(61,220,132,.16);border:1px solid rgba(61,220,132,.4);border-bottom-right-radius:4px}
+  .dm-theirs{align-self:flex-start;background:var(--card2);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .dmrow{display:flex;gap:8px;margin-top:10px}
+  .dmrow input{flex:1;min-width:0}
+  .notif-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--line);font-size:13.5px}
+  .notif-row:last-child{border-bottom:0}
+  .notif-row.fresh{background:rgba(94,210,255,.07)}
+  .notif-row .nt{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap;padding-left:8px}
 
   /* ---------- prop ---------- */
   .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:15px}
@@ -738,7 +759,7 @@ let ALL_LEAGUES=[];    // every league in the pool (super-admin scope only)
 let MEMBERS=[];        // memberships: {league,user,paid}
 let LG=null;           // current league id
 let PENDING_JOIN=null; // invite code from ?join=… waiting to be applied after login
-const ALL={pred:[],pans:[],rep:[],comments:[],cards:[],likes:[],bracket:[]}; // master per-league data (each row has .league)
+const ALL={pred:[],pans:[],rep:[],comments:[],cards:[],likes:[],bracket:[],msgs:[]}; // master per-league data (each row has .league)
 const LG_KEY="themask_league";
 function genCode(){ const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
 function curLeague(){ return LEAGUES.find(l=>l.id===LG)||null; }
@@ -761,6 +782,7 @@ function scopeLeague(){
   DB.comments    = ALL.comments.filter(p=>p.league===LG);
   DB.cards       = ALL.cards.filter(p=>p.league===LG);
   DB.likes       = ALL.likes.filter(p=>p.league===LG);
+  DB.messages    = (ALL.msgs||[]).filter(p=>p.league===LG);
   if(typeof loadAdv==="function") loadAdv();
 }
 
@@ -950,7 +972,7 @@ function seedDemo(){
   DB.props=seedProps();
   DB.profiles=[];
   DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[]; DB.bracket=[];
-  ALL.pred=[]; ALL.pans=[]; ALL.rep=[]; ALL.comments=[]; ALL.cards=[]; ALL.likes=[]; ALL.bracket=[];
+  ALL.pred=[]; ALL.pans=[]; ALL.rep=[]; ALL.comments=[]; ALL.cards=[]; ALL.likes=[]; ALL.bracket=[]; ALL.msgs=[];
 
   // a sample private league everyone's already in (you can create/join more)
   const LGID="lg-demo";
@@ -998,6 +1020,9 @@ function seedDemo(){
   // a few likes so the "Top banter" board has life (spread over a few days so the banter line moves)
   [["me",`f4-${LGID}-seed2`,3],["f1",`f4-${LGID}-seed2`,2],["f0",`f4-${LGID}-seed2`,2],["f2",`f0-${LGID}-seed0`,1],["me",`f0-${LGID}-seed0`,0]]
     .forEach(l=>ALL.likes.push({id:`${l[0]}-${l[1]}-l`,league:LGID,comment:l[1],user:l[0],created:new Date(Date.now()-l[2]*24*3.6e6).toISOString()}));
+  // ✉️ a couple of unread DMs so the inbox + 🔔 bell have life on first open
+  [["f0","Psst — side bet on the opener? Loser buys the first round 👀",5],["f2","Your Brazil call is brave. Respect. 🫡",26]]
+    .forEach((m,i)=>{ if(DB.profiles.find(p=>p.id===m[0])) ALL.msgs.push({id:`${m[0]}-me-seed${i}`,league:LGID,from:m[0],to:"me",body:m[1],created:new Date(Date.now()-m[2]*36e5).toISOString(),read:null}); });
   scopeLeague();
   saveLocal();
 }
@@ -1013,7 +1038,8 @@ function loadLocal(){
   try{
     const o=JSON.parse(raw);
     Object.assign(DB,o.DB);
-    if(o.ALL){ ALL.pred=o.ALL.pred||[]; ALL.pans=o.ALL.pans||[]; ALL.rep=o.ALL.rep||[]; }
+    if(o.ALL){ ALL.pred=o.ALL.pred||[]; ALL.pans=o.ALL.pans||[]; ALL.rep=o.ALL.rep||[]; ALL.msgs=o.ALL.msgs||[];
+      ALL.comments=o.ALL.comments||[]; ALL.cards=o.ALL.cards||[]; ALL.likes=o.ALL.likes||[]; ALL.bracket=o.ALL.bracket||[]; }
     LEAGUES=o.LEAGUES||[]; MEMBERS=o.MEMBERS||[]; LG=o.LG||(LEAGUES[0]&&LEAGUES[0].id)||null;
     ME=DB.profiles.find(p=>p.id===(o.meId||"me"))||DB.profiles[0];
     scopeLeague();
@@ -1591,7 +1617,7 @@ async function loadLeagueData(){
   const myIds=new Set((mem.data||[]).filter(m=>m.user_id===ME.id).map(m=>m.league_id));
   LEAGUES=(lg.data||[]).filter(l=>myIds.has(l.id)).map(l=>({id:l.id,name:l.name,code:l.code,buy_in:l.buy_in,currency:l.currency,payout_split:l.payout_split,created_by:l.created_by}));
   MEMBERS=(mem.data||[]).map(m=>({league:m.league_id,user:m.user_id,paid:!!m.paid}));
-  await reloadPredictions(); await reloadProps(); await reloadRepicks(); await reloadComments();
+  await reloadPredictions(); await reloadProps(); await reloadRepicks(); await reloadComments(); await reloadMessages();
   if(!LEAGUES.some(l=>l.id===LG)) LG=(LEAGUES[0]&&LEAGUES[0].id)||null;
   persistLG(); scopeLeague();
 }
@@ -1692,6 +1718,72 @@ async function giveCard(commentId, kind){
   if(kind === "red") celebrate(`🟥 POST SENT OFF — ${nm}'s likes wiped from that one`);
   else if(after.sentOff && !before) celebrate(`🟥 ${nm} SENT OFF!`);
   else toast(`🟨 Yellow card for ${nm}!`);
+}
+
+/* ---------- ✉️ personal messages + 🔔 notifications ----------
+   DMs are private, league-scoped, two-party threads. RLS in schema.sql guarantees the
+   server only ever returns rows where you're sender or recipient — so ALL.msgs is
+   already "my messages only". read=null means unread; the recipient stamps it when
+   they open the conversation (that's also the sender's "seen" receipt).
+   The 🔔 bell aggregates: unread DMs + ❤️ likes on my posts + 🟨🟥 cards on me. */
+async function reloadMessages(){ if(MODE!=="live"||!supa) return;
+  try{ const {data}=await supa.from("messages").select("*"); if(!data) return;
+    ALL.msgs=data.map(m=>({id:m.id,league:m.league_id,from:m.from_id,to:m.to_id,body:m.body,created:m.created_at,read:m.read_at}));
+    scopeLeague();
+  }catch(e){ console.error(e); }
+}
+async function sendMessage(toId, body){
+  body=(body||"").trim().slice(0,500);
+  if(!body||!LG||!toId||toId===ME.id) return false;
+  if(!isMember(toId,LG)){ toast("They're not in this league"); return false; }
+  const m={id:`${ME.id}-${toId}-${Date.now()}`,league:LG,from:ME.id,to:toId,body,created:new Date().toISOString(),read:null};
+  ALL.msgs.push(m); scopeLeague();
+  if(MODE==="live") await sbInsert("messages",{id:m.id,league_id:LG,from_id:ME.id,to_id:toId,body,created_at:m.created});
+  saveLocal(); return true;
+}
+function convoMsgs(uid){ return DB.messages.filter(m=>(m.from===uid&&m.to===ME.id)||(m.from===ME.id&&m.to===uid)).sort((a,b)=>new Date(a.created)-new Date(b.created)); }
+function unreadFrom(uid){ return DB.messages.filter(m=>m.from===uid&&m.to===ME.id&&!m.read).length; }
+function unreadDMs(){ return ME?DB.messages.filter(m=>m.to===ME.id&&!m.read).length:0; }
+// badge counts EVERY league (a DM in another league still deserves a red dot)
+function unreadDMsAll(){ return ME?(ALL.msgs||[]).filter(m=>m.to===ME.id&&!m.read).length:0; }
+async function markConvoRead(uid){
+  const now=new Date().toISOString();
+  const mine=(ALL.msgs||[]).filter(m=>m.league===LG&&m.from===uid&&m.to===ME.id&&!m.read);
+  if(!mine.length){ updateNotifBadges(); return; }
+  mine.forEach(m=>m.read=now); scopeLeague(); saveLocal();
+  if(MODE==="live"&&supa){ try{ await supa.from("messages").update({read_at:now}).eq("league_id",LG).eq("from_id",uid).eq("to_id",ME.id).is("read_at",null); }catch(e){ console.error(e); } }
+  updateNotifBadges();
+}
+// 🔔 likes/cards count as "new" until you open the bell — last-opened time kept per user.
+const NOTIF_KEY=()=>`themask_notif_seen_${ME?ME.id:"x"}`;
+function notifSeenAt(){ try{ return +(localStorage.getItem(NOTIF_KEY())||0); }catch(e){ return 0; } }
+function setNotifSeen(){ try{ localStorage.setItem(NOTIF_KEY(), String(Date.now())); }catch(e){} updateNotifBadges(); }
+function notifFeed(){
+  if(!ME) return [];
+  const seen=notifSeenAt(); const items=[];
+  DB.messages.filter(m=>m.to===ME.id&&!m.read).forEach(m=>{
+    const p=profileById(m.from)||{};
+    items.push({t:+new Date(m.created), fresh:true, kind:"dm", uid:m.from,
+      ic:"✉️", txt:`<b>${escapeHtml(p.name||"Player")}</b>: ${escapeHtml(m.body.slice(0,80))}${m.body.length>80?"…":""}`});
+  });
+  const myPosts=new Set(DB.comments.filter(c=>c.user===ME.id).map(c=>c.id));
+  DB.likes.filter(l=>myPosts.has(l.comment)&&l.user!==ME.id).forEach(l=>{
+    const p=profileById(l.user)||{}; const t=+new Date(l.created);
+    items.push({t, fresh:t>seen, kind:"like", ic:"❤️", txt:`<b>${escapeHtml(p.name||"Someone")}</b> liked your banter post`});
+  });
+  DB.cards.filter(c=>c.target===ME.id&&c.from!==ME.id).forEach(c=>{
+    const p=profileById(c.from)||{}; const t=+new Date(c.created);
+    items.push({t, fresh:t>seen, kind:"card", ic:c.kind==="red"?"🟥":"🟨", txt:`<b>${escapeHtml(p.name||"Someone")}</b> showed you a ${c.kind==="red"?"red":"yellow"} card`});
+  });
+  return items.sort((a,b)=>b.t-a.t).slice(0,30);
+}
+function notifCount(){ return notifFeed().filter(n=>n.fresh).length; }
+// 🔄 in-place badge refresh — touches only the two badge spans, never re-renders the
+// page (so polling can't eat whatever you're typing).
+function updateNotifBadges(){
+  const set=(id,n)=>{ const el=document.getElementById(id); if(!el) return; el.textContent=n>9?"9+":String(n); el.style.display=n>0?"":"none"; };
+  set("inboxbadge", unreadDMsAll());
+  set("notifbadge", notifCount());
 }
 
 /* ---------- live results auto-sync (ESPN public scoreboard) ----------
@@ -1886,6 +1978,8 @@ function header(){
           <span class="tb-pill" title="Re-picks left">🔁 ${repicksLeft(ME.id)}</span>
           ${flame}
           ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
+          <button class="lockbtn nbtn" data-notifs title="Notifications">🔔<span class="nbadge" id="notifbadge" style="display:none"></span></button>
+          <button class="lockbtn nbtn" data-inbox title="Messages">✉️<span class="nbadge" id="inboxbadge" style="display:none"></span></button>
           <button class="lockbtn" data-rules title="How to play">ℹ️</button>
           <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
           <button class="lockbtn" data-signout title="Sign out">🚪</button>
@@ -3758,6 +3852,10 @@ function wire(){
   // sound + profile
   const mt=$("[data-mute]"); if(mt) mt.onclick=()=>{ toggleMute(); if(!MUTED)horn(); render(); };
   const pf=$("[data-profile]"); if(pf) pf.onclick=openProfile;
+  // ✉️🔔 inbox + notification bell (header) — badges refresh in place after each render
+  const ib=$("[data-inbox]");  if(ib) ib.onclick=openInbox;
+  const nb=$("[data-notifs]"); if(nb) nb.onclick=openNotifs;
+  updateNotifBadges();
   // picks filters
   $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
   // score inputs → live into the draft (no save yet, no re-render so the cursor stays)
@@ -3855,6 +3953,85 @@ function wire(){
 // 👁️ Click any avatar / name / row in a leaderboard, banter board, podium etc. → opens
 // this modal. Big avatar (photo if uploaded, big emoji otherwise), current-league stats,
 // rank, points, picks, banker uses, banter activity. Read-only — just a player card.
+/* ---------- ✉️ inbox + conversation + 🔔 notification panels ---------- */
+// When a conversation modal is open, this holds its refresh fn so the 25s poll can
+// drop new replies in live (and mark them read). Cleared whenever the modal closes.
+let _refreshOpenConvo=null;
+function openInbox(){
+  const root=$("#modal-root"); if(!root||!ME||!LG) return;
+  _refreshOpenConvo=null;
+  const members=leagueMembers(LG).filter(p=>p.id!==ME.id);
+  const rows=members.map(p=>{
+    const ms=convoMsgs(p.id); const last=ms[ms.length-1];
+    return {p,last,un:unreadFrom(p.id),t:last?+new Date(last.created):0};
+  }).sort((a,b)=> b.t-a.t || a.p.name.localeCompare(b.p.name));
+  const otherUnread=unreadDMsAll()-unreadDMs();
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b>✉️ Messages · ${escapeHtml(curLeague()?curLeague().name:"")}</b><button class="x" data-close>×</button></div>
+    <div class="mbody">
+      <div class="small muted" style="margin-bottom:4px">Private one-on-one chats with your league mates. No likes, no cards — just you two.</div>
+      ${otherUnread>0?`<div class="small" style="color:var(--gold);margin-bottom:6px">📬 ${otherUnread} unread in your other league${otherUnread>1?"s":""} — switch with the 🏆 chip</div>`:""}
+      ${rows.length?rows.map(r=>`<button class="convo-row ${r.un?'convo-unread':''}" data-convo="${r.p.id}">
+        <span class="avatar" style="width:34px;height:34px;font-size:17px">${avatarInner(r.p)}</span>
+        <span class="convo-prev"><span class="nm">${escapeHtml(r.p.name)}</span>
+          <span class="pv">${r.last?`${r.last.from===ME.id?"You: ":""}${escapeHtml(r.last.body.slice(0,60))}${r.last.body.length>60?"…":""}`:"Say hi 👋"}</span></span>
+        ${r.un?`<span class="nbadge" style="position:static">${r.un>9?"9+":r.un}</span>`:(r.last?`<span class="tiny muted">${timeAgo(r.last.created)}</span>`:"")}
+      </button>`).join(""):'<div class="empty"><div class="e">📭</div>No one else in this league yet — share the invite code!</div>'}
+    </div></div></div>`;
+  const close=()=>{ root.innerHTML=""; _refreshOpenConvo=null; };
+  $("[data-close]",root).onclick=close;
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  $$("[data-convo]",root).forEach(b=>b.onclick=()=>openConvo(b.dataset.convo));
+}
+function openConvo(uid){
+  const p=profileById(uid); const root=$("#modal-root");
+  if(!p||!root||!ME||uid===ME.id) return;
+  markConvoRead(uid);
+  const thread=()=>{ const ms=convoMsgs(uid);
+    return ms.length?ms.map(m=>`<div class="dm-bub ${m.from===ME.id?'dm-mine':'dm-theirs'}">${escapeHtml(m.body)}<span class="dm-t">${timeAgo(m.created)}${m.from===ME.id&&m.read?' · seen ✓':''}</span></div>`).join("")
+      :`<div class="empty" style="padding:18px"><div class="e">🦗</div>No messages yet — break the ice.</div>`; };
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b style="display:flex;align-items:center;gap:8px"><button class="x" data-back title="All conversations" style="font-size:18px">←</button><span class="avatar" style="width:28px;height:28px;font-size:14px">${avatarInner(p)}</span>${escapeHtml(p.name)}</b><button class="x" data-close>×</button></div>
+    <div class="mbody">
+      <div class="dm-thread" id="dmthread">${thread()}</div>
+      <div class="dmrow"><input id="dmtext" maxlength="500" placeholder="Message ${escapeHtml(p.name)}…"/><button class="btn primary" id="dmsend">Send</button></div>
+      <div class="tiny muted" style="margin-top:6px">Only you and ${escapeHtml(p.name)} can see this — not even the admin. 🤫</div>
+    </div></div></div>`;
+  const close=()=>{ root.innerHTML=""; _refreshOpenConvo=null; };
+  $("[data-close]",root).onclick=close;
+  $("[data-back]",root).onclick=()=>openInbox();
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  const box=$("#dmthread",root); const scrollDown=()=>{ box.scrollTop=box.scrollHeight; }; scrollDown();
+  const inp=$("#dmtext",root);
+  const send=async()=>{ const v=inp.value; if(!(v||"").trim()) return; inp.value="";
+    if(await sendMessage(uid,v)){ box.innerHTML=thread(); scrollDown(); } inp.focus(); };
+  $("#dmsend",root).onclick=send;
+  inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); send(); } };
+  inp.focus();
+  // 🔄 called by the 25s poll — re-draws the thread in place so replies just appear
+  _refreshOpenConvo=()=>{ if(!document.getElementById("dmthread")){ _refreshOpenConvo=null; return; }
+    markConvoRead(uid);
+    const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<60;
+    box.innerHTML=thread(); if(atBottom) scrollDown(); };
+}
+function openNotifs(){
+  const root=$("#modal-root"); if(!root||!ME) return;
+  const feed=notifFeed();
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <div class="mhead"><b>🔔 Notifications</b><button class="x" data-close>×</button></div>
+    <div class="mbody">
+      ${feed.length?feed.map(n=>`<div class="notif-row ${n.fresh?'fresh':''}" ${n.kind==="dm"?`data-ndm="${n.uid}"`:'data-nbanter'} style="cursor:pointer">
+        <span style="font-size:18px">${n.ic}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${n.txt}</span><span class="nt">${timeAgo(new Date(n.t).toISOString())}</span>
+      </div>`).join(""):'<div class="empty"><div class="e">🔕</div>All quiet — no new messages, likes or cards.</div>'}
+    </div></div></div>`;
+  const close=()=>{ root.innerHTML=""; };
+  $("[data-close]",root).onclick=close;
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  $$("[data-ndm]",root).forEach(el=>el.onclick=()=>openConvo(el.dataset.ndm));
+  $$("[data-nbanter]",root).forEach(el=>el.onclick=()=>{ close(); VIEW="banter"; render(); window.scrollTo(0,0); });
+  setNotifSeen(); // opening the bell marks likes/cards seen (DMs only clear when you read the convo)
+}
+
 function openPlayerCard(uid){
   const p = profileById(uid);
   if(!p) return;
@@ -3903,10 +4080,12 @@ function openPlayerCard(uid){
         ${stat('❤️ Likes given', givenL)}
       </div>
       ${(yc||rc) ? `<div class="small" style="margin-top:10px;padding:6px 10px;background:var(--card2);border-radius:8px;display:inline-block"><b>Discipline:</b> ${yc?'🟨 '+yc:''}${yc&&rc?' · ':''}${rc?'🟥 '+rc:''}</div>` : ''}
+      ${(!isMe && isPlayer(p) && !ME.is_admin) ? `<button class="btn primary block" data-dm style="margin-top:14px">✉️ Message ${escapeHtml(p.name)}</button>` : ''}
     </div></div></div>`;
   const close = ()=>{ root.innerHTML=""; };
   $("[data-close]",root).onclick=close;
   $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  const dm=$("[data-dm]",root); if(dm) dm.onclick=()=>openConvo(uid);
 }
 
 function openTeamPicker(cb, onlyGrp){
@@ -4489,6 +4668,14 @@ async function boot(){
     if(ME && DB.matches.some(m=>{ const t=new Date(m.kickoff).getTime();
       return m.status!=="finished" && t<now+30*60*1000 && t>now-48*3600*1000; })) syncResults(false);
   }catch(e){} }, 150000);
+  // ✉️🔔 poll DMs + banter activity every 25s so messages and the bell stay fresh.
+  // Badge updates happen in place (no re-render); an open conversation refreshes itself.
+  setInterval(async()=>{ try{
+    if(MODE!=="live"||!supa||!ME||ME.is_admin||!LG) return;
+    await reloadMessages(); await reloadComments();
+    updateNotifBadges();
+    if(typeof _refreshOpenConvo==="function"&&_refreshOpenConvo) _refreshOpenConvo();
+  }catch(e){} }, 25000);
   try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
   if(haveKeys){
@@ -4530,8 +4717,8 @@ async function boot(){
 async function liveLoad(user){
   // pull everything into the same shape the UI expects
   const tbl=async n=>{ try{ const {data}=await supa.from(n).select("*");return data||[]; }catch(e){ console.error("load "+n,e); return []; } };
-  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes,bracketPicks]=await Promise.all(
-    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships","comments","cards","likes","bracket_picks"].map(tbl));
+  const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes,bracketPicks,messages]=await Promise.all(
+    ["settings","teams","matches","props","predictions","prop_answers","profiles","advances","ko_picks","repicks","leagues","memberships","comments","cards","likes","bracket_picks","messages"].map(tbl));
   DB.settings = (settings&&settings[0]) ? settings[0] : {...DEFAULTS};
   if(!DB.settings.ko) DB.settings.ko={r16:[],qf:[],sf:[],final:[]};
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
@@ -4562,6 +4749,7 @@ async function liveLoad(user){
   ALL.cards    = (cards||[]).map(c=>({id:c.id,league:c.league_id,comment:c.comment_id,from:c.from_id,target:c.target_id,kind:c.kind,created:c.created_at}));
   ALL.likes    = (likes||[]).map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
   ALL.bracket  = (bracketPicks||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));
+  ALL.msgs     = (messages||[]).map(m=>({id:m.id,league:m.league_id,from:m.from_id,to:m.to_id,body:m.body,created:m.created_at,read:m.read_at}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
   // 🎩 Is this the dedicated admin account? Detect by the pseudo-email — survives
