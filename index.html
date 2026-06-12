@@ -2522,7 +2522,8 @@ function matchCard(m){
             <span class="colon">:</span>
             <input class="scoreinput" inputmode="numeric" data-sc="away" data-m="${m.id}" value="${d.ap??eff.ap}" maxlength="2"/>
           </div>
-          <button class="btn gold block" data-repick="${m.id}">Change my pick (−${REPICK_COST} pts)</button></div>`;
+          <button class="btn gold block" data-repick="${m.id}">Change my pick (−${REPICK_COST} pts)</button>
+          <div class="tiny muted center" style="margin-top:5px">New score replaces your pick &amp; is scored at full time · ⭐ Banker stays · −${REPICK_COST} is charged even if it misses</div></div>`;
       } else if(inWin){
         inner+=`<div class="small muted center" style="margin-top:6px">No re-picks left</div>`;
       } else if(Date.now()<w.open){
@@ -4316,7 +4317,12 @@ function rulesHTML(){
 
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
-    ${row("🔁",`<b>Half-time re-picks:</b> ${REPICK_MAX}× all tournament, <b>−${REPICK_COST} pts</b> each. Only during the <b>half-time window (45–75 min after kickoff)</b> — no last-minute scoreline sniping.`)}
+
+    <h4>Half-time re-pick 🔁</h4>
+    ${row("🔁",`<b>Change your scoreline mid-match.</b> While a game is live you can swap your pick for a new one — but <b>only during the half-time window, 45–75 min after kickoff</b>. Before or after that, the option simply isn't there (no waiting until the 85th minute to "predict" the score that's already on the board).`)}
+    ${row("💸",`<b>It costs ${REPICK_COST} points, paid instantly</b> — win or lose. You get <b>${REPICK_MAX} re-picks for the whole tournament</b>, across all matches.`)}
+    ${row("🔄",`<b>The new score fully replaces your original pick</b> and is scored normally at full time (exact ${s.pts_exact} / right result ${s.pts_result}). Your ⭐ Banker stays attached. Re-picked matches show a 🔁 tag so everyone can see it.`)}
+    ${row("🧮",`<b>Example:</b> you picked 2–0, it's 0–1 at the break. Re-pick 1–2 for −${REPICK_COST}. Ends 1–2? You net ${s.pts_exact}−${REPICK_COST}=+${s.pts_exact-REPICK_COST} instead of 0. Ends 1–1? You're down the ${REPICK_COST} — gamble responsibly 😄`)}
     ${row("💬",`<b>Banter bonus:</b> Each ❤️ on your banter post = <b>+1 point</b>, but capped at <b>+${BANTER_CAP} pts total</b> — banter is bragging rights, ~2% of a top score, never league-deciding. Anyone can 🟨 book a post; after <b>2 yellows</b> the next dissenter sends a 🟥 red — the post is "sent off" and earns <b>0 points</b>. Likes &amp; cards freeze when the round changes — old posts are locked in.`)}
     ${row("🔥",`<b>Streaks &amp; badges</b> for bragging rights.`)}
 
