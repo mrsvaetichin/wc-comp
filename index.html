@@ -92,6 +92,8 @@
   .tb-brand:active{transform:scale(.98)}
   .tb-brand .ball{font-size:22px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4))}
   .tb-meta{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .tb-sep{width:1px;height:20px;background:var(--line);flex:none;display:none}
+  @media (min-width:880px){ .tb-sep{display:block} }
   .tb-pill{display:none}
   .tb-tabs{display:none}
   .tb-league{order:9;flex-basis:100%;display:flex;align-items:center;gap:10px;margin-top:2px;background:linear-gradient(90deg, rgba(255,208,46,.16), var(--card2) 70%);border:1px solid var(--gold);border-radius:14px;padding:9px 12px;color:var(--ink);text-align:left}
@@ -583,17 +585,26 @@
     nav.tabs{display:none}
     .app{padding-bottom:40px}
     .statpills{display:none}
-    .topbar{flex-wrap:nowrap;gap:14px}
-    .tb-league{order:0;flex-basis:auto;margin-top:0;padding:7px 12px;max-width:300px}
-    .tb-league .tbl-title{font-size:16px;max-width:160px}
+    .topbar{flex-wrap:nowrap;gap:12px}
+    .tb-league{order:0;flex-basis:auto;margin-top:0;padding:7px 12px;max-width:260px}
+    .tb-league .tbl-title{font-size:16px;max-width:130px}
     .tb-league .tbl-label{display:none}
-    .tb-tabs{display:flex;gap:7px;flex:1;flex-wrap:wrap;order:0}
-    .tb-tabs button{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:11px;padding:8px 13px;font-weight:600;font-size:14px;transition:filter .12s}
+    /* tabs never wrap — they shrink, then scroll sideways (scrollbar hidden) */
+    .tb-tabs{display:flex;gap:6px;flex:1;flex-wrap:nowrap;order:0;min-width:0;overflow-x:auto;scrollbar-width:none}
+    .tb-tabs::-webkit-scrollbar{display:none}
+    .tb-meta{flex:none}
+    .tb-tabs button{flex:none;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:11px;padding:7px 11px;font-weight:600;font-size:13.5px;transition:filter .12s}
     .tb-tabs button .ic{font-size:17px}
     .tb-tabs button:hover{color:var(--ink);filter:brightness(1.15)}
     .tb-tabs button.on{color:var(--ink);background:var(--card2);border-color:var(--gold)}
     .tb-tabs button.on .ic{filter:drop-shadow(0 0 8px rgba(255,208,46,.7))}
     .tb-meta .tb-pill{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 11px}
+  }
+  /* mid-size desktop: not enough room for labeled tabs + the full button cluster →
+     tabs collapse to icons only (labels return ≥1180px) */
+  @media (min-width:880px) and (max-width:1179px){
+    .tb-tabs button{font-size:0;gap:0;padding:7px 10px}
+    .tb-tabs button .ic{font-size:18px}
   }
   @media (min-width:1340px){
     .hwrap{max-width:1260px}
@@ -1980,6 +1991,7 @@ function header(){
           ${ADMIN_UNLOCKED?'<span class="badge-admin">ADMIN</span>':''}
           <button class="lockbtn nbtn" data-notifs title="Notifications">🔔<span class="nbadge" id="notifbadge" style="display:none"></span></button>
           <button class="lockbtn nbtn" data-inbox title="Messages">✉️<span class="nbadge" id="inboxbadge" style="display:none"></span></button>
+          <span class="tb-sep"></span>
           <button class="lockbtn" data-rules title="How to play">ℹ️</button>
           <button class="lockbtn" data-mute title="Sound on/off">${MUTED?'🔇':'🔊'}</button>
           <button class="lockbtn" data-signout title="Sign out">🚪</button>
