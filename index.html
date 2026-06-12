@@ -389,6 +389,11 @@
   .notif-row:last-child{border-bottom:0}
   .notif-row.fresh{background:rgba(94,210,255,.07)}
   .notif-row .nt{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap;padding-left:8px}
+  /* 📬 "You've got mail" entrance popup */
+  .mailpop .modal{animation:maildrop .55s cubic-bezier(.2,1.4,.4,1);overflow:visible}
+  .mailenv{font-size:64px;line-height:1;display:inline-block;animation:mailwiggle 1s ease .45s 2;filter:drop-shadow(0 6px 18px rgba(0,0,0,.4))}
+  @keyframes maildrop{0%{transform:translateY(-70px) scale(.75);opacity:0}60%{transform:translateY(6px) scale(1.02)}100%{transform:none;opacity:1}}
+  @keyframes mailwiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-12deg) scale(1.1)}50%{transform:rotate(9deg)}75%{transform:rotate(-5deg)}}
 
   /* ---------- prop ---------- */
   .opt{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px;margin:6px 0;font-size:15px}
@@ -3761,6 +3766,8 @@ function render(){
   let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
   $("#app").innerHTML = header()+`<div class="app view-${VIEW}">${banner}${body}</div>`+nav();
   wire();
+  // 📬 entrance mail popup — slight delay so the page paints first (self-guards: once per visit)
+  setTimeout(maybeMailPopup, 700);
   if(WANT_ADMIN && !ADMIN_UNLOCKED){ WANT_ADMIN=false; promptAdmin(); }
 }
 
@@ -3977,6 +3984,36 @@ function wire(){
 // When a conversation modal is open, this holds its refresh fn so the 25s poll can
 // drop new replies in live (and mark them read). Cleared whenever the modal closes.
 let _refreshOpenConvo=null;
+// 📬 "YOU'VE GOT MAIL!" — once per visit, if you arrive with unread DMs waiting, a little
+// AOL-throwback popup drops in with a direct link to the message(s). Never repeats in the
+// same session, never stomps an already-open modal, skips admins.
+let _mailPopupShown=false;
+function maybeMailPopup(){
+  if(_mailPopupShown||!ME||ME.is_admin||!LG) return;
+  const unread=(ALL.msgs||[]).filter(m=>m.to===ME.id&&!m.read);
+  if(!unread.length) return;
+  const root=$("#modal-root"); if(!root||root.innerHTML.trim()) return;
+  _mailPopupShown=true;
+  const cur=unread.filter(m=>m.league===LG);
+  const senders=[...new Set(cur.map(m=>m.from))];
+  const one=senders.length===1?profileById(senders[0]):null;
+  const sub=cur.length
+    ? `${cur.length} new message${cur.length>1?'s':''}${one?` from <b>${escapeHtml(one.name)}</b>`:` from ${senders.length} people`} waiting for you`
+    : `new messages waiting in another of your leagues`;
+  root.innerHTML=`<div class="modal-bg mailpop"><div class="modal" style="max-width:340px;text-align:center">
+    <div class="mbody" style="padding:24px 18px 18px">
+      <div class="mailenv">📬</div>
+      <div style="font-family:'Fredoka';font-size:26px;font-weight:700;line-height:1.1;margin-top:8px">YOU'VE GOT MAIL!</div>
+      <div class="small muted" style="margin-top:6px">${sub} 🦇</div>
+      <button class="btn primary block" data-mailgo style="margin-top:16px">Take me to it ✉️</button>
+      <button class="btn block" data-close style="margin-top:8px">Later — football first ⚽</button>
+    </div></div></div>`;
+  const close=()=>{ root.innerHTML=""; };
+  $("[data-close]",root).onclick=close;
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+  $("[data-mailgo]",root).onclick=()=>{ one?openConvo(one.id):openInbox(); };
+  try{ horn(); }catch(e){}
+}
 function openInbox(){
   const root=$("#modal-root"); if(!root||!ME||!LG) return;
   _refreshOpenConvo=null;
