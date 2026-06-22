@@ -1851,9 +1851,17 @@ function saveScoreCache(){ try{
 }catch(e){} }
 function applyScoreCache(){ try{
   const o=JSON.parse(localStorage.getItem(SCORE_CACHE_KEY)||"{}");
+  const now=Date.now();
   DB.matches.forEach(m=>{ const c=o[m.id]; if(!c || m.status==="finished") return;
     if(c.f){ m.hs=c.hs; m.as=c.as; m.status="finished"; }
-    else { m.lhs=c.lhs; m.las=c.las; }
+    else {
+      // Cached LIVE (in-play) scores are only re-applied while the match could plausibly
+      // still be in play. A football match can't run longer than ~3h, so a cached "live"
+      // score for a game that kicked off more than 4h ago is stale — re-applying it would
+      // freeze a half-time-ish provisional score on the leaderboard forever if the final
+      // never got synced. Skip it and let a fresh syncResults() finalize the real result.
+      if(new Date(m.kickoff).getTime() > now - 4*3600*1000){ m.lhs=c.lhs; m.las=c.las; }
+    }
   });
 }catch(e){} }
 async function syncResults(manual){
@@ -1861,14 +1869,20 @@ async function syncResults(manual){
   if(!manual && Date.now()-_lastSync<120000) return; // throttle auto-sync to ~2 min
   _lastSync=Date.now();
   try{
-    // Which dates to ask ESPN about: fixtures that kicked off in the last 48h (results
-    // backfill) up to 30 min from now (about to go live), and aren't finished yet.
+    // Which dates to ask ESPN about: ANY fixture that has kicked off (or is about to, within
+    // 30 min) and isn't finished yet — no 48h cut-off. The old 48h backfill window meant that
+    // if the admin's client never synced during the ~2 days after a match flipped to "post" on
+    // ESPN, that result was skipped forever and never reached Supabase — leaving everyone's
+    // leaderboard stuck (e.g. round-2 group games that finished a few days ago). Now every
+    // straggler past result gets re-queried whenever the admin opens the app.
     const now=Date.now();
     const cand=DB.matches.filter(m=>{ const t=new Date(m.kickoff).getTime();
-      return m.status!=="finished" && t < now+30*60*1000 && t > now-48*3600*1000; });
+      return m.status!=="finished" && t < now+30*60*1000; });
     if(!cand.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
+    // De-dupe to the distinct ET match-dates, newest first, and cap how many we hit per sync so
+    // we never hammer ESPN even if a big backlog has built up (the next sync picks up the rest).
     const dates=[...new Set(cand.map(m=>{ const et=new Date(new Date(m.kickoff).getTime()-4*3600*1000);
-      return et.toISOString().slice(0,10).replace(/-/g,""); }))];
+      return et.toISOString().slice(0,10).replace(/-/g,""); }))].sort().reverse().slice(0,20);
     let n=0, liveN=0;
     for(const d of dates){
       const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${d}`);
@@ -4772,12 +4786,13 @@ async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDI
 async function boot(){
   WANT_ADMIN = isAdminRoute();
   startTicker();   // 🕐 once-only setInterval that ticks every countdown on the page
-  // 🔴 Auto-refresh scores whenever any match is in the sync window — in play OR finished
-  // in the last 48h without a stored result (syncResults throttles itself to ~1 call per
-  // 2 min and only re-renders when something actually changed).
+  // 🔴 Auto-refresh scores whenever any match has kicked off (or is about to, within 30 min)
+  // and still has no stored result — no 48h cut-off, so older unfinished results keep getting
+  // chased until they land. (syncResults throttles itself to ~1 call per 2 min and only
+  // re-renders when something actually changed.)
   setInterval(()=>{ try{ const now=Date.now();
     if(ME && DB.matches.some(m=>{ const t=new Date(m.kickoff).getTime();
-      return m.status!=="finished" && t<now+30*60*1000 && t>now-48*3600*1000; })) syncResults(false);
+      return m.status!=="finished" && t<now+30*60*1000; })) syncResults(false);
   }catch(e){} }, 150000);
   // ✉️🔔 poll DMs + banter activity every 25s so messages and the bell stay fresh.
   // Badge updates happen in place (no re-render); an open conversation refreshes itself.
