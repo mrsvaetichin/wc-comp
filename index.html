@@ -661,7 +661,7 @@ const DEFAULTS = {
   ko: {r16:[],qf:[],sf:[],final:[]} // admin-set actual knockout results
 };
 const KO_STAGES=["r16","qf","sf","final"]; // ordered: each later stage implies the earlier ones
-const KO_PTS={r16:2,qf:3,sf:5,final:8}; // points per correct knockout-stage team
+const KO_PTS={r16:3,qf:6,sf:10,final:16}; // points per correct knockout-stage team — escalates so deep/final rounds are worth far more than a group result
 const KO_LIM={r16:16,qf:8,sf:4,final:2};
 const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
