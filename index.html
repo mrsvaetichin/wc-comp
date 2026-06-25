@@ -4464,7 +4464,13 @@ function rulesHTML(){
 
     <h4>Group stage → Knockouts</h4>
     ${row("📊",`<b>Group survivors are computed automatically</b> from your scoreline picks. Each correct top-2 = <b>+${s.pts_advance} pts</b>.`)}
-    ${row("⚽",`<b>Knockout match bets — worth more every round.</b> Once the groups finish, the real R32→Final fixtures appear and you predict a scoreline for each, exactly like the group stage but the points <b>ramp up</b>: R32 <b>${Math.round(s.pts_exact*STAGE_MULT.r32)}/${Math.round(s.pts_result*STAGE_MULT.r32)}</b>, R16 <b>${Math.round(s.pts_exact*STAGE_MULT.r16)}/${Math.round(s.pts_result*STAGE_MULT.r16)}</b>, QF <b>${Math.round(s.pts_exact*STAGE_MULT.qf)}/${Math.round(s.pts_result*STAGE_MULT.qf)}</b>, SF <b>${Math.round(s.pts_exact*STAGE_MULT.sf)}/${Math.round(s.pts_result*STAGE_MULT.sf)}</b>, Final <b>${Math.round(s.pts_exact*STAGE_MULT.f)}/${Math.round(s.pts_result*STAGE_MULT.f)}</b> (exact / right result). One ⭐ Banker per round still doubles.`)}
+    ${row("⚽",`<b>Knockout match bets — the later the round, the more each is worth.</b> Once the groups finish, the real R32→Final fixtures appear and you predict a scoreline for each, just like the group stage — but the points climb every round (exact score / right result):<br>
+      • Round of 32 → <b>${Math.round(s.pts_exact*STAGE_MULT.r32)}</b> / <b>${Math.round(s.pts_result*STAGE_MULT.r32)}</b><br>
+      • Round of 16 → <b>${Math.round(s.pts_exact*STAGE_MULT.r16)}</b> / <b>${Math.round(s.pts_result*STAGE_MULT.r16)}</b><br>
+      • Quarter-finals → <b>${Math.round(s.pts_exact*STAGE_MULT.qf)}</b> / <b>${Math.round(s.pts_result*STAGE_MULT.qf)}</b><br>
+      • Semi-finals → <b>${Math.round(s.pts_exact*STAGE_MULT.sf)}</b> / <b>${Math.round(s.pts_result*STAGE_MULT.sf)}</b><br>
+      • <b>Final → ${Math.round(s.pts_exact*STAGE_MULT.f)} / ${Math.round(s.pts_result*STAGE_MULT.f)}</b><br>
+      So one good call in the Final is worth ${Math.round(STAGE_MULT.f)}× a group game. One ⭐ Banker per round still doubles.`)}
     ${row("🏆",`<b>Knockout bracket bonus.</b> Separately, your 32-team line-up is built from your group picks; tap a team in each tie to advance them. You also score for every team you advance that actually <b>reaches the next round</b>: R16 <b>+${KO_PTS.r16}</b>, QF <b>+${KO_PTS.qf}</b>, SF <b>+${KO_PTS.sf}</b>, Final <b>+${KO_PTS.final}</b>. Calling the champion is scored in 🃏 Extras.`)}
 
     <h4>Extras &amp; bonuses</h4>
