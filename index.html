@@ -664,6 +664,22 @@ const KO_STAGES=["r16","qf","sf","final"]; // ordered: each later stage implies 
 const KO_PTS={r16:3,qf:6,sf:10,final:16}; // points per correct knockout-stage team — escalates so deep/final rounds are worth far more than a group result
 const KO_LIM={r16:16,qf:8,sf:4,final:2};
 const KO_LABEL={r16:"Round of 16",qf:"Quarter-finalists",sf:"Semi-finalists",final:"Finalists"};
+/* ---------- 📈 stage-weighted match scoring + knockout MATCH fixtures ----------
+   Every scoreline bet is worth MORE the deeper the tournament goes: the group stage
+   is the base (pts_exact / pts_result), and the knockout rounds ramp up to the Final.
+   Knockout match fixtures carry stage 'r32'|'r16'|'qf'|'sf'|'f' and a matchday md 4..8
+   so they reuse ALL the existing per-round machinery (locking, blind reveal, ⭐ Banker).
+   Group matches keep mult ×1, so group-stage scoring is completely unchanged. */
+const STAGE_MULT={group:1, r32:1.5, r16:2, qf:2.5, sf:3, f:4}; // gentle ramp → Final ≈ 20 exact / 8 result
+const KO_MD={r32:4, r16:5, qf:6, sf:7, f:8};                   // KO stage → matchday number
+const MD_STAGE={4:'r32', 5:'r16', 6:'qf', 7:'sf', 8:'f'};      // matchday number → KO stage
+const KO_MATCH_LABEL={r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final'};
+function matchStageKey(m){ if(!m) return 'group'; let s=m.stage; if(s==='final') s='f'; return (s && s!=='group' && STAGE_MULT[s]!=null) ? s : 'group'; }
+function matchMult(m){ return STAGE_MULT[matchStageKey(m)] || 1; }
+function mpExact(m){ return Math.round((DB.settings.pts_exact||0) * matchMult(m)); }   // exact-score points for THIS match (stage-weighted)
+function mpResult(m){ return Math.round((DB.settings.pts_result||0) * matchMult(m)); } // right-result points for THIS match (stage-weighted)
+function matchRoundLabel(m){ const sk=matchStageKey(m); return sk==='group' ? ('Round '+m.md) : KO_MATCH_LABEL[sk]; }
+function isKoMatch(m){ return matchStageKey(m)!=='group'; }
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 // 🔁 Re-picks are only allowed during a TRUE half-time window: 45–75 min after kickoff
 // (first half + stoppage through the break). Prevents the late-game exploit of waiting
@@ -1234,7 +1250,7 @@ function scoreBreakdown(profileId){
     if(!pr||pr.hp==null||pr.ap==null) return;
     const exact = pr.hp===m.hs && pr.ap===m.as;
     const outcome = Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
-    let add = exact?s.pts_exact : outcome?s.pts_result : 0;
+    let add = exact?mpExact(m) : outcome?mpResult(m) : 0;   // stage-weighted: KO rounds worth more
     if(pr.banker) add*=2;   // ⭐ Banker doubles the match points
     bd.match+=add;
     bd.matchRows.push({m,pr,exact,outcome,add});
@@ -1288,7 +1304,7 @@ function livePtsFor(profileId){
     if(pr&&pr.hp!=null&&pr.ap!=null){
       const exact=pr.hp===m.lhs&&pr.ap===m.las;
       const out=Math.sign(pr.hp-pr.ap)===Math.sign(m.lhs-m.las);
-      let add=exact?s.pts_exact:out?s.pts_result:0;
+      let add=exact?mpExact(m):out?mpResult(m):0;   // stage-weighted
       if(pr.banker) add*=2;
       pts+=add;
     }
@@ -1838,6 +1854,31 @@ function updateNotifBadges(){
 // nrm()'s post-strip form: lowercase, no [.&], single spaces (so "bosnia herz").
 const TEAM_ALIASES={"united states":"usa","korea republic":"south korea","czech republic":"czechia","ivory coast":"côte d'ivoire","cote d'ivoire":"côte d'ivoire","turkey":"türkiye","cape verde":"cabo verde","cape verde islands":"cabo verde","congo dr":"dr congo","democratic republic of congo":"dr congo","dr congo":"dr congo","bosnia and herzegovina":"bosnia herz","bosnia-herzegovina":"bosnia herz","bosnia herzegovina":"bosnia herz"};
 function nrm(n){ n=(n||"").toLowerCase().replace(/[.&]/g,"").replace(/\s+/g," ").trim(); return TEAM_ALIASES[n]||n; }
+function teamIdByFeedName(feedName){ const t=DB.teams.find(x=>nrm(x.name)===feedName); return t?t.id:null; }
+// US-Eastern calendar date (YYYY-MM-DD) for an instant — ESPN buckets its scoreboard by ET date.
+function etYmd(ms){ return new Date(ms-4*3600*1000).toISOString().slice(0,10); }
+// 🗓️ Official 2026 World Cup knockout date windows (ET) → stage. Lets the sync (a) ask ESPN about
+// upcoming KO dates before any fixture exists locally and (b) label a discovered fixture's round.
+// The 3rd-place play-off (Jul 18) is bucketed with the semis. Source: FIFA / 2026 KO schedule.
+const KO_DATE_STAGE=[
+  {from:"2026-06-28",to:"2026-07-03",stage:"r32"},
+  {from:"2026-07-04",to:"2026-07-07",stage:"r16"},
+  {from:"2026-07-09",to:"2026-07-11",stage:"qf"},
+  {from:"2026-07-14",to:"2026-07-15",stage:"sf"},
+  {from:"2026-07-18",to:"2026-07-18",stage:"sf"},
+  {from:"2026-07-19",to:"2026-07-19",stage:"f"}
+];
+function koStageForETDate(ymd){ for(const w of KO_DATE_STAGE){ if(ymd>=w.from && ymd<=w.to) return w.stage; } return null; }
+// YYYYMMDD strings for every KO calendar day within a few days of `now`, so imminent KO fixtures
+// get discovered from the feed even though no local match row exists for them yet.
+function upcomingKoQueryDates(now){
+  const out=[], lo=etYmd(now-2*864e5), hi=etYmd(now+12*864e5);
+  KO_DATE_STAGE.forEach(w=>{ let d=w.from>lo?w.from:lo, end=w.to<hi?w.to:hi;
+    for(let cur=d; cur<=end; ){ out.push(cur.replace(/-/g,""));
+      const nx=new Date(cur+"T00:00:00Z"); nx.setUTCDate(nx.getUTCDate()+1); cur=nx.toISOString().slice(0,10); }
+  });
+  return out;
+}
 let _lastSync=0;
 // 📦 Score cache — synced scores live only in this browser until the ADMIN's client
 // upserts them to Supabase. Any liveLoad() (page refresh, Supabase token refresh)
@@ -1878,12 +1919,14 @@ async function syncResults(manual){
     const now=Date.now();
     const cand=DB.matches.filter(m=>{ const t=new Date(m.kickoff).getTime();
       return m.status!=="finished" && t < now+30*60*1000; });
-    if(!cand.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
-    // De-dupe to the distinct ET match-dates, newest first, and cap how many we hit per sync so
-    // we never hammer ESPN even if a big backlog has built up (the next sync picks up the rest).
-    const dates=[...new Set(cand.map(m=>{ const et=new Date(new Date(m.kickoff).getTime()-4*3600*1000);
-      return et.toISOString().slice(0,10).replace(/-/g,""); }))].sort().reverse().slice(0,20);
-    let n=0, liveN=0;
+    // Dates to ask ESPN about = ET dates of unfinished local fixtures ∪ imminent knockout dates
+    // (so brand-new KO matchups get DISCOVERED and created even before any local row exists).
+    const dateSet=new Set(cand.map(m=>etYmd(new Date(m.kickoff).getTime()).replace(/-/g,"")));
+    upcomingKoQueryDates(now).forEach(d=>dateSet.add(d));
+    // De-dupe, newest first, cap per sync so we never hammer ESPN even with a big backlog.
+    const dates=[...dateSet].sort().reverse().slice(0,24);
+    if(!dates.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
+    let n=0, liveN=0, koNew=0;
     for(const d of dates){
       const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${d}`);
       if(!r.ok) continue;
@@ -1894,13 +1937,31 @@ async function syncResults(manual){
         const away=(comp.competitors||[]).find(c=>c.homeAway==="away");
         if(!home||!away||!home.team||!away.team) return;
         const eh=nrm(home.team.displayName), ea=nrm(away.team.displayName);
-        const m=DB.matches.find(x=>{const h=nrm(teamById(x.home).name),a=nrm(teamById(x.away).name);return (h===eh&&a===ea)||(h===ea&&a===eh);});
-        if(!m) return;
+        const evMs=new Date(e.date).getTime(), evYmd=etYmd(evMs);
+        // Match to a local fixture by team names AND same ET date — the date guard stops a KO
+        // rematch (two teams who already met in the groups) from overwriting the group result.
+        let m=DB.matches.find(x=>{ const ht=teamById(x.home), at=teamById(x.away); if(!ht||!at) return false;
+          const h=nrm(ht.name),a=nrm(at.name); return ((h===eh&&a===ea)||(h===ea&&a===eh)) && etYmd(new Date(x.kickoff).getTime())===evYmd; });
+        if(!m){
+          // No local row → if this is a knockout date, CREATE the fixture so people can bet on it.
+          const stage=koStageForETDate(evYmd);
+          if(!stage) return;
+          const koId="ko-"+e.id;
+          m=DB.matches.find(x=>x.id===koId);
+          if(!m){
+            const hid=teamIdByFeedName(eh), aid=teamIdByFeedName(ea);
+            if(!hid||!aid) return;   // a team we don't recognise yet → skip until resolvable
+            m={ id:koId, stage, grp:null, md:KO_MD[stage], home:hid, away:aid,
+                kickoff:new Date(evMs).toISOString(), hs:null, as:null, lhs:null, las:null, status:"scheduled" };
+            DB.matches.push(m); koNew++;
+            if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,stage:m.stage,grp:null,md:m.md,home:m.home,away:m.away,kickoff:m.kickoff,home_score:null,away_score:null,status:"scheduled"});
+          }
+        }
         const hHome=nrm(teamById(m.home).name)===eh;
         const hs=hHome?parseInt(home.score,10):parseInt(away.score,10);
         const as=hHome?parseInt(away.score,10):parseInt(home.score,10);
-        if(isNaN(hs)||isNaN(as)) return;
         const state=(e.status&&e.status.type&&e.status.type.state)||"";   // pre | in | post
+        if(isNaN(hs)||isNaN(as)){ return; }   // no score yet (a freshly-created "pre" fixture) — row still added above
         // 🔴 FINALIZE only on "post" — a live in-play score goes to m.lhs/m.las so the
         // ⚡ LIVE strip + provisional points work without paying out or freezing re-picks early.
         if(state==="post"){
@@ -1911,8 +1972,8 @@ async function syncResults(manual){
         }
       });
     }
-    if(n||liveN){ saveLocal(); saveScoreCache(); render(); }
-    if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:liveN?`⚡ Live scores updated`:"No new scores yet — check back after kickoff");
+    if(n||liveN||koNew){ saveLocal(); saveScoreCache(); render(); }
+    if(manual) toast(koNew?`Found ${koNew} knockout fixture${koNew>1?"s":""} 🏆`:n?`Synced ${n} result${n>1?"s":""} ⚽`:liveN?`⚡ Live scores updated`:"No new scores yet — check back after kickoff");
   }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
 }
 
@@ -2176,7 +2237,7 @@ function matchPtsAsOf(uid, cutoff){
   const fin=DB.matches.filter(m=>m.status==="finished" && new Date(m.kickoff).getTime()<=cutoff);
   fin.forEach(m=>{ const pr=effectivePick(uid,m.id);
     if(pr&&pr.hp!=null&&pr.ap!=null){ const exact=pr.hp===m.hs&&pr.ap===m.as; const outcome=Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
-      let add=exact?s.pts_exact:outcome?s.pts_result:0; if(pr.banker) add*=2; pts+=add; }
+      let add=exact?mpExact(m):outcome?mpResult(m):0; if(pr.banker) add*=2; pts+=add; }
   });
   const fav=(profileById(uid)||{}).team;
   if(fav) fin.forEach(m=>{ if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; });
@@ -2437,14 +2498,19 @@ function viewPicks(){
   const isGroupRound = /^md[123]$/.test(pickFilter);
   const round = isGroupRound ? +pickFilter.slice(2) : null;
   const koStage = isGroupRound ? null : pickFilter;
-  let list = isGroupRound ? [...DB.matches].filter(m=>m.md===round).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff)) : [];
+  let list = isGroupRound
+    ? [...DB.matches].filter(m=>m.md===round).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))
+    : [...DB.matches].filter(m=>matchStageKey(m)===koStage && m.home && m.away).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
   // Build the segments: 3 group rounds + 5 knockout rounds. Group rounds show "X/24" pick count.
   // KO rounds are locked (🔒 padlock) until the group stage actually finishes.
   const groupDone = groupStageFinished();
   const segs = [];
   [1,2,3].forEach(n=>{ const ms=DB.matches.filter(m=>m.md===n); const picked=ms.filter(m=>mine[m.id]).length;
     segs.push(["md"+n, `Round ${n} <span class="tiny muted">${picked}/${ms.length}</span>`, false]); });
-  KO_ROUND_ORDER.forEach(stg=>{ segs.push([stg, KO_ROUND_LABEL[stg], !groupDone]); });
+  KO_ROUND_ORDER.forEach(stg=>{ const ms=DB.matches.filter(m=>matchStageKey(m)===stg && m.home && m.away);
+    const picked=ms.filter(m=>mine[m.id]).length;
+    const cnt = (groupDone && ms.length) ? ` <span class="tiny muted">${picked}/${ms.length}</span>` : '';
+    segs.push([stg, KO_ROUND_LABEL[stg]+cnt, !groupDone]); });
   // Front-page composition (top to bottom):
   //   hero leaderboard (top-5) → per-round picks tracker → league charts
   //   → "Next kickoff" + "Round locks in" countdowns SIDE BY SIDE
@@ -2464,10 +2530,15 @@ function viewPicks(){
       <div class="tiny" style="color:#dfeaff;opacity:.85;margin-top:4px">🕐 ${fmtKick(nm.kickoff)} <span style="opacity:.7">· your local time</span></div></div>`;
   })();
   const roundCard = (function(){
-    if(!isGroupRound) return '';
-    const rdc=roundCountdown(round), rdLocked=roundLocked(round);
-    return `<div class="card center cdcard ${rdLocked?'':'cdopen'}"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
-      <div class="cdbig" data-tick="round" data-md="${round}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+    // Works for group rounds (md 1-3) and knockout rounds (md 4-8). For KO we only show the
+    // lock countdown once the fixtures for that round exist (teams known).
+    const md = isGroupRound ? round : KO_MD[koStage];
+    const hasFixtures = DB.matches.some(m=>m.md===md && m.home && m.away);
+    if(!isGroupRound && !hasFixtures) return '';
+    const lbl = isGroupRound ? ('ROUND '+round) : KO_MATCH_LABEL[koStage].toUpperCase();
+    const rdc=roundCountdown(md), rdLocked=roundLocked(md);
+    return `<div class="card center cdcard ${rdLocked?'':'cdopen'}"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 '+lbl+' · LOCKED':'⏱ '+lbl+' · LOCKS IN'}</div>
+      <div class="cdbig" data-tick="round" data-md="${md}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
       <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
   })();
   if(nextCard || roundCard) html += `<div class="herogrid cdrow">${nextCard}${roundCard}</div>`;
@@ -2491,15 +2562,24 @@ function viewPicks(){
     if(!list.length) html+=`<div class="empty"><div class="e">🍿</div>Nothing here yet — grab a snack.</div>`;
     else html+=`<div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
   } else {
-    // Knockout round view
+    // Knockout round view — real per-match scoreline betting, worth more each round.
     const stageLabel = KO_ROUND_LABEL[koStage];
+    const mult = STAGE_MULT[koStage];
+    const exPts = Math.round((DB.settings.pts_exact||0)*mult), rePts = Math.round((DB.settings.pts_result||0)*mult);
     if(!groupDone){
       html+=`<div class="card center" style="padding:24px 14px"><div style="font-size:42px">🔒</div>
         <h3 style="margin:8px 0 4px">${stageLabel}</h3>
-        <div class="small muted">Knockout picks unlock once <b>Round 3</b> of the group stage is finished. Until then we don't know who's in this round — the matchups will appear here as soon as the groups are done.</div></div>`;
-    } else {
+        <div class="small muted">Knockout picks unlock once <b>Round 3</b> of the group stage is finished. Until then we don't know who's in this round — the matchups appear here as soon as the fixtures are set.</div>
+        <div class="small" style="margin-top:8px">When they do: a scoreline on every match, worth <b>${exPts} pts</b> spot-on / <b>${rePts} pts</b> right result here — knockout bets pay more the deeper we go.</div></div>`;
+    } else if(!list.length){
       html+=`<div class="card center" style="padding:18px 14px"><h3 style="margin:0 0 4px">${stageLabel}</h3>
-        <div class="small muted">The group stage is done — KO matchups will appear here. (Match fixtures will be wired in shortly.)</div></div>`;
+        <div class="small muted">Fixtures for this round aren't set yet — they appear automatically from the live feed once the matchups are confirmed. Check back after the previous round finishes.</div></div>`;
+    } else {
+      const koMd=KO_MD[koStage], pickedRound=list.filter(m=>hasPicked(m.id)).length;
+      html+=`<div class="card"><h3>⚽ Make your picks · ${stageLabel}</h3>
+        <div class="small muted">Predict a scoreline for <b>every match in the round</b> — knockout bets are worth more: <b>${exPts} pts</b> spot-on, <b>${rePts} pts</b> for the right result${koStage==='f'?' (the Final pays the most)':''}. Pick <b>one match</b> as your ⭐ <b>Banker</b> for double. <b>Edit until 30 min before the round's first kickoff</b>, then it freezes.</div>
+        <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${list.length} for the ${stageLabel}.</div></div>
+        <div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
     }
   }
   return html;
@@ -2527,7 +2607,7 @@ function matchCard(m){
     let earn="";
     if(eff&&eff.hp!=null){
       const exact=eff.hp===m.hs&&eff.ap===m.as, out=Math.sign(eff.hp-eff.ap)===Math.sign(m.hs-m.as);
-      let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(eff.banker)got*=2;
+      let got=exact?mpExact(m):out?mpResult(m):0; if(eff.banker)got*=2;
       earn=`<div class="small center ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${eff.hp}–${eff.ap}${eff.banker?' ⭐2×':''}${eff.repick?' 🔁':''} · +${got} pts</div>`;
     } else earn=`<div class="small muted center">You didn't pick this one</div>`;
     inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${revealBlock(m)}`;
@@ -2540,7 +2620,7 @@ function matchCard(m){
       let worth='';
       if(m.lhs!=null && eff && eff.hp!=null){
         const exact=eff.hp===m.lhs&&eff.ap===m.las, out=Math.sign(eff.hp-eff.ap)===Math.sign(m.lhs-m.las);
-        let got=exact?DB.settings.pts_exact:out?DB.settings.pts_result:0; if(eff.banker) got*=2;
+        let got=exact?mpExact(m):out?mpResult(m):0; if(eff.banker) got*=2;
         worth=` <span class="tiny" style="color:${got>0?'var(--lime)':'var(--muted)'}">⚡+${got} if it stays</span>`;
       }
       liveSc=`<div class="small center" style="color:#ff8a8a;font-weight:700;margin:2px 0">🔴 LIVE ${m.lhs!=null?`<span class="result-score" style="font-size:20px;padding:0 5px;color:var(--ink)">${m.lhs} – ${m.las}</span>`:'<span class="muted" style="font-weight:400">score syncing…</span>'}${worth}</div>`;
@@ -2579,11 +2659,12 @@ function matchCard(m){
   } else {   // OPEN — draft form, freely editable until the round deadline
     const d=draft(m.id), canBank=canBankMatch(m);
     const blockedByDraft = !canBank && !bankerLockedInRound(m.md) && draftBankerInRound(m.md, m.id);
-    const bx=DB.settings.pts_exact*2, br=DB.settings.pts_result*2;
+    const bx=mpExact(m)*2, br=mpResult(m)*2;
+    const rLbl=matchRoundLabel(m);
     const bankerHint = !canBank
       ? blockedByDraft
-        ? `⭐ You already picked your Banker on another match in Round ${m.md}. Tap it off there to bank this one instead — one Banker per round.`
-        : `⭐ You've already saved your Banker for Round ${m.md}. A fresh one unlocks in the next round.`
+        ? `⭐ You already picked your Banker on another match in ${rLbl}. Tap it off there to bank this one instead — one Banker per round.`
+        : `⭐ You've already saved your Banker for ${rLbl}. A fresh one unlocks in the next round.`
       : d.banker
         ? `⭐ Banker ON — if this pick lands you score DOUBLE (exact ${bx} pts, right result ${br} pts). One Banker per round · no penalty if it misses.`
         : `⭐ Tap Banker to DOUBLE this match (exact ${bx} pts, right result ${br} pts). You get one Banker each round — spend it on the game you're surest of.`;
@@ -4369,7 +4450,7 @@ function rulesHTML(){
 
     <h4>The basics</h4>
     ${row("🏆",`<b>Private leagues.</b> Create one and share the invite code, or join with a code. You can be in several at once and switch any time via the 🏆 chip up top.`)}
-    ${row("⚽",`<b>Predict every match.</b> <b>${s.pts_exact} pts</b> for the exact score, <b>${s.pts_result} pts</b> for the right result.`)}
+    ${row("⚽",`<b>Predict every match.</b> <b>${s.pts_exact} pts</b> for the exact score, <b>${s.pts_result} pts</b> for the right result — and these <b>scale up in the knockouts</b> (see below), so a Final bet is worth most.`)}
     ${row("🌍",`<b>Pick your nation.</b> Locked in when you sign up. Bag <b>+${FAN_BONUS} pts</b> every time they win.`)}
 
     <h4>Rounds &amp; lock-in</h4>
@@ -4383,7 +4464,8 @@ function rulesHTML(){
 
     <h4>Group stage → Knockouts</h4>
     ${row("📊",`<b>Group survivors are computed automatically</b> from your scoreline picks. Each correct top-2 = <b>+${s.pts_advance} pts</b>.`)}
-    ${row("🏆",`<b>Knockout bracket unlocks after Round 3.</b> Your 32-team line-up is built from your group picks; tap a team in each tie to advance them through the bracket. Points are awarded for every team you advance that actually <b>reaches the next round</b> — and they ramp up the deeper you go: into the R16 <b>+${KO_PTS.r16}</b>, QF <b>+${KO_PTS.qf}</b>, SF <b>+${KO_PTS.sf}</b>, the Final <b>+${KO_PTS.final}</b>. Calling the champion is scored separately in 🃏 Extras.`)}
+    ${row("⚽",`<b>Knockout match bets — worth more every round.</b> Once the groups finish, the real R32→Final fixtures appear and you predict a scoreline for each, exactly like the group stage but the points <b>ramp up</b>: R32 <b>${Math.round(s.pts_exact*STAGE_MULT.r32)}/${Math.round(s.pts_result*STAGE_MULT.r32)}</b>, R16 <b>${Math.round(s.pts_exact*STAGE_MULT.r16)}/${Math.round(s.pts_result*STAGE_MULT.r16)}</b>, QF <b>${Math.round(s.pts_exact*STAGE_MULT.qf)}/${Math.round(s.pts_result*STAGE_MULT.qf)}</b>, SF <b>${Math.round(s.pts_exact*STAGE_MULT.sf)}/${Math.round(s.pts_result*STAGE_MULT.sf)}</b>, Final <b>${Math.round(s.pts_exact*STAGE_MULT.f)}/${Math.round(s.pts_result*STAGE_MULT.f)}</b> (exact / right result). One ⭐ Banker per round still doubles.`)}
+    ${row("🏆",`<b>Knockout bracket bonus.</b> Separately, your 32-team line-up is built from your group picks; tap a team in each tie to advance them. You also score for every team you advance that actually <b>reaches the next round</b>: R16 <b>+${KO_PTS.r16}</b>, QF <b>+${KO_PTS.qf}</b>, SF <b>+${KO_PTS.sf}</b>, Final <b>+${KO_PTS.final}</b>. Calling the champion is scored in 🃏 Extras.`)}
 
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
@@ -4791,8 +4873,11 @@ async function boot(){
   // chased until they land. (syncResults throttles itself to ~1 call per 2 min and only
   // re-renders when something actually changed.)
   setInterval(()=>{ try{ const now=Date.now();
-    if(ME && DB.matches.some(m=>{ const t=new Date(m.kickoff).getTime();
-      return m.status!=="finished" && t<now+30*60*1000; })) syncResults(false);
+    const hasOpenMatch = DB.matches.some(m=>{ const t=new Date(m.kickoff).getTime(); return m.status!=="finished" && t<now+30*60*1000; });
+    // Also sync when a knockout date is imminent, so brand-new KO fixtures get discovered even
+    // if every existing (group) match is already finished and waiting on the bracket.
+    const koSoon = upcomingKoQueryDates(now).length>0;
+    if(ME && (hasOpenMatch || koSoon)) syncResults(false);
   }catch(e){} }, 150000);
   // ✉️🔔 poll DMs + banter activity every 25s so messages and the bell stay fresh.
   // Badge updates happen in place (no re-render); an open conversation refreshes itself.
