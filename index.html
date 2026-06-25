@@ -962,7 +962,7 @@ function seedProps(){
   return [
     {id:"p-goat", icon:"🐐", q:"Settle it — who's the GOAT? (choose wisely 😉)", type:"mc", pts:1, status:"open", correct:null, allow_coins:false,
       options:[{v:"zlatan",label:"🇸🇪 Zlatan"},{v:"ronaldo",label:"🇵🇹 Ronaldo"}]},
-    {id:"p-champ", icon:"🏆", q:"Who lifts the trophy?", type:"team", options:champTeams, pts:20, status:"open", correct:null, allow_coins:true},
+    {id:"p-champ", icon:"🏆", q:"Who lifts the trophy?", type:"team", options:champTeams, pts:30, status:"open", correct:null, allow_coins:true},
     {id:"p-flop", icon:"😱", q:"Which giant FLOPS out in the group stage?", type:"mc", pts:8, status:"open", correct:null, allow_coins:true,
       options:[{v:"Brazil",label:"🇧🇷 Brazil"},{v:"Argentina",label:"🇦🇷 Argentina"},{v:"France",label:"🇫🇷 France"},{v:"Spain",label:"🇪🇸 Spain"},{v:"England",label:"🏴 England"},{v:"Germany",label:"🇩🇪 Germany"},{v:"none",label:"🛡️ None of them (boring)"}]},
     {id:"p-cinderella", icon:"🐴", q:"Best Cinderella run — which underdog goes furthest?", type:"mc", pts:10, status:"open", correct:null, allow_coins:true,
@@ -2684,7 +2684,7 @@ function pOpt(pr,v,label,d){ const sel=d.answer===v?"sel":""; return `<div class
 function viewProps(){
   const locked = extrasLocked();
   const cd = extrasCountdown();
-  let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (<b>20 pts</b>), the top scorer, plus fun side questions. Together Extras add up to roughly 10% of a top player's total — a nice bonus, but the league is decided on match picks. <b>All Extras lock the moment Round 1 locks</b> (30 min before the first match of the tournament). Until then everyone's calls stay blind — the crowd's answers reveal when the round locks, and stay sealed for the rest of the tournament.</div></div>
+  let html=`<div class="card"><h3>🃏 Extras — tournament calls</h3><div class="small muted">Predictions about the <b>whole tournament</b> (not single matches): who lifts the trophy (<b>30 pts</b>), the top scorer, plus fun side questions. Together Extras add up to roughly 10% of a top player's total — a nice bonus, but the league is decided on match picks. <b>All Extras lock the moment Round 1 locks</b> (30 min before the first match of the tournament). Until then everyone's calls stay blind — the crowd's answers reveal when the round locks, and stay sealed for the rest of the tournament.</div></div>
   <div class="card center cdcard ${locked?'':'cdopen'}" style="margin:6px 0"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${locked?'🔒 EXTRAS · LOCKED':'⏱ EXTRAS · LOCK IN (with Round 1)'}</div>
     <div class="cdbig" data-tick="extras">${locked?'sealed for the tournament':(cd||'KICKOFF!')}</div>
     <div class="small" style="color:#fff">${locked?"All answers are now frozen. The crowd's picks are revealed on each card below — good luck.":"Lock your answers any time before Round 1 locks. The crowd's answers stay hidden until then, then everything seals for the whole tournament."}</div></div>`;
@@ -4383,7 +4383,7 @@ function rulesHTML(){
 
     <h4>Group stage → Knockouts</h4>
     ${row("📊",`<b>Group survivors are computed automatically</b> from your scoreline picks. Each correct top-2 = <b>+${s.pts_advance} pts</b>.`)}
-    ${row("🏆",`<b>Knockout rounds unlock after Round 3.</b> Predict scorelines for R32, R16, QF, SF and the Final. Each correct winner: R32 <b>+${KO_PTS.r16}</b>, R16 <b>+${KO_PTS.qf}</b>, QF <b>+${KO_PTS.sf}</b>, SF <b>+${KO_PTS.final}</b>.`)}
+    ${row("🏆",`<b>Knockout bracket unlocks after Round 3.</b> Your 32-team line-up is built from your group picks; tap a team in each tie to advance them through the bracket. Points are awarded for every team you advance that actually <b>reaches the next round</b> — and they ramp up the deeper you go: into the R16 <b>+${KO_PTS.r16}</b>, QF <b>+${KO_PTS.qf}</b>, SF <b>+${KO_PTS.sf}</b>, the Final <b>+${KO_PTS.final}</b>. Calling the champion is scored separately in 🃏 Extras.`)}
 
     <h4>Extras &amp; bonuses</h4>
     ${row("🃏",`<b>Extras:</b> tournament-wide calls — who wins it all (a big <b>+30</b>), top scorer, fun side bets.`)}
