@@ -2153,7 +2153,10 @@ function heroLeaderboard(){
   const me=lb.find(x=>x.id===ME.id);
   // ── Points standings: top 5 + a "you" row if I'm 6th or lower ──
   const medalFor=(rank)=>rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`<span class="muted">#${rank}</span>`;
-  const ptsCell=r=>`${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts`;
+  // Headline number = PROJECTED total (official + live), because that's what the table is ranked by.
+  // Showing only official pts made the order look broken during live games (a higher official score
+  // could sit below a lower one whose live points pushed it ahead). ⚡+N shows the provisional slice.
+  const ptsCell=r=>`${r.pts+(r.lp||0)}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="includes +${r.lp} provisional from live games — becomes official at full time">⚡+${r.lp}</span>`:''} pts`;
   let rows=lb.slice(0,5).map(r=>
     `<div class="hlb-row ${r.id===ME.id?'me':''}" data-vp="${r.id}" style="cursor:pointer"><span class="hlb-pos">${medalFor(r.rank)}</span><span class="avatar" title="${escapeHtml(r.name)}" style="width:26px;height:26px;font-size:13px">${avatarInner(r)}</span><span class="hlb-nm">${escapeHtml(r.name)}${r.team&&teamById(r.team)?' '+teamById(r.team).flag:''}${r.id===ME.id?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''}</span><span class="hlb-pts">${ptsCell(r)}</span></div>`
   ).join("");
@@ -2935,7 +2938,7 @@ function viewBoard(){
       <div class="pos medal">${medal}</div>
       <div class="avatar" title="${escapeHtml(r.name)}" style="width:30px;height:30px;font-size:15px">${avatarInner(r)}</div>
       <div class="nm">${r.name}${r.team&&teamById(r.team)?` <span title="Supports ${teamById(r.team).name}">${teamById(r.team).flag}</span>`:''}${me?' <span class="tiny" style="color:var(--cyan)">(you)</span>':''} ${fire}<small class="badges">${badges||'&nbsp;'}</small></div>
-      <div class="sc">${r.pts}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="provisional from live scores — official at full time">⚡+${r.lp}</span>`:''} pts</div>
+      <div class="sc">${r.pts+(r.lp||0)}${r.lp?` <span class="tiny" style="color:var(--gold);font-weight:800" title="includes +${r.lp} provisional from live games — becomes official at full time">⚡+${r.lp}</span>`:''} pts</div>
     </div>`;
   });
   html+=`<div class="card small muted center">🪦 ${last.emoji} <b>${last.name}</b> ${trashLast}</div>`;
