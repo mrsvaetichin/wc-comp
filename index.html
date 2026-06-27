@@ -1630,8 +1630,14 @@ async function adminDeleteUser(uid){
       await supa.from("bracket_picks").delete().eq("user_id",uid);
       await supa.from("likes")        .delete().eq("user_id",uid);
       await supa.from("cards")        .delete().eq("from_id",uid);
+      await supa.from("cards")        .delete().eq("target_id",uid);
       await supa.from("comments")     .delete().eq("user_id",uid);
+      await supa.from("messages")     .delete().eq("from_id",uid);
+      await supa.from("messages")     .delete().eq("to_id",uid);
       await supa.from("memberships")  .delete().eq("user_id",uid);
+      // 🚫 Tombstone the auth account BEFORE removing the profile, so the deleted user's own
+      // browser can't re-create its profile on its next load (the "they keep coming back" bug).
+      await supa.from("bans")         .upsert({id:uid, banned_by:ME.id});
       await supa.from("profiles")     .delete().eq("id",uid);
     }catch(e){ console.error("adminDeleteUser",e); toast("Server error — check console"); }
   }
@@ -4936,6 +4942,24 @@ async function boot(){
 }
 
 async function liveLoad(user){
+  // 🚫 Banned check FIRST. If an admin removed this account, bow out instead of silently
+  // re-creating the profile below — that re-creation is exactly what made deleted users
+  // "come back". If the bans table doesn't exist yet (schema not re-run), this throws and we
+  // just carry on as before. (Admins are never bannable — skip so you can't lock yourself out.)
+  try{
+    const isAdminAcct = (user.email||"").toLowerCase() === (pseudoEmail(ADMIN_USERNAME)||"").toLowerCase() || ADMIN_EMAILS.includes((user.email||"").toLowerCase());
+    if(!isAdminAcct){
+      const { data:banRows } = await supa.from("bans").select("id").eq("id", user.id);
+      if(banRows && banRows.length){
+        try{ await supa.auth.signOut(); }catch(e){}
+        $("#app").innerHTML=`<div class="app"><div class="hero"><div class="herophoto"><img src="gyok.jpg" alt=""/></div>
+          <div class="big"><b>${(DB.settings&&DB.settings.app_title)||"THE MASK"}</b></div></div>
+          <div class="banner warn"><b>You've been removed from the pool.</b><br>An admin removed this account. Talk to your league organiser if you think it's a mistake.</div>
+          <button class="btn primary block" onclick="location.reload()">Back to start</button></div>`;
+        return;
+      }
+    }
+  }catch(e){ console.error("ban check (bans table may not exist yet)", e); }
   // pull everything into the same shape the UI expects
   const tbl=async n=>{ try{ const {data}=await supa.from(n).select("*");return data||[]; }catch(e){ console.error("load "+n,e); return []; } };
   const [settings,teams,matches,props,preds,answers,profiles,advances,kopicks,reps,leagues,memberships,comments,cards,likes,bracketPicks,messages]=await Promise.all(

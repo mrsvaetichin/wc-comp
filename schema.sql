@@ -86,6 +86,11 @@ create table if not exists bracket_picks (id text primary key,
   user_id uuid references auth.users(id) on delete cascade,
   tie text not null, team text not null, created_at timestamptz default now(),
   unique (league_id, user_id, tie));
+-- 🚫 Banned accounts. When the admin deletes a user we also tombstone their auth id here so their
+-- own browser can't silently re-create its profile on the next load (the "deleted user keeps
+-- coming back" bug). Keyed to auth.users (which survives a profile delete), so the ban persists.
+create table if not exists bans (id uuid primary key references auth.users(id) on delete cascade,
+  banned_by uuid, created_at timestamptz default now());
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
@@ -120,6 +125,10 @@ alter table cards enable row level security;
 alter table likes enable row level security;
 alter table messages enable row level security;
 alter table bracket_picks enable row level security;
+alter table bans enable row level security;
+-- 🚫 Bans: a user may read their OWN ban (so their client knows to bow out); only the admin writes.
+drop policy if exists bans_read  on bans;  create policy bans_read  on bans for select to authenticated using (id = auth.uid() or is_admin());
+drop policy if exists bans_admin on bans;  create policy bans_admin on bans for all    to authenticated using (is_admin()) with check (is_admin());
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
