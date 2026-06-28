@@ -1456,7 +1456,16 @@ async function lockPick(matchId, hp, ap, banker){
   ALL.pred = ALL.pred.filter(p=>!(p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko));
   ALL.pred.push(pr); scopeLeague();
   if(MODE==="live"){
-    try{ await sbUpsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions(); }catch(e){ console.error(e); }
+    try{
+      // 🏆 Knockout safety net: predictions carry a FK to matches(id). If the admin is the first to
+      // pick a freshly-discovered KO fixture, make sure the match row is committed to the server
+      // BEFORE the prediction, so the pick can't fail the FK and silently disappear. (Admin-only —
+      // the matches table is admin-write; for everyone else the fixture is already on the server.)
+      if(m && isKoMatch(m) && ME.is_admin){
+        await sbUpsert("matches",{id:m.id,stage:m.stage,grp:m.grp||null,md:m.md,home:m.home,away:m.away,kickoff:m.kickoff,home_score:m.hs??null,away_score:m.as??null,status:m.status||"scheduled"});
+      }
+      await sbUpsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions();
+    }catch(e){ console.error(e); }
   }
   delete DRAFT[matchId]; saveLocal();
 }
@@ -1964,6 +1973,12 @@ async function syncResults(manual){
           const koId="ko-"+e.id;
           m=DB.matches.find(x=>x.id===koId);
           if(!m){
+            // Only the ADMIN may bring a KO fixture into being, because the matches table is
+            // admin-write only AND predictions carry a foreign key to matches(id). If a non-admin
+            // spawned a local-only fixture, any pick on it would fail that FK on the server and
+            // silently vanish on reload. Non-admins simply wait for the admin's sync to publish it,
+            // then receive it from the server like every other match. (Demo mode has no server/FK.)
+            if(MODE==="live" && !(ME && ME.is_admin)) return;
             const hid=teamIdByFeedName(eh), aid=teamIdByFeedName(ea);
             if(!hid||!aid) return;   // a team we don't recognise yet → skip until resolvable
             m={ id:koId, stage, grp:null, md:KO_MD[stage], home:hid, away:aid,
