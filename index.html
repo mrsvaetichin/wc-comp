@@ -4889,6 +4889,24 @@ function loadError(msg){
     <div class="banner warn"><b>Couldn't connect.</b><br>${msg}</div>
     <button class="btn primary block" onclick="location.reload()">Try again 🔄</button></div>`;
 }
+// 🛟 Resilient loader for the Supabase library. The <head> requests it from jsdelivr; if that CDN is
+// blocked or slow (a single blocked CDN shouldn't lock anyone out of login), fall through to other
+// CDNs — including cloudflare/cdnjs, the same host the confetti script already loads from.
+const SUPA_CDNS=[
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",        // (also requested in <head>)
+  "https://unpkg.com/@supabase/supabase-js@2",
+  "https://cdnjs.cloudflare.com/ajax/libs/supabase-js/2.39.7/supabase.min.js"
+];
+function injectScript(src){ return new Promise(res=>{ const s=document.createElement("script"); s.src=src; s.async=true;
+  s.onload=()=>res(true); s.onerror=()=>res(false); document.head.appendChild(s); }); }
+async function ensureSupabase(){
+  const waitFor=async ticks=>{ for(let i=0;i<ticks && !window.supabase;i++) await new Promise(r=>setTimeout(r,50)); };
+  await waitFor(120);                                  // ~6s grace for the <head> tag (CDN[0])
+  for(let i=1;i<SUPA_CDNS.length && !window.supabase;i++){
+    await injectScript(SUPA_CDNS[i]); await waitFor(80); // ~4s per fallback CDN
+  }
+  return !!window.supabase;
+}
 function bootingScreen(){
   $("#app").innerHTML=`<div class="app"><div class="hero" style="padding-top:60px">
     <div class="herophoto"><img src="gyok.jpg" alt=""/></div>
@@ -4925,9 +4943,8 @@ async function boot(){
   if(haveKeys){
     MODE="live";
     bootingScreen(); // never show a blank/frozen background while we connect
-    // the Supabase library loads from a CDN — wait up to ~6s in case it's slow
-    let tries=0; while(!window.supabase && tries<120){ await new Promise(r=>setTimeout(r,50)); tries++; }
-    if(!window.supabase){
+    // the Supabase library loads from a CDN — try jsdelivr (head), then unpkg, then cloudflare
+    if(!await ensureSupabase()){
       loadError("The login library didn't load — a browser extension or your network may be blocking it. Turn off ad/script blockers for this site and reload.");
       return;
     }
