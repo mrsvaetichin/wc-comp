@@ -4907,11 +4907,11 @@ async function ensureSupabase(){
   }
   return !!window.supabase;
 }
-function bootingScreen(){
+function bootingScreen(msg){
   $("#app").innerHTML=`<div class="app"><div class="hero" style="padding-top:60px">
     <div class="herophoto"><img src="gyok.jpg" alt=""/></div>
     <div class="big">Loading <b>THE MASK</b>…</div>
-    <div class="muted">Warming up the pitch ⚽🦇</div></div></div>`;
+    <div class="muted">${msg||"Warming up the pitch ⚽🦇"}</div></div></div>`;
 }
 function withTimeout(p, ms, label){ return Promise.race([Promise.resolve(p), new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout:"+(label||""))), ms))]); }
 async function applyPendingJoin(){ if(PENDING_JOIN){ const c=PENDING_JOIN; PENDING_JOIN=null; try{ await joinLeague(c); }catch(e){ console.error(e); } } }
@@ -4948,23 +4948,35 @@ async function boot(){
       loadError("The login library didn't load — a browser extension or your network may be blocking it. Turn off ad/script blockers for this site and reload.");
       return;
     }
-    try{
-      supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-      const {data}=await withTimeout(supa.auth.getSession(), 20000, "session");
-      if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 20000, "load"); await applyPendingJoin(); render(); }
-      else if(WANT_ADMIN){
-        // /admin route + no session → go straight to a dedicated admin login screen.
-        // Never show the player signup form on /admin; admin is its own world.
-        Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()});
-        adminLoginScreen();
+    // Connect with retries. A healthy project that has just woken from idle (or a far-away region —
+    // this one is in Tokyo) can be slow on its FIRST request, so a single 20s timeout could fail the
+    // whole boot even though the backend is fine. We retry a few times with backoff before giving up.
+    supa=supa||window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+    let connected=false, lastErr=null;
+    for(let attempt=1; attempt<=4 && !connected; attempt++){
+      try{
+        const {data}=await withTimeout(supa.auth.getSession(), 25000, "session");
+        if(data&&data.session){ await withTimeout(liveLoad(data.session.user), 30000, "load"); await applyPendingJoin(); render(); }
+        else if(WANT_ADMIN){
+          // /admin route + no session → go straight to a dedicated admin login screen.
+          // Never show the player signup form on /admin; admin is its own world.
+          Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()});
+          adminLoginScreen();
+        }
+        else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
+        connected=true;
+      }catch(e){
+        lastErr=e; console.error("connect attempt "+attempt+" failed",e);
+        if(attempt<4){ if($("#app")) bootingScreen(`Connecting… (attempt ${attempt+1})`); await new Promise(r=>setTimeout(r, 1500*attempt)); }
       }
-      else { Object.assign(DB,{settings:{...DEFAULTS}, teams:buildTeams()}); loginScreen(); } // pre-seed the static team list so the signup "who do you support?" picker works before auth
+    }
+    if(connected){
       supa.auth.onAuthStateChange(async (_e,session)=>{
-        if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),20000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }
+        if(session&&session.user){ try{ await withTimeout(liveLoad(session.user),30000,"load"); await applyPendingJoin(); render(); }catch(e){ console.error(e); } }
       });
-    }catch(e){
-      console.error(e);
-      loadError("Couldn't reach the server — your connection may have dropped, or the project is paused. Tap to retry.");
+    } else {
+      console.error("connect: all attempts failed", lastErr);
+      loadError("Couldn't reach the server after a few tries — your connection may have dropped, or the project may be paused (free-tier projects sleep after ~7 days idle). Tap to retry.");
     }
     return;
   }
