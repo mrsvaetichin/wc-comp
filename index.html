@@ -1126,6 +1126,15 @@ function roundDeadline(md){ const ms=DB.matches.filter(x=>x.md===md); if(!ms.len
   const earliest=Math.min(...ms.map(x=>new Date(x.kickoff).getTime())); return earliest - ROUND_LOCK_BEFORE_MS; }
 function roundLocked(md){ const dl=roundDeadline(md); return dl==null ? false : Date.now()>=dl; }
 function roundCountdown(md){ const dl=roundDeadline(md); if(dl==null) return null; return fmtCountdown(dl-Date.now()); }
+// ⏱ Is a single match's pick frozen? GROUP rounds lock as a whole matchday (≈6 games, same day).
+// KNOCKOUT rounds span several days (R32 runs ~6 days), so they must lock PER MATCH — 30 min before
+// that individual game — otherwise the first KO kickoff would freeze picks for KO games still days
+// away. This is the gate the Save/Edit buttons actually use.
+function pickLocked(m){
+  if(!m) return false;
+  if(isKoMatch(m)) return Date.now() >= new Date(m.kickoff).getTime() - ROUND_LOCK_BEFORE_MS;
+  return pickLocked(m);
+}
 
 /* ============================================================================
    🏆  KNOCKOUT BRACKET — a 32-team seeded tree fed by your group-stage picks.
@@ -1441,7 +1450,7 @@ async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}
 async function lockPick(matchId, hp, ap, banker){
   if(!LG){ toast("Join a league first"); return; }
   // Refuse to save if the round has already locked.
-  const m=DB.matches.find(x=>x.id===matchId); if(m && roundLocked(m.md)){ toast("⏱ Round locked — pick frozen"); return; }
+  const m=DB.matches.find(x=>x.id===matchId); if(m && pickLocked(m)){ toast("⏱ Locked — pick frozen"); return; }
   const pr={id:`${ME.id}-${LG}-${matchId}`,user:ME.id,league:LG,match:matchId,hp,ap,banker:!!banker};
   // Replace any existing pick locally (round-open model — picks are editable until the deadline).
   ALL.pred = ALL.pred.filter(p=>!(p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko));
@@ -1454,7 +1463,7 @@ async function lockPick(matchId, hp, ap, banker){
 // 🔓 Unlock a saved pick so the user can edit it — only allowed before the round deadline.
 async function unlockPick(matchId){
   const m=DB.matches.find(x=>x.id===matchId); if(!m) return;
-  if(roundLocked(m.md)){ toast("⏱ Round locked — can't edit"); return; }
+  if(pickLocked(m)){ toast("⏱ Locked — can't edit"); return; }
   // Seed the draft with the current pick so the form opens pre-filled.
   const cur=ALL.pred.find(p=>p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko);
   if(cur){ const d=draft(matchId); d.hp=cur.hp; d.ap=cur.ap; d.banker=!!cur.banker; }
@@ -2539,16 +2548,24 @@ function viewPicks(){
       <div class="tiny" style="color:#dfeaff;opacity:.85;margin-top:4px">🕐 ${fmtKick(nm.kickoff)} <span style="opacity:.7">· your local time</span></div></div>`;
   })();
   const roundCard = (function(){
-    // Works for group rounds (md 1-3) and knockout rounds (md 4-8). For KO we only show the
-    // lock countdown once the fixtures for that round exist (teams known).
-    const md = isGroupRound ? round : KO_MD[koStage];
-    const hasFixtures = DB.matches.some(m=>m.md===md && m.home && m.away);
-    if(!isGroupRound && !hasFixtures) return '';
-    const lbl = isGroupRound ? ('ROUND '+round) : KO_MATCH_LABEL[koStage].toUpperCase();
-    const rdc=roundCountdown(md), rdLocked=roundLocked(md);
-    return `<div class="card center cdcard ${rdLocked?'':'cdopen'}"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 '+lbl+' · LOCKED':'⏱ '+lbl+' · LOCKS IN'}</div>
-      <div class="cdbig" data-tick="round" data-md="${md}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
-      <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
+    if(isGroupRound){
+      // GROUP: the whole matchday locks together 30 min before its first kickoff.
+      const rdc=roundCountdown(round), rdLocked=roundLocked(round);
+      return `<div class="card center cdcard ${rdLocked?'':'cdopen'}"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">${rdLocked?'🔒 ROUND '+round+' · LOCKED':'⏱ ROUND '+round+' · LOCKS IN'}</div>
+        <div class="cdbig" data-tick="round" data-md="${round}">${rdLocked?'picks frozen':(rdc||'KICKOFF!')}</div>
+        <div class="small" style="color:#fff">${rdLocked?'Picks for this round can no longer be edited.':'Edit any of your saved picks until then — then everything in this round freezes.'}</div></div>`;
+    }
+    // KNOCKOUT: rounds span several days and lock PER MATCH, so show the NEXT match still open.
+    const koList=DB.matches.filter(m=>matchStageKey(m)===koStage && m.home && m.away);
+    if(!koList.length) return '';
+    const nextOpen=koList.filter(m=>!pickLocked(m)).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];
+    const lbl=KO_MATCH_LABEL[koStage].toUpperCase();
+    if(!nextOpen) return `<div class="card center cdcard"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">🔒 ${lbl} · ALL LOCKED</div>
+      <div class="cdbig">picks frozen</div><div class="small" style="color:#fff">Every match in this round has locked.</div></div>`;
+    const nh=teamById(nextOpen.home), na=teamById(nextOpen.away), lockISO=new Date(new Date(nextOpen.kickoff).getTime()-ROUND_LOCK_BEFORE_MS).toISOString();
+    return `<div class="card center cdcard cdopen"><div class="tiny" style="color:#dfeaff;letter-spacing:1.5px">⏱ ${lbl} · NEXT PICK LOCKS IN</div>
+      <div class="cdbig" data-tick="kickoff" data-cd="${lockISO}" data-kickoff-label="locked">${countdown(lockISO)||'locked'}</div>
+      <div class="small" style="color:#fff">${nh?nh.flag:''} ${nh?nh.name:''} vs ${na?na.name:''} ${na?na.flag:''} · each match locks 30 min before it kicks off.</div></div>`;
   })();
   if(nextCard || roundCard) html += `<div class="herogrid cdrow">${nextCard}${roundCard}</div>`;
   // ── Anchor + "Make your picks" info card (this is where the Picks tab scrolls to) ──
@@ -2586,7 +2603,7 @@ function viewPicks(){
     } else {
       const koMd=KO_MD[koStage], pickedRound=list.filter(m=>hasPicked(m.id)).length;
       html+=`<div class="card"><h3>⚽ Make your picks · ${stageLabel}</h3>
-        <div class="small muted">Predict a scoreline for <b>every match in the round</b> — knockout bets are worth more: <b>${exPts} pts</b> spot-on, <b>${rePts} pts</b> for the right result${koStage==='f'?' (the Final pays the most)':''}. Pick <b>one match</b> as your ⭐ <b>Banker</b> for double. <b>Edit until 30 min before the round's first kickoff</b>, then it freezes.</div>
+        <div class="small muted">Predict a scoreline for <b>every match in the round</b> — knockout bets are worth more: <b>${exPts} pts</b> spot-on, <b>${rePts} pts</b> for the right result${koStage==='f'?' (the Final pays the most)':''}. Pick <b>one match</b> as your ⭐ <b>Banker</b> for double. Knockout rounds run over several days, so <b>each match locks on its own</b> — edit any pick until 30 min before <b>that</b> game kicks off.</div>
         <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${list.length} for the ${stageLabel}.</div></div>
         <div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
     }
@@ -2596,7 +2613,7 @@ function viewPicks(){
 // The blind-pick reveal — only shows once the round has locked or the match has actually kicked off.
 // Until then nobody sees anyone else's picks so people can't peek + copy mid-window.
 function revealBlock(m){
-  const canSee = roundLocked(m.md) || isLocked(m);
+  const canSee = pickLocked(m) || isLocked(m);
   if(!canSee){ const dl=roundCountdown(m.md); return `<div class="small muted" style="margin-top:8px">👀 The crowd's picks unlock when this round locks${dl?` (in ${dl})`:''}.</div>`; }
   const others=othersFor(m.id);
   if(!others.length) return `<div class="small muted" style="margin-top:8px">👀 No one else picked this one.</div>`;
@@ -2622,7 +2639,7 @@ function matchCard(m){
     inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${revealBlock(m)}`;
   } else if(base){   // you have a saved pick
     const live=inPlay(m);
-    const rndOpen = !roundLocked(m.md) && !isLocked(m);
+    const rndOpen = !pickLocked(m) && !isLocked(m);
     // ⚡ live score banner — the feed's current score + what your pick is worth if it stays
     let liveSc='';
     if(live){
@@ -2660,10 +2677,10 @@ function matchCard(m){
       }
     }
     inner+=revealBlock(m);
-  } else if(isLocked(m) || roundLocked(m.md)){   // round locked or match kicked off, you never picked
+  } else if(isLocked(m) || pickLocked(m)){   // round locked or match kicked off, you never picked
     const liveSc = inPlay(m)
       ? `<span class="result-score">${m.lhs!=null?`${m.lhs} – ${m.las}`:'· – ·'}</span><span class="tiny" style="color:var(--red);font-weight:800;margin-left:7px">🔴 LIVE</span>`
-      : `<span class="vsmid">🔒 ${roundLocked(m.md)&&!isLocked(m)?'round locked':'kicked off'}</span>`;
+      : `<span class="vsmid">🔒 ${pickLocked(m)&&!isLocked(m)?'round locked':'kicked off'}</span>`;
     inner=`${teams}<div class="scorerow">${liveSc}</div><div class="small muted center">You didn't save a pick for this one.</div>${revealBlock(m)}`;
   } else {   // OPEN — draft form, freely editable until the round deadline
     const d=draft(m.id), canBank=canBankMatch(m);
@@ -2693,8 +2710,8 @@ function matchCard(m){
   }
   const tag = m.status==="finished"?'<span class="chip done">FT</span>'
     : inPlay(m)?'<span class="chip live">🔴 LIVE</span>'
-    : base?(roundLocked(m.md)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
-    : (roundLocked(m.md)||isLocked(m))?'<span class="chip">🔒</span>'
+    : base?(pickLocked(m)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
+    : (pickLocked(m)||isLocked(m))?'<span class="chip">🔒</span>'
     :`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
   return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
 }
