@@ -1133,7 +1133,7 @@ function roundCountdown(md){ const dl=roundDeadline(md); if(dl==null) return nul
 function pickLocked(m){
   if(!m) return false;
   if(isKoMatch(m)) return Date.now() >= new Date(m.kickoff).getTime() - ROUND_LOCK_BEFORE_MS;
-  return pickLocked(m);
+  return roundLocked(m.md);   // GROUP matches: whole matchday locks together
 }
 
 /* ============================================================================
