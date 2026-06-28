@@ -1950,12 +1950,13 @@ async function syncResults(manual){
     // De-dupe, newest first, cap per sync so we never hammer ESPN even with a big backlog.
     const dates=[...dateSet].sort().reverse().slice(0,24);
     if(!dates.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
-    let n=0, liveN=0, koNew=0;
+    let n=0, liveN=0, koNew=0, koSeen=0, koUnmatched=0, evTotal=0;
     for(const d of dates){
       const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${d}`);
       if(!r.ok) continue;
       const data=await r.json();
       (data.events||[]).forEach(e=>{
+        evTotal++;
         const comp=e.competitions&&e.competitions[0]; if(!comp) return;
         const home=(comp.competitors||[]).find(c=>c.homeAway==="home");
         const away=(comp.competitors||[]).find(c=>c.homeAway==="away");
@@ -1970,6 +1971,7 @@ async function syncResults(manual){
           // No local row → if this is a knockout date, CREATE the fixture so people can bet on it.
           const stage=koStageForETDate(evYmd);
           if(!stage) return;
+          koSeen++;
           const koId="ko-"+e.id;
           m=DB.matches.find(x=>x.id===koId);
           if(!m){
@@ -1980,7 +1982,7 @@ async function syncResults(manual){
             // then receive it from the server like every other match. (Demo mode has no server/FK.)
             if(MODE==="live" && !(ME && ME.is_admin)) return;
             const hid=teamIdByFeedName(eh), aid=teamIdByFeedName(ea);
-            if(!hid||!aid) return;   // a team we don't recognise yet → skip until resolvable
+            if(!hid||!aid){ koUnmatched++; console.warn("KO fixture: unmatched team name(s)",home.team.displayName,"/",away.team.displayName,"→",eh,"/",ea); return; }
             m={ id:koId, stage, grp:null, md:KO_MD[stage], home:hid, away:aid,
                 kickoff:new Date(evMs).toISOString(), hs:null, as:null, lhs:null, las:null, status:"scheduled" };
             DB.matches.push(m); koNew++;
@@ -2003,7 +2005,14 @@ async function syncResults(manual){
       });
     }
     if(n||liveN||koNew){ saveLocal(); saveScoreCache(); render(); }
-    if(manual) toast(koNew?`Found ${koNew} knockout fixture${koNew>1?"s":""} 🏆`:n?`Synced ${n} result${n>1?"s":""} ⚽`:liveN?`⚡ Live scores updated`:"No new scores yet — check back after kickoff");
+    if(manual){
+      if(koNew) toast(`Found ${koNew} knockout fixture${koNew>1?"s":""} 🏆`);
+      else if(koUnmatched) toast(`Feed had ${koSeen} KO game${koSeen>1?"s":""} but ${koUnmatched} team name${koUnmatched>1?"s":""} didn't match — see console`);
+      else if(koSeen) toast(`KO fixtures already up to date (${koSeen} seen)`);
+      else if(n) toast(`Synced ${n} result${n>1?"s":""} ⚽`);
+      else if(liveN) toast(`⚡ Live scores updated`);
+      else toast(`No KO fixtures in the feed yet (checked ${dates.length} date${dates.length>1?"s":""}, ${evTotal} game${evTotal!==1?"s":""}) — they post once matchups are set`);
+    }
   }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
 }
 
@@ -2613,8 +2622,13 @@ function viewPicks(){
         <div class="small muted">Knockout picks unlock once <b>Round 3</b> of the group stage is finished. Until then we don't know who's in this round — the matchups appear here as soon as the fixtures are set.</div>
         <div class="small" style="margin-top:8px">When they do: a scoreline on every match, worth <b>${exPts} pts</b> spot-on / <b>${rePts} pts</b> right result here — knockout bets pay more the deeper we go.</div></div>`;
     } else if(!list.length){
+      const adminPull = (ME&&ME.is_admin)
+        ? `<div class="small" style="margin-top:10px">As the organiser, you publish the fixtures: tap below to pull them from the live feed now. Once they save, everyone else sees them.</div>
+           <button class="btn lime block" data-sync style="margin-top:8px">🔄 Pull knockout fixtures now</button>
+           <div class="tiny muted" style="margin-top:6px">Nothing appears? The feed may not list this round's matchups yet, or a team name didn't match — tell me what the toast says.</div>`
+        : `<div class="small muted" style="margin-top:8px">They'll appear here as soon as your league organiser publishes them.</div>`;
       html+=`<div class="card center" style="padding:18px 14px"><h3 style="margin:0 0 4px">${stageLabel}</h3>
-        <div class="small muted">Fixtures for this round aren't set yet — they appear automatically from the live feed once the matchups are confirmed. Check back after the previous round finishes.</div></div>`;
+        <div class="small muted">Fixtures for this round aren't on the board yet — they're pulled from the live feed once the matchups are confirmed.</div>${adminPull}</div>`;
     } else {
       const koMd=KO_MD[koStage], pickedRound=list.filter(m=>hasPicked(m.id)).length;
       html+=`<div class="card"><h3>⚽ Make your picks · ${stageLabel}</h3>
