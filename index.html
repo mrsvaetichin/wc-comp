@@ -680,6 +680,41 @@ function mpExact(m){ return Math.round((DB.settings.pts_exact||0) * matchMult(m)
 function mpResult(m){ return Math.round((DB.settings.pts_result||0) * matchMult(m)); } // right-result points for THIS match (stage-weighted)
 function matchRoundLabel(m){ const sk=matchStageKey(m); return sk==='group' ? ('Round '+m.md) : KO_MATCH_LABEL[sk]; }
 function isKoMatch(m){ return matchStageKey(m)!=='group'; }
+// 🏆 Decided knockout fixtures — baked in like the group draw. A KO matchup only becomes two real
+// teams once the groups decide who finishes where, so these can't exist on day one; but once a round
+// is set, its teams + kickoff are fixed, so we hard-code them and they load automatically (no admin,
+// no live-feed needed). Real scores still sync in by team name. As later rounds are decided, add them
+// here (and to schema.sql) the same way. Team codes are the seeded group slots (e.g. C1 = Brazil).
+const KO_FIXTURES=[
+  {id:"ko-r32-1",  stage:"r32", home:"A2", away:"B1", kickoff:"2026-06-28T15:00:00-04:00"}, // South Africa v Canada
+  {id:"ko-r32-2",  stage:"r32", home:"C1", away:"F2", kickoff:"2026-06-29T13:00:00-04:00"}, // Brazil v Japan
+  {id:"ko-r32-3",  stage:"r32", home:"E1", away:"D2", kickoff:"2026-06-29T16:30:00-04:00"}, // Germany v Paraguay
+  {id:"ko-r32-4",  stage:"r32", home:"F1", away:"C2", kickoff:"2026-06-29T21:00:00-04:00"}, // Netherlands v Morocco
+  {id:"ko-r32-5",  stage:"r32", home:"E3", away:"I4", kickoff:"2026-06-30T13:00:00-04:00"}, // Côte d'Ivoire v Norway
+  {id:"ko-r32-6",  stage:"r32", home:"I1", away:"F3", kickoff:"2026-06-30T17:00:00-04:00"}, // France v Sweden
+  {id:"ko-r32-7",  stage:"r32", home:"A1", away:"E4", kickoff:"2026-06-30T21:00:00-04:00"}, // Mexico v Ecuador
+  {id:"ko-r32-8",  stage:"r32", home:"L1", away:"K2", kickoff:"2026-07-01T12:00:00-04:00"}, // England v DR Congo
+  {id:"ko-r32-9",  stage:"r32", home:"G1", away:"I2", kickoff:"2026-07-01T16:00:00-04:00"}, // Belgium v Senegal
+  {id:"ko-r32-10", stage:"r32", home:"D1", away:"B2", kickoff:"2026-07-01T20:00:00-04:00"}, // USA v Bosnia & Herz.
+  {id:"ko-r32-11", stage:"r32", home:"H1", away:"J3", kickoff:"2026-07-02T15:00:00-04:00"}, // Spain v Austria
+  {id:"ko-r32-12", stage:"r32", home:"K1", away:"L2", kickoff:"2026-07-02T19:00:00-04:00"}, // Portugal v Croatia
+  {id:"ko-r32-13", stage:"r32", home:"B4", away:"J2", kickoff:"2026-07-02T23:00:00-04:00"}, // Switzerland v Algeria
+  {id:"ko-r32-14", stage:"r32", home:"D3", away:"G2", kickoff:"2026-07-03T14:00:00-04:00"}, // Australia v Egypt
+  {id:"ko-r32-15", stage:"r32", home:"J1", away:"H2", kickoff:"2026-07-03T18:00:00-04:00"}, // Argentina v Cabo Verde
+  {id:"ko-r32-16", stage:"r32", home:"K4", away:"L3", kickoff:"2026-07-03T21:30:00-04:00"}  // Colombia v Ghana
+];
+// Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
+// client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
+function ensureKoFixtures(){
+  let added=0;
+  KO_FIXTURES.forEach(f=>{
+    if(DB.matches.some(m=>m.id===f.id)) return;   // already loaded from the server → leave it (server wins)
+    DB.matches.push({ id:f.id, stage:f.stage, grp:null, md:KO_MD[f.stage], home:f.home, away:f.away, kickoff:f.kickoff, hs:null, as:null, lhs:null, las:null, status:"scheduled" });
+    added++;
+    if(MODE==="live" && ME && ME.is_admin && supa) sbUpsert("matches",{id:f.id,stage:f.stage,grp:null,md:KO_MD[f.stage],home:f.home,away:f.away,kickoff:f.kickoff,home_score:null,away_score:null,status:"scheduled"});
+  });
+  return added;
+}
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 // 🔁 Re-picks are only allowed during a TRUE half-time window: 45–75 min after kickoff
 // (first half + stoppage through the break). Prevents the late-game exploit of waiting
@@ -1001,6 +1036,7 @@ function seedDemo(){
   DB.settings={...DEFAULTS};
   DB.teams=buildTeams();
   DB.matches=buildGroupMatches();
+  ensureKoFixtures();   // 🏆 decided knockout fixtures show in demo too
   DB.props=seedProps();
   DB.profiles=[];
   DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[]; DB.bracket=[];
@@ -1950,13 +1986,12 @@ async function syncResults(manual){
     // De-dupe, newest first, cap per sync so we never hammer ESPN even with a big backlog.
     const dates=[...dateSet].sort().reverse().slice(0,24);
     if(!dates.length){ if(manual) toast("Nothing to sync right now — next match hasn't kicked off"); return; }
-    let n=0, liveN=0, koNew=0, koSeen=0, koUnmatched=0, evTotal=0;
+    let n=0, liveN=0;
     for(const d of dates){
       const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${d}`);
       if(!r.ok) continue;
       const data=await r.json();
       (data.events||[]).forEach(e=>{
-        evTotal++;
         const comp=e.competitions&&e.competitions[0]; if(!comp) return;
         const home=(comp.competitors||[]).find(c=>c.homeAway==="home");
         const away=(comp.competitors||[]).find(c=>c.homeAway==="away");
@@ -1967,28 +2002,9 @@ async function syncResults(manual){
         // rematch (two teams who already met in the groups) from overwriting the group result.
         let m=DB.matches.find(x=>{ const ht=teamById(x.home), at=teamById(x.away); if(!ht||!at) return false;
           const h=nrm(ht.name),a=nrm(at.name); return ((h===eh&&a===ea)||(h===ea&&a===eh)) && etYmd(new Date(x.kickoff).getTime())===evYmd; });
-        if(!m){
-          // No local row → if this is a knockout date, CREATE the fixture so people can bet on it.
-          const stage=koStageForETDate(evYmd);
-          if(!stage) return;
-          koSeen++;
-          const koId="ko-"+e.id;
-          m=DB.matches.find(x=>x.id===koId);
-          if(!m){
-            // Only the ADMIN may bring a KO fixture into being, because the matches table is
-            // admin-write only AND predictions carry a foreign key to matches(id). If a non-admin
-            // spawned a local-only fixture, any pick on it would fail that FK on the server and
-            // silently vanish on reload. Non-admins simply wait for the admin's sync to publish it,
-            // then receive it from the server like every other match. (Demo mode has no server/FK.)
-            if(MODE==="live" && !(ME && ME.is_admin)) return;
-            const hid=teamIdByFeedName(eh), aid=teamIdByFeedName(ea);
-            if(!hid||!aid){ koUnmatched++; console.warn("KO fixture: unmatched team name(s)",home.team.displayName,"/",away.team.displayName,"→",eh,"/",ea); return; }
-            m={ id:koId, stage, grp:null, md:KO_MD[stage], home:hid, away:aid,
-                kickoff:new Date(evMs).toISOString(), hs:null, as:null, lhs:null, las:null, status:"scheduled" };
-            DB.matches.push(m); koNew++;
-            if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,stage:m.stage,grp:null,md:m.md,home:m.home,away:m.away,kickoff:m.kickoff,home_score:null,away_score:null,status:"scheduled"});
-          }
-        }
+        // Fixtures are baked in (KO_FIXTURES / schema seed), so the sync NEVER invents new rows —
+        // it only updates scores of matches we already have. This avoids duplicate KO fixtures.
+        if(!m) return;
         const hHome=nrm(teamById(m.home).name)===eh;
         const hs=hHome?parseInt(home.score,10):parseInt(away.score,10);
         const as=hHome?parseInt(away.score,10):parseInt(home.score,10);
@@ -2004,15 +2020,8 @@ async function syncResults(manual){
         }
       });
     }
-    if(n||liveN||koNew){ saveLocal(); saveScoreCache(); render(); }
-    if(manual){
-      if(koNew) toast(`Found ${koNew} knockout fixture${koNew>1?"s":""} 🏆`);
-      else if(koUnmatched) toast(`Feed had ${koSeen} KO game${koSeen>1?"s":""} but ${koUnmatched} team name${koUnmatched>1?"s":""} didn't match — see console`);
-      else if(koSeen) toast(`KO fixtures already up to date (${koSeen} seen)`);
-      else if(n) toast(`Synced ${n} result${n>1?"s":""} ⚽`);
-      else if(liveN) toast(`⚡ Live scores updated`);
-      else toast(`No KO fixtures in the feed yet (checked ${dates.length} date${dates.length>1?"s":""}, ${evTotal} game${evTotal!==1?"s":""}) — they post once matchups are set`);
-    }
+    if(n||liveN){ saveLocal(); saveScoreCache(); render(); }
+    if(manual) toast(n?`Synced ${n} result${n>1?"s":""} ⚽`:liveN?`⚡ Live scores updated`:"No new scores yet — check back after kickoff");
   }catch(e){ console.error(e); if(manual) toast("Couldn't reach the live results service"); }
 }
 
@@ -2622,13 +2631,8 @@ function viewPicks(){
         <div class="small muted">Knockout picks unlock once <b>Round 3</b> of the group stage is finished. Until then we don't know who's in this round — the matchups appear here as soon as the fixtures are set.</div>
         <div class="small" style="margin-top:8px">When they do: a scoreline on every match, worth <b>${exPts} pts</b> spot-on / <b>${rePts} pts</b> right result here — knockout bets pay more the deeper we go.</div></div>`;
     } else if(!list.length){
-      const adminPull = (ME&&ME.is_admin)
-        ? `<div class="small" style="margin-top:10px">As the organiser, you publish the fixtures: tap below to pull them from the live feed now. Once they save, everyone else sees them.</div>
-           <button class="btn lime block" data-sync style="margin-top:8px">🔄 Pull knockout fixtures now</button>
-           <div class="tiny muted" style="margin-top:6px">Nothing appears? The feed may not list this round's matchups yet, or a team name didn't match — tell me what the toast says.</div>`
-        : `<div class="small muted" style="margin-top:8px">They'll appear here as soon as your league organiser publishes them.</div>`;
       html+=`<div class="card center" style="padding:18px 14px"><h3 style="margin:0 0 4px">${stageLabel}</h3>
-        <div class="small muted">Fixtures for this round aren't on the board yet — they're pulled from the live feed once the matchups are confirmed.</div>${adminPull}</div>`;
+        <div class="small muted">This round's matchups are decided once the previous round finishes — they load here automatically as soon as they're set.</div></div>`;
     } else {
       const koMd=KO_MD[koStage], pickedRound=list.filter(m=>hasPicked(m.id)).length;
       html+=`<div class="card"><h3>⚽ Make your picks · ${stageLabel}</h3>
@@ -5044,6 +5048,7 @@ async function liveLoad(user){
   DB.teams = teams.length?teams.map(t=>({id:t.id,name:t.name,flag:t.flag,grp:t.grp,pos:t.pos})):buildTeams();
   DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
   applyScoreCache();   // 📦 re-apply locally-synced scores the server doesn't have yet (see saveScoreCache)
+  ensureKoFixtures();  // 🏆 make sure the decided knockout fixtures are present (admin publishes any missing)
   DB.props = props.length?props.map(normalizeProp):seedProps();
   DB.profiles = profiles.map(p=>({
     id:p.id, name:p.display_name||p.email, emoji:p.emoji||"🙂",
