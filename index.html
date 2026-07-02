@@ -715,6 +715,23 @@ function ensureKoFixtures(){
   });
   return added;
 }
+// ⏱ Knockout matches are scored on the FULL-TIME (90') result — extra time and penalties don't count
+// toward the scoreline prediction. But the live feed reports the final incl. extra time (e.g. Belgium
+// 2–2 Senegal after 90, 3–2 after ET → the feed says 3–2). So for any KO game that went to extra time
+// we record the 90' score here; it's treated as authoritative and the score-sync won't overwrite it.
+// Add a line per extra-time game as they happen (90'-decided games sync correctly on their own).
+const KO_RESULTS=[
+  {id:"ko-r32-9", hs:2, as:2}   // Belgium 2–2 Senegal at full time (Belgium won 3–2 in extra time)
+];
+const KO_RESULT_IDS = new Set(KO_RESULTS.map(r=>r.id));
+function applyKoResults(){
+  KO_RESULTS.forEach(r=>{ const m=DB.matches.find(x=>x.id===r.id); if(!m) return;
+    if(m.hs!==r.hs || m.as!==r.as || m.status!=="finished"){
+      m.hs=r.hs; m.as=r.as; m.status="finished"; m.lhs=null; m.las=null;
+      if(MODE==="live" && ME && ME.is_admin && supa) sbUpsert("matches",{id:m.id,home_score:r.hs,away_score:r.as,status:"finished"});
+    }
+  });
+}
 const REPICK_MAX=3, REPICK_COST=3; // half-time re-picks: 3 allowed, -3 pts each
 // 🔁 Re-picks are only allowed during a TRUE half-time window: 45–75 min after kickoff
 // (first half + stoppage through the break). Prevents the late-game exploit of waiting
@@ -1037,6 +1054,7 @@ function seedDemo(){
   DB.teams=buildTeams();
   DB.matches=buildGroupMatches();
   ensureKoFixtures();   // 🏆 decided knockout fixtures show in demo too
+  applyKoResults();     // ⏱ full-time scores for extra-time KO games
   DB.props=seedProps();
   DB.profiles=[];
   DB.predictions=[]; DB.propAnswers=[]; DB.repicks=[]; DB.bracket=[];
@@ -2005,6 +2023,9 @@ async function syncResults(manual){
         // Fixtures are baked in (KO_FIXTURES / schema seed), so the sync NEVER invents new rows —
         // it only updates scores of matches we already have. This avoids duplicate KO fixtures.
         if(!m) return;
+        // ⏱ Never overwrite a KO game whose authoritative 90' result we've recorded (extra-time games) —
+        // the feed would report the extra-time final, but the pool scores the full-time scoreline.
+        if(KO_RESULT_IDS.has(m.id)) return;
         const hHome=nrm(teamById(m.home).name)===eh;
         const hs=hHome?parseInt(home.score,10):parseInt(away.score,10);
         const as=hHome?parseInt(away.score,10):parseInt(home.score,10);
@@ -2636,7 +2657,7 @@ function viewPicks(){
     } else {
       const koMd=KO_MD[koStage], pickedRound=list.filter(m=>hasPicked(m.id)).length;
       html+=`<div class="card"><h3>⚽ Make your picks · ${stageLabel}</h3>
-        <div class="small muted">Predict a scoreline for <b>every match in the round</b> — knockout bets are worth more: <b>${exPts} pts</b> spot-on, <b>${rePts} pts</b> for the right result${koStage==='f'?' (the Final pays the most)':''}. Pick <b>one match</b> as your ⭐ <b>Banker</b> for double. Knockout rounds run over several days, so <b>each match locks on its own</b> — edit any pick until 30 min before <b>that</b> game kicks off.</div>
+        <div class="small muted">Predict a scoreline for <b>every match in the round</b> — knockout bets are worth more: <b>${exPts} pts</b> spot-on, <b>${rePts} pts</b> for the right result${koStage==='f'?' (the Final pays the most)':''}. Pick <b>one match</b> as your ⭐ <b>Banker</b> for double. Knockout rounds run over several days, so <b>each match locks on its own</b> — edit any pick until 30 min before <b>that</b> game kicks off. Scored on the <b>90-minute result</b> — extra time & penalties don't count.</div>
         <div class="small" style="margin-top:8px">💾 You've saved <b>${pickedRound}</b> / ${list.length} for the ${stageLabel}.</div></div>
         <div class="cardgrid">${list.map(m=>matchCard(m)).join("")}</div>`;
     }
@@ -5049,6 +5070,7 @@ async function liveLoad(user){
   DB.matches = matches.length?matches.map(r=>({id:r.id,stage:r.stage,grp:r.grp,md:r.md,home:r.home,away:r.away,kickoff:r.kickoff,hs:r.home_score,as:r.away_score,status:r.status})):buildGroupMatches();
   applyScoreCache();   // 📦 re-apply locally-synced scores the server doesn't have yet (see saveScoreCache)
   ensureKoFixtures();  // 🏆 make sure the decided knockout fixtures are present (admin publishes any missing)
+  applyKoResults();    // ⏱ apply full-time (90') scores for KO games that went to extra time
   DB.props = props.length?props.map(normalizeProp):seedProps();
   DB.profiles = profiles.map(p=>({
     id:p.id, name:p.display_name||p.email, emoji:p.emoji||"🙂",
