@@ -91,6 +91,22 @@ create table if not exists bracket_picks (id text primary key,
 -- coming back" bug). Keyed to auth.users (which survives a profile delete), so the ban persists.
 create table if not exists bans (id uuid primary key references auth.users(id) on delete cascade,
   banned_by uuid, created_at timestamptz default now());
+-- 🎲 Live side bets. Anyone in a league can create a real-money Yes/No side bet during a game; members
+-- join by picking a side. The app only TRACKS stakes & payouts (it never moves money). The creator
+-- settles the outcome. stake is in the league's currency; status: open → locked → settled.
+create table if not exists side_bets (id text primary key,
+  league_id text references leagues(id) on delete cascade,
+  creator_id uuid references auth.users(id) on delete cascade,
+  question text not null, stake numeric not null default 0,
+  status text not null default 'open', outcome text, created_at timestamptz default now());
+create table if not exists side_bet_entries (id text primary key,
+  bet_id text references side_bets(id) on delete cascade,
+  league_id text references leagues(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  side text not null, created_at timestamptz default now(),
+  unique (bet_id, user_id));
+create index if not exists idx_sidebets_league on side_bets (league_id);
+create index if not exists idx_sidebetentries_bet on side_bet_entries (bet_id);
 
 -- patch older databases
 alter table profiles    add column if not exists avatar text;
@@ -129,6 +145,19 @@ alter table bans enable row level security;
 -- 🚫 Bans: a user may read their OWN ban (so their client knows to bow out); only the admin writes.
 drop policy if exists bans_read  on bans;  create policy bans_read  on bans for select to authenticated using (id = auth.uid() or is_admin());
 drop policy if exists bans_admin on bans;  create policy bans_admin on bans for all    to authenticated using (is_admin()) with check (is_admin());
+
+-- 🎲 Side bets: league members can read; any member can create; the CREATOR (or admin) can lock/settle/delete.
+alter table side_bets enable row level security;
+alter table side_bet_entries enable row level security;
+drop policy if exists sb_read on side_bets;    create policy sb_read   on side_bets for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists sb_ins  on side_bets;    create policy sb_ins    on side_bets for insert to authenticated with check (creator_id = auth.uid() and is_member(league_id));
+drop policy if exists sb_upd  on side_bets;    create policy sb_upd    on side_bets for update to authenticated using (creator_id = auth.uid() or is_admin()) with check (creator_id = auth.uid() or is_admin());
+drop policy if exists sb_del  on side_bets;    create policy sb_del    on side_bets for delete to authenticated using (creator_id = auth.uid() or is_admin());
+-- Entries: members read; a member joins/edits/leaves only their OWN entry (admin can moderate).
+drop policy if exists sbe_read on side_bet_entries; create policy sbe_read on side_bet_entries for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists sbe_ins  on side_bet_entries; create policy sbe_ins  on side_bet_entries for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists sbe_upd  on side_bet_entries; create policy sbe_upd  on side_bet_entries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists sbe_del  on side_bet_entries; create policy sbe_del  on side_bet_entries for delete to authenticated using (user_id = auth.uid() or is_admin());
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
