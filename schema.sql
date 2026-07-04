@@ -97,8 +97,10 @@ create table if not exists bans (id uuid primary key references auth.users(id) o
 create table if not exists side_bets (id text primary key,
   league_id text references leagues(id) on delete cascade,
   creator_id uuid references auth.users(id) on delete cascade,
+  match_id text,   -- the live match this bet is attached to (side bets only exist during a live game)
   question text not null, stake numeric not null default 0,
   status text not null default 'open', outcome text, created_at timestamptz default now());
+alter table side_bets add column if not exists match_id text;
 create table if not exists side_bet_entries (id text primary key,
   bet_id text references side_bets(id) on delete cascade,
   league_id text references leagues(id) on delete cascade,

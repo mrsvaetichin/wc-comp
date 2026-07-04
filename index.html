@@ -1876,7 +1876,7 @@ async function reloadMessages(){ if(MODE!=="live"||!supa) return;
 async function reloadSideBets(){ if(MODE!=="live"||!supa) return;
   try{
     const [b,e]=await Promise.all([supa.from("side_bets").select("*"), supa.from("side_bet_entries").select("*")]);
-    if(b.data) ALL.sideBets=b.data.map(x=>({id:x.id,league:x.league_id,creator:x.creator_id,question:x.question,stake:Number(x.stake)||0,status:x.status||'open',outcome:x.outcome||null,created:x.created_at}));
+    if(b.data) ALL.sideBets=b.data.map(x=>({id:x.id,league:x.league_id,creator:x.creator_id,match:x.match_id||null,question:x.question,stake:Number(x.stake)||0,status:x.status||'open',outcome:x.outcome||null,created:x.created_at}));
     if(e.data) ALL.sideEntries=e.data.map(x=>({id:x.id,bet:x.bet_id,league:x.league_id,user:x.user_id,side:x.side,created:x.created_at}));
     scopeLeague();
   }catch(err){ console.error(err); }
@@ -1906,15 +1906,17 @@ function sideBetNet(bet, uid){
   if(p.push) return 0;
   return e.side===bet.outcome ? +p.perWinner : -bet.stake;
 }
-async function createSideBet(question, stake){
+async function createSideBet(matchId, question, stake){
   question=(question||"").trim().slice(0,140); stake=Math.round((parseFloat(stake)||0)*100)/100;
   if(!LG){ toast("Join a league first"); return false; }
+  const m=DB.matches.find(x=>x.id===matchId);
+  if(!m || !inPlay(m)){ toast("Side bets can only be started while a match is live"); return false; }
   if(!question){ toast("Type the yes/no question"); return false; }
   if(!(stake>0)){ toast("Set a stake amount"); return false; }
   const id=`sb-${ME.id}-${Date.now()}`;
-  const b={id,league:LG,creator:ME.id,question,stake,status:'open',outcome:null,created:new Date().toISOString()};
+  const b={id,league:LG,creator:ME.id,match:matchId,question,stake,status:'open',outcome:null,created:new Date().toISOString()};
   ALL.sideBets.push(b); scopeLeague(); saveLocal();
-  if(MODE==="live") await sbUpsert("side_bets",{id,league_id:LG,creator_id:ME.id,question,stake,status:'open',outcome:null});
+  if(MODE==="live") await sbUpsert("side_bets",{id,league_id:LG,creator_id:ME.id,match_id:matchId,question,stake,status:'open',outcome:null});
   toast("🎲 Side bet created"); return true;
 }
 async function joinSideBet(betId, side){
@@ -2297,7 +2299,7 @@ function header(){
 }
 
 function navTabs(){
-  const tabs=[["picks","⚽","Picks"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["bets","🎲","Bets"],["pool","💰","Pool"]];
+  const tabs=[["picks","⚽","Picks"],["props","🃏","Extras"],["board","📊","Board"],["banter","💬","Banter"],["pool","💰","Pool"]];
   if(ADMIN_UNLOCKED) tabs.push(["admin","🛠️","Admin"]);
   return tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" data-tab="${t[0]}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("");
 }
@@ -2313,22 +2315,29 @@ const KO_ROUND_ORDER = ["r32","r16","qf","sf","f"];
 // "· – ·" until the first sync lands one). Shown on the dashboard + the Board tab so the
 // leaderboard always carries what's happening on the pitch right now.
 function liveNowCard(){
-  const live=DB.matches.filter(m=>inPlay(m)).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
-  if(!live.length) return '';
-  const rows=live.map(m=>{
-    const h=teamById(m.home), a=teamById(m.away);
-    const sc=(m.lhs!=null&&m.las!=null)?`${m.lhs} – ${m.las}`:'· – ·';
+  // Show live matches, plus any just-finished match that still has UNSETTLED side bets (so the creator
+  // can settle after full time). Once its bets are settled it drops off (results stay viewable on the
+  // finished match card via "🎲 View side bet results").
+  const unsettled=new Set((DB.sideBets||[]).filter(b=>b.status!=='settled'&&b.match).map(b=>b.match));
+  const shown=DB.matches.filter(m=>inPlay(m)||unsettled.has(m.id)).sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
+  if(!shown.length) return '';
+  const rows=shown.map(m=>{
+    const h=teamById(m.home), a=teamById(m.away), isLive=inPlay(m);
+    const sc=isLive?((m.lhs!=null&&m.las!=null)?`${m.lhs} – ${m.las}`:'· – ·'):(m.hs!=null?`${m.hs} – ${m.as}`:'–');
     const eff=effectivePick(ME.id,m.id);
     const mine=eff&&eff.hp!=null?`<span class="tiny muted" style="white-space:nowrap">you: ${eff.hp}–${eff.ap}${eff.banker?' ⭐':''}</span>`:'<span class="tiny muted">no pick</span>';
-    return `<div class="standrow">
-      <span class="chip live" style="flex:none">🔴 LIVE</span>
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.flag} ${escapeHtml(h.name)} <b class="display" style="color:var(--lime);font-size:17px;padding:0 4px">${sc}</b> ${escapeHtml(a.name)} ${a.flag}</span>
-      ${mine}
+    return `<div style="padding:6px 0;border-top:1px solid var(--line)">
+      <div class="standrow">
+        <span class="chip ${isLive?'live':''}" style="flex:none">${isLive?'🔴 LIVE':'FT'}</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.flag} ${escapeHtml(h.name)} <b class="display" style="color:var(--lime);font-size:17px;padding:0 4px">${sc}</b> ${escapeHtml(a.name)} ${a.flag}</span>
+        ${mine}
+      </div>
+      ${matchSideBetsHtml(m)}
     </div>`;
   }).join("");
   return `<div class="card" style="border-color:var(--red)">
-    <div class="spread"><h3 style="font-size:15px;margin:0">⚡ Live now</h3><span class="tiny muted">scores refresh automatically · points land at full time</span></div>
-    <div style="margin-top:4px">${rows}</div>
+    <div class="spread"><h3 style="font-size:15px;margin:0">⚡ Live now</h3><span class="tiny muted">🎲 start a side bet · scores refresh automatically</span></div>
+    <div style="margin-top:0">${rows}</div>
   </div>`;
 }
 function heroLeaderboard(){
@@ -2805,7 +2814,9 @@ function matchCard(m){
       let got=exact?mpExact(m):out?mpResult(m):0; if(eff.banker)got*=2;
       earn=`<div class="small center ${got>0?'earn good':'earn bad'}">${exact?'🎯 EXACT! ':out?'✅ Right result · ':'❌ Missed · '}you said ${eff.hp}–${eff.ap}${eff.banker?' ⭐2×':''}${eff.repick?' 🔁':''} · +${got} pts</div>`;
     } else earn=`<div class="small muted center">You didn't pick this one</div>`;
-    inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${revealBlock(m)}`;
+    const sbCount=matchSideBets(m.id).length;
+    const sbLink=sbCount?`<button class="btn block tiny" data-sbresults="${m.id}" style="margin-top:8px;border-color:var(--cyan);color:var(--cyan)">🎲 View side bet results (${sbCount})</button>`:'';
+    inner=`${teams}<div class="scorerow"><span class="result-score">${m.hs} – ${m.as}</span></div>${earn}${sbLink}${revealBlock(m)}`;
   } else if(base){   // you have a saved pick
     const live=inPlay(m);
     const rndOpen = !pickLocked(m) && !isLocked(m);
@@ -3137,57 +3148,71 @@ function viewBoard(){
   return html;
 }
 
-/* ---------- POOL / BUY-IN ---------- */
-function viewSideBets(){
-  const bets=openSideBets();
-  const nm=uid=>{ const p=profileById(uid); return p?escapeHtml(p.name):"?"; };
-  const cur=(curLeague()&&curLeague().currency)||DB.settings.currency||"USD";
-  let html=`<div class="card"><h3>🎲 Live side bets</h3>
-    <div class="small muted">Start a quick <b>yes/no</b> bet during a game — set the stake, others tap in. When it's over you (the creator) mark the result and the app tallies who won and who owes. <b>Real money is settled between you</b> — nothing moves through the app.</div>
-    <div style="margin-top:10px">
-      <input id="sbq" maxlength="140" placeholder="e.g. Goal in the next 10 minutes?"/>
-      <div class="row" style="gap:8px;margin-top:8px">
-        <input id="sbstake" inputmode="decimal" placeholder="Stake to join (${cur})" style="flex:1"/>
-        <button class="btn lime" id="sbcreate" style="flex:0 0 auto">➕ Create</button>
-      </div>
-    </div></div>`;
-  if(!bets.length){ html+=`<div class="empty"><div class="e">🎲</div>No side bets yet — start one above.</div>`; return html; }
-  bets.forEach(bet=>{
-    const p=sideBetPayout(bet), mine=mySideEntry(bet.id), isCreator=bet.creator===ME.id;
-    const yesNames=p.entries.filter(e=>e.side==='yes').map(e=>nm(e.user)).join(", ")||"—";
-    const noNames =p.entries.filter(e=>e.side==='no').map(e=>nm(e.user)).join(", ")||"—";
-    const statusChip = bet.status==='settled'?`<span class="chip done">Settled</span>`:bet.status==='locked'?`<span class="chip">🔒 Closed</span>`:`<span class="chip open">Open</span>`;
-    let body="";
-    if(bet.status==='open'){
-      body+=`<div class="row" style="gap:8px;margin-top:8px">
-        <button class="btn ${mine&&mine.side==='yes'?'lime':''}" style="flex:1" data-sbjoin="${bet.id}|yes">👍 YES${mine&&mine.side==='yes'?' ✓':''}</button>
-        <button class="btn ${mine&&mine.side==='no'?'gold':''}" style="flex:1" data-sbjoin="${bet.id}|no">👎 NO${mine&&mine.side==='no'?' ✓':''}</button></div>`;
-      if(mine) body+=`<button class="btn block tiny" data-sbleave="${bet.id}" style="margin-top:6px;border-color:var(--muted);color:var(--muted)">Leave this bet</button>`;
+/* ---------- 🎲 side bet rendering (shown inside the ⚡ Live now box + a results modal) ---------- */
+function matchSideBets(matchId){ return (DB.sideBets||[]).filter(b=>b.match===matchId).sort((a,b)=>(a.status==='settled')-(b.status==='settled')||new Date(b.created)-new Date(a.created)); }
+// Render one side bet. readOnly (results modal) hides the join / settle / delete controls.
+function renderSideBet(bet, readOnly){
+  const p=sideBetPayout(bet), mine=mySideEntry(bet.id), isCreator=bet.creator===ME.id;
+  const nm=uid=>{ const pr=profileById(uid); return pr?escapeHtml(pr.name):"?"; };
+  const yesNames=p.entries.filter(e=>e.side==='yes').map(e=>nm(e.user)).join(", ")||"—";
+  const noNames =p.entries.filter(e=>e.side==='no').map(e=>nm(e.user)).join(", ")||"—";
+  const chip = bet.status==='settled'?`<span class="chip done">Settled</span>`:bet.status==='locked'?`<span class="chip">🔒 Closed</span>`:`<span class="chip open">Open</span>`;
+  let body="";
+  if(!readOnly && bet.status==='open'){
+    body+=`<div class="row" style="gap:6px;margin-top:6px">
+      <button class="btn ${mine&&mine.side==='yes'?'lime':''}" style="flex:1;padding:7px" data-sbjoin="${bet.id}|yes">👍 YES${mine&&mine.side==='yes'?' ✓':''}</button>
+      <button class="btn ${mine&&mine.side==='no'?'gold':''}" style="flex:1;padding:7px" data-sbjoin="${bet.id}|no">👎 NO${mine&&mine.side==='no'?' ✓':''}</button></div>`;
+    if(mine) body+=`<button class="btn block tiny" data-sbleave="${bet.id}" style="margin-top:5px;border-color:var(--muted);color:var(--muted)">Leave</button>`;
+  }
+  body+=`<div class="tiny muted" style="margin-top:6px">👍 (${p.yes}) ${yesNames} · 👎 (${p.no}) ${noNames}</div>`;
+  if(bet.status==='settled'){
+    if(p.push){ body+=`<div class="tiny muted" style="margin-top:4px">Result <b>${bet.outcome.toUpperCase()}</b> · no payouts (push).</div>`; }
+    else {
+      const w=p.winners.map(e=>`${nm(e.user)} <b style="color:var(--lime)">+${money(p.perWinner)}</b>`).join(", ");
+      const l=p.losers.map(e=>`${nm(e.user)} <b style="color:var(--red)">−${money(bet.stake)}</b>`).join(", ");
+      body+=`<div class="tiny" style="margin-top:4px">🏆 <b>${bet.outcome.toUpperCase()}</b> · Collect: ${w} · Owe: ${l}</div>`;
     }
-    body+=`<div class="small" style="margin-top:8px">👍 <b>YES</b> (${p.yes}): ${yesNames}<br>👎 <b>NO</b> (${p.no}): ${noNames}</div>`;
-    if(bet.status==='settled'){
-      if(p.push){ body+=`<div class="small muted" style="margin-top:8px">Result <b>${bet.outcome.toUpperCase()}</b> · everyone was on one side — no payouts (push).</div>`; }
-      else {
-        const w=p.winners.map(e=>`${nm(e.user)} <b style="color:var(--lime)">+${money(p.perWinner)}</b>`).join(", ");
-        const l=p.losers.map(e=>`${nm(e.user)} <b style="color:var(--red)">−${money(bet.stake)}</b>`).join(", ");
-        body+=`<div class="small" style="margin-top:8px">🏆 Result <b>${bet.outcome.toUpperCase()}</b><br>Collect: ${w}<br>Owe: ${l}</div>`;
-      }
-    } else if(mine){
-      body+=`<div class="tiny muted" style="margin-top:4px">You're on <b>${mine.side.toUpperCase()}</b> for ${money(bet.stake)}.</div>`;
-    }
-    if(isCreator && bet.status!=='settled'){
-      body+=`<div class="row" style="gap:8px;margin-top:10px">`;
-      if(bet.status==='open') body+=`<button class="btn" style="flex:1" data-sblock="${bet.id}">🔒 Close betting</button>`;
-      body+=`<button class="btn lime" style="flex:1" data-sbsettle="${bet.id}|yes">YES won</button>
-             <button class="btn gold" style="flex:1" data-sbsettle="${bet.id}|no">NO won</button></div>`;
-    }
-    if(isCreator || (ME&&ME.is_admin)) body+=`<button class="btn block tiny" data-sbdel="${bet.id}" style="margin-top:8px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>`;
-    html+=`<div class="card"><div class="spread"><h3 style="font-size:16px;margin:0;flex:1">${escapeHtml(bet.question)}</h3>${statusChip}</div>
-      <div class="small muted" style="margin-top:2px">Stake <b>${money(bet.stake)}</b> · pot <b>${money(p.pot)}</b> · by ${nm(bet.creator)}</div>
-      ${body}</div>`;
-  });
-  return html;
+  } else if(!readOnly && mine){ body+=`<div class="tiny muted" style="margin-top:4px">You're on <b>${mine.side.toUpperCase()}</b> for ${money(bet.stake)}.</div>`; }
+  if(!readOnly && isCreator && bet.status!=='settled'){
+    body+=`<div class="row" style="gap:6px;margin-top:8px">`;
+    if(bet.status==='open') body+=`<button class="btn tiny" style="flex:1" data-sblock="${bet.id}">🔒 Close</button>`;
+    body+=`<button class="btn lime tiny" style="flex:1" data-sbsettle="${bet.id}|yes">YES won</button>
+           <button class="btn gold tiny" style="flex:1" data-sbsettle="${bet.id}|no">NO won</button></div>`;
+  }
+  if(!readOnly && (isCreator || (ME&&ME.is_admin))) body+=`<button class="btn block tiny" data-sbdel="${bet.id}" style="margin-top:6px;border-color:var(--red);color:#ffb3b3">🗑️ Delete</button>`;
+  return `<div style="background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:9px 10px;margin-bottom:8px">
+    <div class="spread"><b style="flex:1;font-size:14px">🎲 ${escapeHtml(bet.question)}</b>${chip}</div>
+    <div class="tiny muted" style="margin-top:1px">${money(bet.stake)} each · pot ${money(p.pot)} · by ${nm(bet.creator)}</div>${body}</div>`;
 }
+// The side-bet block for one match inside the Live now box: existing bets + (if still live) a create form.
+function matchSideBetsHtml(m){
+  const bets=matchSideBets(m.id);
+  const cur=(curLeague()&&curLeague().currency)||DB.settings.currency||"USD";
+  let inner=bets.map(b=>renderSideBet(b,false)).join("");
+  if(inPlay(m)){
+    inner+=`<div style="margin-top:2px">
+      <input id="sbq-${m.id}" maxlength="140" placeholder="🎲 Start a yes/no side bet…"/>
+      <div class="row" style="gap:8px;margin-top:6px">
+        <input id="sbstake-${m.id}" inputmode="decimal" placeholder="Stake (${cur})" style="flex:1"/>
+        <button class="btn lime" data-sbcreate="${m.id}" style="flex:0 0 auto">➕ Bet</button>
+      </div></div>`;
+  }
+  return inner ? `<div style="margin-top:8px">${inner}</div>` : '';
+}
+// 🎲 Results modal for a FINISHED match that had side bets (read-only).
+function sideBetResultsModal(matchId){
+  const m=DB.matches.find(x=>x.id===matchId); const bets=matchSideBets(matchId);
+  const h=m&&teamById(m.home), a=m&&teamById(m.away);
+  const title=m?`${h?h.flag:''} ${h?escapeHtml(h.name):''} ${m.hs!=null?`${m.hs}–${m.as}`:''} ${a?escapeHtml(a.name):''} ${a?a.flag:''}`:'Side bets';
+  const root=$("#modal-root");
+  root.innerHTML=`<div class="modal-bg"><div class="modal"><div class="mhead"><b>🎲 Side bet results</b><button class="x" data-close>×</button></div>
+    <div class="mbody"><div class="small muted" style="margin-bottom:8px">${title}</div>
+    ${bets.length?bets.map(b=>renderSideBet(b,true)).join(""):'<div class="small muted">No side bets on this match.</div>'}
+    <button class="btn primary block" data-close style="margin-top:10px">Close</button></div></div></div>`;
+  const close=()=>root.innerHTML=""; $$("[data-close]",root).forEach(b=>b.onclick=close);
+  $(".modal-bg",root).onclick=e=>{ if(e.target.classList.contains("modal-bg")) close(); };
+}
+/* ---------- POOL / BUY-IN ---------- */
 function viewPool(){
   const lg=curLeague(); if(!lg) return '';
   const members=leagueMembers(LG);
@@ -4120,7 +4145,7 @@ function render(){
   if(ME && (!LG || !curLeague())){ $("#app").innerHTML = leagueGate(); wireGate(); return; }
   loadAdv();
   if(VIEW==="admin" && !ADMIN_UNLOCKED) VIEW="picks";
-  const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,banter:viewBanter,bets:viewSideBets,pool:viewPool,admin:viewAdmin};
+  const views={picks:viewPicks,bracket:viewBracket,props:viewProps,board:viewBoard,banter:viewBanter,pool:viewPool,admin:viewAdmin};
   const body=(views[VIEW]||viewPicks)();
   let banner = MODE==="demo" ? `<div class="banner demo">🎮 <b>Demo mode</b> — you're playing with sample friends & data so you can feel the game. Add your Supabase keys (see SETUP.md) to go live with real logins for your crew.</div>` : "";
   $("#app").innerHTML = header()+`<div class="app view-${VIEW}">${banner}${body}</div>`+nav();
@@ -4246,7 +4271,8 @@ function wire(){
   // picks filters
   $$("[data-pf]").forEach(b=>b.onclick=()=>{pickFilter=b.dataset.pf;render();});
   // 🎲 side bets
-  { const c=$("#sbcreate"); if(c) c.onclick=async()=>{ const q=$("#sbq"), s=$("#sbstake"); if(await createSideBet(q?q.value:"", s?s.value:"")) render(); }; }
+  $$("[data-sbcreate]").forEach(btn=>btn.onclick=async()=>{ const mid=btn.dataset.sbcreate; const q=$(`#sbq-${mid}`), s=$(`#sbstake-${mid}`); if(await createSideBet(mid, q?q.value:"", s?s.value:"")) render(); });
+  $$("[data-sbresults]").forEach(b=>b.onclick=()=>sideBetResultsModal(b.dataset.sbresults));
   $$("[data-sbjoin]").forEach(b=>b.onclick=async()=>{ const [id,side]=b.dataset.sbjoin.split("|"); await joinSideBet(id,side); render(); });
   $$("[data-sbleave]").forEach(b=>b.onclick=async()=>{ await leaveSideBet(b.dataset.sbleave); render(); });
   $$("[data-sblock]").forEach(b=>b.onclick=async()=>{ await lockSideBet(b.dataset.sblock); render(); });
@@ -5168,8 +5194,9 @@ async function boot(){
     updateNotifBadges();
     notifyNewCards();
     if(typeof _refreshOpenConvo==="function"&&_refreshOpenConvo) _refreshOpenConvo();
-    // 🎲 If a side bet changed (new bet, someone joined, or it was settled) and we're looking at the Bets tab, repaint.
-    if(VIEW==="bets" && JSON.stringify((ALL.sideBets||[]).map(b=>b.id+b.status+b.outcome).concat((ALL.sideEntries||[]).map(e=>e.id+e.side)))!==_sbBefore) render();
+    // 🎲 If a side bet changed (new bet, someone joined, settled) and we're on the dashboard/board where the
+    // Live now box lives, repaint so live bets stay fresh for everyone during a game.
+    if((VIEW==="picks"||VIEW==="board") && JSON.stringify((ALL.sideBets||[]).map(b=>b.id+b.status+b.outcome).concat((ALL.sideEntries||[]).map(e=>e.id+e.side)))!==_sbBefore) render();
   }catch(e){} }, 25000);
   try{ const j=new URL(location.href).searchParams.get("join"); if(j) PENDING_JOIN=j; }catch(e){}
   const haveKeys = !!(SUPABASE_URL && SUPABASE_ANON);
@@ -5276,7 +5303,7 @@ async function liveLoad(user){
   ALL.likes    = (likes||[]).map(l=>({id:l.id,league:l.league_id,comment:l.comment_id,user:l.user_id,created:l.created_at}));
   ALL.bracket  = (bracketPicks||[]).map(b=>({id:b.id,league:b.league_id,user:b.user_id,tie:b.tie,team:b.team,created:b.created_at}));
   ALL.msgs     = (messages||[]).map(m=>({id:m.id,league:m.league_id,from:m.from_id,to:m.to_id,body:m.body,created:m.created_at,read:m.read_at}));
-  ALL.sideBets    = (sideBets||[]).map(b=>({id:b.id,league:b.league_id,creator:b.creator_id,question:b.question,stake:Number(b.stake)||0,status:b.status||'open',outcome:b.outcome||null,created:b.created_at}));
+  ALL.sideBets    = (sideBets||[]).map(b=>({id:b.id,league:b.league_id,creator:b.creator_id,match:b.match_id||null,question:b.question,stake:Number(b.stake)||0,status:b.status||'open',outcome:b.outcome||null,created:b.created_at}));
   ALL.sideEntries = (sideEntries||[]).map(e=>({id:e.id,bet:e.bet_id,league:e.league_id,user:e.user_id,side:e.side,created:e.created_at}));
   // ensure my profile exists
   let mine=DB.profiles.find(p=>p.id===user.id);
