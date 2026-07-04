@@ -1468,7 +1468,11 @@ function tournamentStart(){ const ks=DB.matches.map(m=>new Date(m.kickoff).getTi
 // or anyone else's) are visible to anyone. Once locked, they stay sealed for the whole
 // tournament until each prop is settled by the admin.
 function extrasDeadline(){ return roundDeadline(1); }
-function extrasLocked(){ const dl=extrasDeadline(); return dl!=null && Date.now()>=dl; }
+// 🔓 TEMPORARY unlock switch. While true, Extras are editable again for EVERYONE (used to restore a
+// lost answer). Set back to false and redeploy as soon as you're done re-entering — otherwise anyone
+// can change their Extras (including the champion pick) with hindsight.
+const EXTRAS_UNLOCK_OVERRIDE = true;
+function extrasLocked(){ if(EXTRAS_UNLOCK_OVERRIDE) return false; const dl=extrasDeadline(); return dl!=null && Date.now()>=dl; }
 function extrasCountdown(){ const dl=extrasDeadline(); if(dl==null) return null; return fmtCountdown(dl-Date.now()); }
 function nextMatch(){return [...DB.matches].filter(m=>new Date(m.kickoff)>Date.now()&&m.status!=="finished").sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff))[0];}
 // knockout futures
