@@ -701,7 +701,16 @@ const KO_FIXTURES=[
   {id:"ko-r32-13", stage:"r32", home:"B4", away:"J2", kickoff:"2026-07-02T23:00:00-04:00"}, // Switzerland v Algeria
   {id:"ko-r32-14", stage:"r32", home:"D3", away:"G2", kickoff:"2026-07-03T14:00:00-04:00"}, // Australia v Egypt
   {id:"ko-r32-15", stage:"r32", home:"J1", away:"H2", kickoff:"2026-07-03T18:00:00-04:00"}, // Argentina v Cabo Verde
-  {id:"ko-r32-16", stage:"r32", home:"K4", away:"L3", kickoff:"2026-07-03T21:30:00-04:00"}  // Colombia v Ghana
+  {id:"ko-r32-16", stage:"r32", home:"K4", away:"L3", kickoff:"2026-07-03T21:30:00-04:00"}, // Colombia v Ghana
+  // Round of 16 (md 5)
+  {id:"ko-r16-1", stage:"r16", home:"B1", away:"C2", kickoff:"2026-07-04T13:00:00-04:00"}, // Canada v Morocco
+  {id:"ko-r16-2", stage:"r16", home:"D2", away:"I1", kickoff:"2026-07-04T17:00:00-04:00"}, // Paraguay v France
+  {id:"ko-r16-3", stage:"r16", home:"C1", away:"I4", kickoff:"2026-07-05T16:00:00-04:00"}, // Brazil v Norway
+  {id:"ko-r16-4", stage:"r16", home:"A1", away:"L1", kickoff:"2026-07-05T20:00:00-04:00"}, // Mexico v England
+  {id:"ko-r16-5", stage:"r16", home:"K1", away:"H1", kickoff:"2026-07-06T15:00:00-04:00"}, // Portugal v Spain
+  {id:"ko-r16-6", stage:"r16", home:"D1", away:"G1", kickoff:"2026-07-06T17:00:00-04:00"}, // USA v Belgium
+  {id:"ko-r16-7", stage:"r16", home:"J1", away:"G2", kickoff:"2026-07-07T12:00:00-04:00"}, // Argentina v Egypt
+  {id:"ko-r16-8", stage:"r16", home:"B4", away:"K4", kickoff:"2026-07-07T16:00:00-04:00"}  // Switzerland v Colombia
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
@@ -721,7 +730,8 @@ function ensureKoFixtures(){
 // we record the 90' score here; it's treated as authoritative and the score-sync won't overwrite it.
 // Add a line per extra-time game as they happen (90'-decided games sync correctly on their own).
 const KO_RESULTS=[
-  {id:"ko-r32-9", hs:2, as:2}   // Belgium 2–2 Senegal at full time (Belgium won 3–2 in extra time)
+  {id:"ko-r32-9",  hs:2, as:2, winner:"G1"},  // Belgium 2–2 Senegal at full time (Belgium won 3–2 in extra time)
+  {id:"ko-r32-15", hs:1, as:1, winner:"J1"}   // Argentina 1–1 Cabo Verde at full time (Argentina advanced)
 ];
 const KO_RESULT_IDS = new Set(KO_RESULTS.map(r=>r.id));
 function applyKoResults(){
@@ -1172,6 +1182,16 @@ function predictedGroupStandings(uid, g){
 function derivedSurvivors(uid, g){ return predictedGroupStandings(uid, g).std.slice(0,2); }
 // what's the next un-finished matchday for the picks page default
 function currentMD(){ for(const md of [1,2,3]) if(DB.matches.some(m=>m.md===md && m.status!=="finished")) return md; return 3; }
+// 🎯 Which round tab to show by default = the one "live" right now. During the group stage that's the
+// current matchday; once the groups are done it's the earliest knockout round with a game not yet
+// finished (i.e. the round being played or picked). Falls back to the deepest round we have fixtures for.
+function currentRound(){
+  if(!groupStageFinished()) return "md"+currentMD();
+  const order=["r32","r16","qf","sf","f"];
+  for(const st of order){ const ms=DB.matches.filter(m=>matchStageKey(m)===st); if(ms.length && ms.some(m=>m.status!=="finished")) return st; }
+  for(let i=order.length-1;i>=0;i--){ if(DB.matches.some(m=>matchStageKey(m)===order[i])) return order[i]; }
+  return "md"+currentMD();
+}
 // ⏱ Round-wide picks deadline = 30 min before that matchday's earliest kickoff.
 // Until the deadline you can save, edit, unlock and re-lock any pick. After it, every pick in that
 // round freezes (the only way to change anything after that is a 🔁 half-time re-pick).
@@ -2027,17 +2047,27 @@ async function syncResults(manual){
         // the feed would report the extra-time final, but the pool scores the full-time scoreline.
         if(KO_RESULT_IDS.has(m.id)) return;
         const hHome=nrm(teamById(m.home).name)===eh;
-        const hs=hHome?parseInt(home.score,10):parseInt(away.score,10);
-        const as=hHome?parseInt(away.score,10):parseInt(home.score,10);
+        const ourHome=hHome?home:away, ourAway=hHome?away:home;   // ESPN competitors mapped to OUR home/away
+        const fhs=parseInt(ourHome.score,10), fas=parseInt(ourAway.score,10);   // final (may include extra time)
         const state=(e.status&&e.status.type&&e.status.type.state)||"";   // pre | in | post
-        if(isNaN(hs)||isNaN(as)){ return; }   // no score yet (a freshly-created "pre" fixture) — row still added above
+        if(isNaN(fhs)||isNaN(fas)){ return; }   // no score yet (a freshly-created "pre" fixture)
+        // ⏱ For knockout games the pool scores the 90-MINUTE result. The feed's `score` is the final
+        // incl. extra time, but per-half `linescores` let us recover regulation = 1st half + 2nd half.
+        // (Group games never have ET, so regulation == final.) If the feed omits linescores we fall
+        // back to the final — and the KO_RESULTS override still guarantees any ET game is correct.
+        const regOf=(comp,final)=>{ const ls=comp&&comp.linescores;
+          if(isKoMatch(m) && Array.isArray(ls) && ls.length>2){ return ls.slice(0,2).reduce((s,x)=>s+(parseInt(x&&x.value,10)||0),0); }
+          return final; };
+        const hs=regOf(ourHome,fhs), as=regOf(ourAway,fas);   // 90' score used for scoring predictions
+        // 🏆 Winner (for future rounds) comes from the FINAL result / feed winner flag, not the 90' score.
+        const win = ourHome.winner ? m.home : ourAway.winner ? m.away : (fhs>fas?m.home:fas>fhs?m.away:null);
         // 🔴 FINALIZE only on "post" — a live in-play score goes to m.lhs/m.las so the
         // ⚡ LIVE strip + provisional points work without paying out or freezing re-picks early.
         if(state==="post"){
-          if(m.hs!==hs||m.as!==as||m.status!=="finished"){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; n++;
+          if(m.hs!==hs||m.as!==as||m.status!=="finished"||m.winner!==win){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; m.winner=win; n++;
             if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
         } else if(state==="in" && m.status!=="finished"){
-          if(m.lhs!==hs||m.las!==as){ m.lhs=hs; m.las=as; liveN++; }
+          if(m.lhs!==fhs||m.las!==fas){ m.lhs=fhs; m.las=fas; liveN++; }
         }
       });
     }
@@ -2191,7 +2221,7 @@ function nav(){
 }
 
 /* ---------- PICKS ---------- */
-let pickFilter="md1"; // 'md1'|'md2'|'md3'|'r32'|'r16'|'qf'|'sf'|'f'  — group rounds + knockout rounds
+let pickFilter=null; // 'md1'|'md2'|'md3'|'r32'|'r16'|'qf'|'sf'|'f' — set to the current round on first render
 const KO_ROUND_LABEL = { r32:"Round of 32", r16:"Round of 16", qf:"Quarter-finals", sf:"Semi-finals", f:"Final" };
 const KO_ROUND_ORDER = ["r32","r16","qf","sf","f"];
 // 🔴 LIVE NOW strip — every in-play match with its current score (from the live feed;
@@ -2566,7 +2596,7 @@ function projectedSurvivorsCard(){
 function viewPicks(){
   const mine=Object.fromEntries(DB.predictions.filter(p=>p.user===ME.id&&!p.advance&&!p.ko).map(p=>[p.match,p]));
   // Picks are organised by round: group stage MD1/MD2/MD3, then knockouts R32/R16/QF/SF/F.
-  if(!/^(md[123]|r32|r16|qf|sf|f)$/.test(pickFilter)) pickFilter="md"+currentMD();
+  if(!pickFilter || !/^(md[123]|r32|r16|qf|sf|f)$/.test(pickFilter)) pickFilter=currentRound();
   const isGroupRound = /^md[123]$/.test(pickFilter);
   const round = isGroupRound ? +pickFilter.slice(2) : null;
   const koStage = isGroupRound ? null : pickFilter;
@@ -3998,6 +4028,7 @@ function wire(){
   // nav
   $$("[data-tab]").forEach(b=>b.onclick=()=>{
     const tab=b.dataset.tab;
+    if(tab==="picks") pickFilter=currentRound();   // 🎯 opening Picks always lands on the current round
     VIEW=tab; render();
     // 🖱️ For the Picks tab, scroll past the dashboard cards straight to the picks section.
     // For every other tab, jump to the top of the page.
