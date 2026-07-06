@@ -148,12 +148,13 @@ alter table bans enable row level security;
 drop policy if exists bans_read  on bans;  create policy bans_read  on bans for select to authenticated using (id = auth.uid() or is_admin());
 drop policy if exists bans_admin on bans;  create policy bans_admin on bans for all    to authenticated using (is_admin()) with check (is_admin());
 
--- 🎲 Side bets: league members can read; any member can create; the CREATOR (or admin) can lock/settle/delete.
+-- 🎲 Side bets: league members can read; any member can create; ONLY the CREATOR can lock/settle
+-- (mark the outcome) — not even admins. Admins can still delete a bet outright (moderation).
 alter table side_bets enable row level security;
 alter table side_bet_entries enable row level security;
 drop policy if exists sb_read on side_bets;    create policy sb_read   on side_bets for select to authenticated using (is_member(league_id) or is_admin());
 drop policy if exists sb_ins  on side_bets;    create policy sb_ins    on side_bets for insert to authenticated with check (creator_id = auth.uid() and is_member(league_id));
-drop policy if exists sb_upd  on side_bets;    create policy sb_upd    on side_bets for update to authenticated using (creator_id = auth.uid() or is_admin()) with check (creator_id = auth.uid() or is_admin());
+drop policy if exists sb_upd  on side_bets;    create policy sb_upd    on side_bets for update to authenticated using (creator_id = auth.uid()) with check (creator_id = auth.uid());
 drop policy if exists sb_del  on side_bets;    create policy sb_del    on side_bets for delete to authenticated using (creator_id = auth.uid() or is_admin());
 -- Entries: members read; a member joins/edits/leaves only their OWN entry (admin can moderate).
 drop policy if exists sbe_read on side_bet_entries; create policy sbe_read on side_bet_entries for select to authenticated using (is_member(league_id) or is_admin());
