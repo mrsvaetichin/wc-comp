@@ -708,9 +708,12 @@ const KO_FIXTURES=[
   {id:"ko-r16-3", stage:"r16", home:"C1", away:"I4", kickoff:"2026-07-05T16:00:00-04:00"}, // Brazil v Norway
   {id:"ko-r16-4", stage:"r16", home:"A1", away:"L1", kickoff:"2026-07-05T20:00:00-04:00"}, // Mexico v England
   {id:"ko-r16-5", stage:"r16", home:"K1", away:"H1", kickoff:"2026-07-06T15:00:00-04:00"}, // Portugal v Spain
-  {id:"ko-r16-6", stage:"r16", home:"D1", away:"G1", kickoff:"2026-07-06T17:00:00-04:00"}, // USA v Belgium
+  {id:"ko-r16-6", stage:"r16", home:"D1", away:"G1", kickoff:"2026-07-06T20:00:00-04:00"}, // USA v Belgium (20:00 ET, Lumen Field)
   {id:"ko-r16-7", stage:"r16", home:"J1", away:"G2", kickoff:"2026-07-07T12:00:00-04:00"}, // Argentina v Egypt
-  {id:"ko-r16-8", stage:"r16", home:"B4", away:"K4", kickoff:"2026-07-07T16:00:00-04:00"}  // Switzerland v Colombia
+  {id:"ko-r16-8", stage:"r16", home:"B4", away:"K4", kickoff:"2026-07-07T16:00:00-04:00"}, // Switzerland v Colombia
+  // Quarter-finals (md 6)
+  {id:"ko-qf-1", stage:"qf", home:"I1", away:"C2", kickoff:"2026-07-09T16:00:00-04:00"}, // France v Morocco
+  {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}  // Norway v England (QFs numbered chronologically: qf-2 = Jul 10, qf-4 = Jul 11 21:00, teams TBD)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
