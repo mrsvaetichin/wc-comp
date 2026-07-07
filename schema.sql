@@ -12,6 +12,20 @@ create table if not exists profiles (
 alter table profiles add column if not exists signup_tz     text;          -- IANA timezone of the browser at signup ("Europe/Stockholm", "Asia/Tokyo", …)
 alter table profiles add column if not exists signup_locale text;          -- navigator.language at signup ("en-US", "sv-SE", …)
 alter table profiles add column if not exists last_seen_at  timestamptz;   -- updated on every load — admin can see who's active
+-- ⚽🕒 When the player set/changed their favorite team. Stamped SERVER-SIDE by a trigger (below) so it
+-- can't be spoofed — used to (a) audit late picks and (b) only award the fan bonus for wins AFTER this.
+alter table profiles add column if not exists team_set_at timestamptz;
+create or replace function public.stamp_team_set_at() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.fav_team is not null and new.team_set_at is null then new.team_set_at = now(); end if;
+  elsif new.fav_team is distinct from old.fav_team then
+    new.team_set_at = now();   -- favorite team changed → record the real server time
+  end if;
+  return new;
+end; $$;
+drop trigger if exists trg_stamp_team_set_at on profiles;
+create trigger trg_stamp_team_set_at before insert or update on profiles for each row execute function public.stamp_team_set_at();
 -- Timestamps on every pick/answer so the activity feed can show "Alice locked her MD2 picks 3h ago".
 alter table predictions  add column if not exists created_at timestamptz default now();
 alter table prop_answers add column if not exists created_at timestamptz default now();

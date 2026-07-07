@@ -1371,9 +1371,13 @@ function scoreBreakdown(profileId){
   Object.values(bs.ties).forEach(tie=>{ if(!tie.winner) return; const stg=stageFor(tie.id); const reach=nextReached[stg]; const pp=nextStagePoints[stg];
     if(reach && pp && reach.has(tie.winner)) bd.bracket+=pp;
   });
-  // ⚽ fan bonus: +FAN_BONUS pts each finished match your supported team wins
-  const fav=(DB.profiles.find(p=>p.id===profileId)||{}).team;
-  if(fav){ DB.matches.forEach(m=>{ if(m.status!=="finished")return; if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) bd.fan+=FAN_BONUS; }); }
+  // ⚽ fan bonus: +FAN_BONUS pts each finished match your supported team wins — but ONLY for matches
+  // that kicked off AFTER you set your team (team_set_at), so a late pick can't harvest past wins.
+  // (team_set_at null = legacy pick made pre-tournament → all wins count, as before.)
+  const favProf=DB.profiles.find(p=>p.id===profileId)||{}; const fav=favProf.team;
+  const favSince=favProf.team_set_at?new Date(favProf.team_set_at).getTime():0;
+  if(fav){ DB.matches.forEach(m=>{ if(m.status!=="finished")return; if(favSince && new Date(m.kickoff).getTime()<favSince) return;
+    if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) bd.fan+=FAN_BONUS; }); }
   // half-time re-pick penalty
   bd.repick = -REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
   // 💬 banter bonus: every ❤️ like received = +1 pt (1-to-1, no podium thresholds)
@@ -2445,8 +2449,8 @@ function matchPtsAsOf(uid, cutoff){
     if(pr&&pr.hp!=null&&pr.ap!=null){ const exact=pr.hp===m.hs&&pr.ap===m.as; const outcome=Math.sign(pr.hp-pr.ap)===Math.sign(m.hs-m.as);
       let add=exact?mpExact(m):outcome?mpResult(m):0; if(pr.banker) add*=2; pts+=add; }
   });
-  const fav=(profileById(uid)||{}).team;
-  if(fav) fin.forEach(m=>{ if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; });
+  const favP=profileById(uid)||{}; const fav=favP.team; const favSince=favP.team_set_at?new Date(favP.team_set_at).getTime():0;
+  if(fav) fin.forEach(m=>{ if(favSince && new Date(m.kickoff).getTime()<favSince) return; if((m.home===fav&&m.hs>m.as)||(m.away===fav&&m.as>m.hs)) pts+=FAN_BONUS; });
   ADV.filter(a=>a.user===uid).forEach(a=>{ const gm=DB.matches.filter(m=>m.grp===a.grp);
     const done=gm.length>0 && gm.every(m=>m.status==="finished" && new Date(m.kickoff).getTime()<=cutoff);
     if(!done) return; const st=groupStandings(a.grp); if(st[0]&&st[1]&&[st[0].id,st[1].id].includes(a.team)) pts+=s.pts_advance; });
@@ -4644,7 +4648,11 @@ function openProfile(){
   // fix has their fav_team pointing at the wrong team now — they need to re-pick.
   // Once any match has been finalised, the pick is frozen for the tournament.
   const anyMatchDone = (DB.matches||[]).some(m=>m.status==="finished");
-  const locked = !!ME.team && anyMatchDone;
+  // 🔒 Lock the favorite team once the tournament has started — for EVERYONE, not just people who'd
+  // already chosen one. The old `!!ME.team && …` let anyone who skipped the team at signup pick one
+  // mid-tournament and farm the fan bonus off past wins. (Fan bonus is also gated to wins after
+  // team_set_at, so a late/bypassed change can't harvest earlier results.)
+  const locked = anyMatchDone;
   const draw=()=>{
     const ft=pendTeam?teamById(pendTeam):null;
     const shortId = (ME.id||"").length>10 ? (ME.id.slice(0,4)+"…"+ME.id.slice(-4)) : (ME.id||"—");
@@ -5293,7 +5301,7 @@ async function liveLoad(user){
     avatar:p.avatar||null, team:p.fav_team||null, email:p.email,
     is_admin:!!p.is_admin,
     // 📊 audit fields shown in the admin user-detail view
-    created_at:p.created_at, last_seen_at:p.last_seen_at,
+    created_at:p.created_at, last_seen_at:p.last_seen_at, team_set_at:p.team_set_at,
     signup_tz:p.signup_tz, signup_locale:p.signup_locale
   }));
   // 🏆 leagues + memberships (LEAGUES = only the ones I'm in)
