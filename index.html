@@ -713,7 +713,8 @@ const KO_FIXTURES=[
   {id:"ko-r16-8", stage:"r16", home:"B4", away:"K4", kickoff:"2026-07-07T16:00:00-04:00"}, // Switzerland v Colombia
   // Quarter-finals (md 6)
   {id:"ko-qf-1", stage:"qf", home:"I1", away:"C2", kickoff:"2026-07-09T16:00:00-04:00"}, // France v Morocco
-  {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}  // Norway v England (QFs numbered chronologically: qf-2 = Jul 10, qf-4 = Jul 11 21:00, teams TBD)
+  {id:"ko-qf-2", stage:"qf", home:"H1", away:"G1", kickoff:"2026-07-10T15:00:00-04:00"}, // Spain v Belgium (15:00 ET, SoFi Stadium)
+  {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}  // Norway v England (QFs numbered chronologically: qf-4 = Jul 11 21:00, teams TBD)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
@@ -1945,13 +1946,15 @@ async function leaveSideBet(betId){
 async function lockSideBet(betId){
   const bet=(DB.sideBets||[]).find(b=>b.id===betId); if(!bet||bet.creator!==ME.id) return;
   bet.status='locked'; scopeLeague(); saveLocal();
-  if(MODE==="live") await sbUpsert("side_bets",{id:betId,status:'locked'});
+  // UPDATE (not upsert) — a partial upsert would try to insert a row with a NULL question and fail
+  // the NOT NULL constraint, so the change never saved and the bet reappeared on reload.
+  if(MODE==="live"){ try{ await supa.from("side_bets").update({status:'locked'}).eq("id",betId); }catch(e){ console.error(e); toast("Sync error"); } }
 }
 async function settleSideBet(betId, outcome){
   const bet=(DB.sideBets||[]).find(b=>b.id===betId); if(!bet||bet.creator!==ME.id) return;
   if(outcome!=='yes'&&outcome!=='no') return;
   bet.status='settled'; bet.outcome=outcome; scopeLeague(); saveLocal();
-  if(MODE==="live") await sbUpsert("side_bets",{id:betId,status:'settled',outcome});
+  if(MODE==="live"){ try{ await supa.from("side_bets").update({status:'settled',outcome}).eq("id",betId); }catch(e){ console.error(e); toast("Sync error"); } }
   toast("✅ Bet settled");
 }
 async function deleteSideBet(betId){
