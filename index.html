@@ -756,6 +756,9 @@ const REPICK_OPEN_MS=45*60*1000, REPICK_CLOSE_MS=75*60*1000;
 function repickWindow(m){ const ko=new Date(m.kickoff).getTime(); return {open:ko+REPICK_OPEN_MS, close:ko+REPICK_CLOSE_MS}; }
 function inRepickWindow(m){ if(!m||m.status==="finished") return false; const w=repickWindow(m), t=Date.now(); return t>=w.open && t<w.close; }
 const FAN_BONUS=3; // +3 pts each time your supported team wins a match — pick wisely, it pays off
+// 🚩 One-off agreed penalties, by player name. Baked into the code so no database step is needed —
+// applied straight to that player's total and shown as a "🚩 Cheat adjustment" line in their breakdown.
+const CHEAT_ADJUSTMENTS = { "King Kobbie": -6 };
 // Currencies the league creator can pick from. Display order = popularity for a casual prediction pool.
 const CURRENCIES = [
   ["USD","$ US dollar"],   ["EUR","€ Euro"],          ["GBP","£ British pound"],
@@ -1384,8 +1387,8 @@ function scoreBreakdown(profileId){
   bd.repick = -REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
   // 💬 banter bonus: every ❤️ like received = +1 pt (1-to-1, no podium thresholds)
   bd.banter = banterBonus(profileId);
-  // ⚖️ manual admin adjustment (fairness corrections, agreed penalties, etc.) — set per player in the DB.
-  bd.adj = Number(favProf.score_adj)||0;
+  // 🚩 adjustment = agreed penalty baked into the code (by name) PLUS any per-player DB override.
+  bd.adj = (CHEAT_ADJUSTMENTS[favProf.name]||0) + (Number(favProf.score_adj)||0);
   bd.total = bd.match+bd.groups+bd.props+bd.bracket+bd.fan+bd.banter+bd.repick+bd.adj;
   return bd;
 }

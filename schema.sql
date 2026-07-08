@@ -165,19 +165,11 @@ alter table bans enable row level security;
 drop policy if exists bans_read  on bans;  create policy bans_read  on bans for select to authenticated using (id = auth.uid() or is_admin());
 drop policy if exists bans_admin on bans;  create policy bans_admin on bans for all    to authenticated using (is_admin()) with check (is_admin());
 
--- 🎲 Side bets: league members can read; any member can create; ONLY the CREATOR can lock/settle
--- (mark the outcome) — not even admins. Admins can still delete a bet outright (moderation).
+-- 🎲 Side bets: enable RLS here, but the POLICIES are defined further down — after is_member() is
+-- created. (If they're up here, `create policy … using (is_member(...))` errors with "function
+-- is_member does not exist" and rolls back the whole schema run.)
 alter table side_bets enable row level security;
 alter table side_bet_entries enable row level security;
-drop policy if exists sb_read on side_bets;    create policy sb_read   on side_bets for select to authenticated using (is_member(league_id) or is_admin());
-drop policy if exists sb_ins  on side_bets;    create policy sb_ins    on side_bets for insert to authenticated with check (creator_id = auth.uid() and is_member(league_id));
-drop policy if exists sb_upd  on side_bets;    create policy sb_upd    on side_bets for update to authenticated using (creator_id = auth.uid()) with check (creator_id = auth.uid());
-drop policy if exists sb_del  on side_bets;    create policy sb_del    on side_bets for delete to authenticated using (creator_id = auth.uid() or is_admin());
--- Entries: members read; a member joins/edits/leaves only their OWN entry (admin can moderate).
-drop policy if exists sbe_read on side_bet_entries; create policy sbe_read on side_bet_entries for select to authenticated using (is_member(league_id) or is_admin());
-drop policy if exists sbe_ins  on side_bet_entries; create policy sbe_ins  on side_bet_entries for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
-drop policy if exists sbe_upd  on side_bet_entries; create policy sbe_upd  on side_bet_entries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
-drop policy if exists sbe_del  on side_bet_entries; create policy sbe_del  on side_bet_entries for delete to authenticated using (user_id = auth.uid() or is_admin());
 
 drop policy if exists p_read on profiles;   create policy p_read on profiles for select to authenticated using (true);
 drop policy if exists p_ins on profiles;    create policy p_ins on profiles for insert to authenticated with check (id = auth.uid());
@@ -203,6 +195,17 @@ create or replace function public.has_answer(pid text, lid text) returns boolean
   language sql security definer stable set search_path = public as $$
   select exists(select 1 from prop_answers where prop_id = pid and league_id = lid and user_id = auth.uid()); $$;
 grant execute on function public.is_member(text), public.has_pick(text,text), public.has_answer(text,text) to authenticated, anon;
+
+-- 🎲 Side-bet policies (defined HERE, after is_member() exists): members read; any member creates;
+-- only the creator locks/settles; creator or admin deletes. Entries: members read, own-row writes.
+drop policy if exists sb_read on side_bets;    create policy sb_read   on side_bets for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists sb_ins  on side_bets;    create policy sb_ins    on side_bets for insert to authenticated with check (creator_id = auth.uid() and is_member(league_id));
+drop policy if exists sb_upd  on side_bets;    create policy sb_upd    on side_bets for update to authenticated using (creator_id = auth.uid()) with check (creator_id = auth.uid());
+drop policy if exists sb_del  on side_bets;    create policy sb_del    on side_bets for delete to authenticated using (creator_id = auth.uid() or is_admin());
+drop policy if exists sbe_read on side_bet_entries; create policy sbe_read on side_bet_entries for select to authenticated using (is_member(league_id) or is_admin());
+drop policy if exists sbe_ins  on side_bet_entries; create policy sbe_ins  on side_bet_entries for insert to authenticated with check (user_id = auth.uid() and is_member(league_id));
+drop policy if exists sbe_upd  on side_bet_entries; create policy sbe_upd  on side_bet_entries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists sbe_del  on side_bet_entries; create policy sbe_del  on side_bet_entries for delete to authenticated using (user_id = auth.uid() or is_admin());
 
 -- PICKS ARE BLIND + IMMUTABLE, and only visible inside leagues you belong to:
 -- read a row if you're a member AND (it's yours, you've picked the same match in this league, or it kicked off).
