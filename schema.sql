@@ -15,6 +15,9 @@ alter table profiles add column if not exists last_seen_at  timestamptz;   -- up
 -- ⚽🕒 When the player set/changed their favorite team. Stamped SERVER-SIDE by a trigger (below) so it
 -- can't be spoofed — used to (a) audit late picks and (b) only award the fan bonus for wins AFTER this.
 alter table profiles add column if not exists team_set_at timestamptz;
+-- ⚖️ Manual points adjustment applied to a player's total (fairness corrections / agreed penalties).
+-- Positive or negative. Added straight into their leaderboard total by the app.
+alter table profiles add column if not exists score_adj numeric not null default 0;
 create or replace function public.stamp_team_set_at() returns trigger language plpgsql as $$
 begin
   if tg_op = 'INSERT' then
@@ -471,6 +474,7 @@ insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,sta
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-qf-1','qf',null,6,'I1','C2','2026-07-09T16:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-qf-2','qf',null,6,'H1','G1','2026-07-10T15:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-qf-3','qf',null,6,'I4','L1','2026-07-11T17:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
+insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-qf-4','qf',null,6,'J1','B4','2026-07-11T21:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 
 -- prop bets
 insert into props (id,icon,q,type,options,line,pts,status,correct,allow_coins) values ('p-goat','🐐','Settle it — who''s the GOAT? (choose wisely 😉)','mc','[{"v":"zlatan","label":"🇸🇪 Zlatan"},{"v":"ronaldo","label":"🇵🇹 Ronaldo"}]'::jsonb,null,1,'open',null,false) on conflict (id) do nothing;

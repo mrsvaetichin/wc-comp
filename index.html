@@ -714,7 +714,8 @@ const KO_FIXTURES=[
   // Quarter-finals (md 6)
   {id:"ko-qf-1", stage:"qf", home:"I1", away:"C2", kickoff:"2026-07-09T16:00:00-04:00"}, // France v Morocco
   {id:"ko-qf-2", stage:"qf", home:"H1", away:"G1", kickoff:"2026-07-10T15:00:00-04:00"}, // Spain v Belgium (15:00 ET, SoFi Stadium)
-  {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}  // Norway v England (QFs numbered chronologically: qf-4 = Jul 11 21:00, teams TBD)
+  {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}, // Norway v England
+  {id:"ko-qf-4", stage:"qf", home:"J1", away:"B4", kickoff:"2026-07-11T21:00:00-04:00"}  // Argentina v Switzerland (21:00 ET, Kansas City)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
@@ -735,7 +736,8 @@ function ensureKoFixtures(){
 // Add a line per extra-time game as they happen (90'-decided games sync correctly on their own).
 const KO_RESULTS=[
   {id:"ko-r32-9",  hs:2, as:2, winner:"G1"},  // Belgium 2–2 Senegal at full time (Belgium won 3–2 in extra time)
-  {id:"ko-r32-15", hs:1, as:1, winner:"J1"}   // Argentina 1–1 Cabo Verde at full time (Argentina advanced)
+  {id:"ko-r32-15", hs:1, as:1, winner:"J1"},  // Argentina 1–1 Cabo Verde at full time (Argentina advanced)
+  {id:"ko-r16-8",  hs:0, as:0, winner:"B4"}   // Switzerland 0–0 Colombia at full time (Switzerland won 4–3 on penalties)
 ];
 const KO_RESULT_IDS = new Set(KO_RESULTS.map(r=>r.id));
 function applyKoResults(){
@@ -1382,7 +1384,9 @@ function scoreBreakdown(profileId){
   bd.repick = -REPICK_COST * (DB.repicks||[]).filter(r=>r.user===profileId).length;
   // 💬 banter bonus: every ❤️ like received = +1 pt (1-to-1, no podium thresholds)
   bd.banter = banterBonus(profileId);
-  bd.total = bd.match+bd.groups+bd.props+bd.bracket+bd.fan+bd.banter+bd.repick;
+  // ⚖️ manual admin adjustment (fairness corrections, agreed penalties, etc.) — set per player in the DB.
+  bd.adj = Number(favProf.score_adj)||0;
+  bd.total = bd.match+bd.groups+bd.props+bd.bracket+bd.fan+bd.banter+bd.repick+bd.adj;
   return bd;
 }
 function scoreFor(profileId){ return {pts: scoreBreakdown(profileId).total}; }
@@ -4522,6 +4526,7 @@ function pointsBreakdownHTML(uid){
       ${line('🫶','Fan bonus',bd.fan)}
       ${line('💬','Banter likes',bd.banter)}
       ${bd.repick?line('🔁','Re-pick penalty',bd.repick):''}
+      ${bd.adj?line('🚩','Cheat adjustment',bd.adj):''}
     </div>
     <div class="tiny muted" style="margin-top:6px">🎯 exact score · ✅ right result · ❌ miss · ⭐ Banker doubles · 🐐 GOAT prop scores ±1 instantly · ❤️ each like = +1 (cap ${BANTER_CAP})</div>
   </div>`;
@@ -5302,6 +5307,7 @@ async function liveLoad(user){
     is_admin:!!p.is_admin,
     // 📊 audit fields shown in the admin user-detail view
     created_at:p.created_at, last_seen_at:p.last_seen_at, team_set_at:p.team_set_at,
+    score_adj:Number(p.score_adj)||0,
     signup_tz:p.signup_tz, signup_locale:p.signup_locale
   }));
   // 🏆 leagues + memberships (LEAGUES = only the ones I'm in)
