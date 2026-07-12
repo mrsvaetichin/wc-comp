@@ -715,7 +715,10 @@ const KO_FIXTURES=[
   {id:"ko-qf-1", stage:"qf", home:"I1", away:"C2", kickoff:"2026-07-09T16:00:00-04:00"}, // France v Morocco
   {id:"ko-qf-2", stage:"qf", home:"H1", away:"G1", kickoff:"2026-07-10T15:00:00-04:00"}, // Spain v Belgium (15:00 ET, SoFi Stadium)
   {id:"ko-qf-3", stage:"qf", home:"I4", away:"L1", kickoff:"2026-07-11T17:00:00-04:00"}, // Norway v England
-  {id:"ko-qf-4", stage:"qf", home:"J1", away:"B4", kickoff:"2026-07-11T21:00:00-04:00"}  // Argentina v Switzerland (21:00 ET, Kansas City)
+  {id:"ko-qf-4", stage:"qf", home:"J1", away:"B4", kickoff:"2026-07-11T21:00:00-04:00"}, // Argentina v Switzerland (21:00 ET, Kansas City)
+  // Semi-finals (md 7)
+  {id:"ko-sf-1", stage:"sf", home:"I1", away:"H1", kickoff:"2026-07-14T15:00:00-04:00"}, // France v Spain (15:00 ET, AT&T Stadium, Arlington)
+  {id:"ko-sf-2", stage:"sf", home:"L1", away:"J1", kickoff:"2026-07-15T15:00:00-04:00"}  // England v Argentina (15:00 ET, Mercedes-Benz Stadium, Atlanta)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
@@ -737,7 +740,9 @@ function ensureKoFixtures(){
 const KO_RESULTS=[
   {id:"ko-r32-9",  hs:2, as:2, winner:"G1"},  // Belgium 2–2 Senegal at full time (Belgium won 3–2 in extra time)
   {id:"ko-r32-15", hs:1, as:1, winner:"J1"},  // Argentina 1–1 Cabo Verde at full time (Argentina advanced)
-  {id:"ko-r16-8",  hs:0, as:0, winner:"B4"}   // Switzerland 0–0 Colombia at full time (Switzerland won 4–3 on penalties)
+  {id:"ko-r16-8",  hs:0, as:0, winner:"B4"},  // Switzerland 0–0 Colombia at full time (Switzerland won 4–3 on penalties)
+  {id:"ko-qf-3",   hs:1, as:1, winner:"L1"},  // Norway 1–1 England at full time (England won 2–1 in extra time)
+  {id:"ko-qf-4",   hs:1, as:1, winner:"J1"}   // Argentina 1–1 Switzerland at full time (Argentina won 3–1 in extra time)
 ];
 const KO_RESULT_IDS = new Set(KO_RESULTS.map(r=>r.id));
 function applyKoResults(){
@@ -2172,7 +2177,12 @@ async function syncResults(manual){
         // 🔴 FINALIZE only on "post" — a live in-play score goes to m.lhs/m.las so the
         // ⚡ LIVE strip + provisional points work without paying out or freezing re-picks early.
         if(state==="post"){
-          if(m.hs!==hs||m.as!==as||m.status!=="finished"||m.winner!==win){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; m.winner=win; n++;
+          // 🏆 A finished knockout game is NEVER re-written by the feed. The recorded score is the
+          // authoritative 90-minute result (from the admin's Results tab or KO_RESULTS); the feed
+          // reports the extra-time final, which is wrong for the pool. Group games have no extra time,
+          // so they keep syncing normally. This is what stops a corrected KO score reverting on refresh.
+          if(isKoMatch(m) && m.status==="finished"){ /* leave the recorded full-time result alone */ }
+          else if(m.hs!==hs||m.as!==as||m.status!=="finished"||m.winner!==win){ m.hs=hs; m.as=as; m.status="finished"; m.lhs=null; m.las=null; m.winner=win; n++;
             if(MODE==="live"&&ME&&ME.is_admin) sbUpsert("matches",{id:m.id,home_score:hs,away_score:as,status:"finished"}); }
         } else if(state==="in" && m.status!=="finished"){
           if(m.lhs!==fhs||m.las!==fas){ m.lhs=fhs; m.las=fas; liveN++; }
