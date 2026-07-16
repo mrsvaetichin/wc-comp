@@ -718,7 +718,10 @@ const KO_FIXTURES=[
   {id:"ko-qf-4", stage:"qf", home:"J1", away:"B4", kickoff:"2026-07-11T21:00:00-04:00"}, // Argentina v Switzerland (21:00 ET, Kansas City)
   // Semi-finals (md 7)
   {id:"ko-sf-1", stage:"sf", home:"I1", away:"H1", kickoff:"2026-07-14T15:00:00-04:00"}, // France v Spain (15:00 ET, AT&T Stadium, Arlington)
-  {id:"ko-sf-2", stage:"sf", home:"L1", away:"J1", kickoff:"2026-07-15T15:00:00-04:00"}  // England v Argentina (15:00 ET, Mercedes-Benz Stadium, Atlanta)
+  {id:"ko-sf-2", stage:"sf", home:"L1", away:"J1", kickoff:"2026-07-15T15:00:00-04:00"}, // England v Argentina (15:00 ET, Mercedes-Benz Stadium, Atlanta)
+  // Third place & Final (md 7 / md 8)
+  {id:"ko-3p-1", stage:"sf", home:"I1", away:"L1", kickoff:"2026-07-18T17:00:00-04:00"}, // France v England — third place (17:00 ET, Hard Rock Stadium, Miami)
+  {id:"ko-f-1",  stage:"f",  home:"H1", away:"J1", kickoff:"2026-07-19T15:00:00-04:00"}  // Spain v Argentina — FINAL (15:00 ET, MetLife Stadium, NJ)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
 // client also publishes any missing ones to Supabase so everyone's picks satisfy the predictions FK.
