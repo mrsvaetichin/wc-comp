@@ -2926,8 +2926,10 @@ function matchCard(m){
     : inPlay(m)?'<span class="chip live">🔴 LIVE</span>'
     : base?(pickLocked(m)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
     : (pickLocked(m)||isLocked(m))?'<span class="chip">🔒</span>'
-    :`<span class="chip open">Grp ${m.grp} · MD${m.md}</span>`;
-  return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${tag}</div>${inner}</div>`;
+    :`<span class="chip open">${m.grp?`Grp ${m.grp} · MD${m.md}`:matchRoundLabel(m)}</span>`;
+  // 🥉 The third-place game lives in the SF round (same md, same Banker pool) but gets its own badge
+  const thirdTag = m.id==="ko-3p-1" ? '<span class="chip" style="background:rgba(205,127,50,.22);color:#e8a25c">🥉 3rd place</span>' : '';
+  return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${thirdTag}${tag}</div>${inner}</div>`;
 }
 
 /* ---------- GROUPS / BRACKET ---------- */
