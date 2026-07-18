@@ -1552,9 +1552,9 @@ async function reloadPredictions(){ if(MODE!=="live"||!supa)return;
   ALL.pred = match.concat(adv).concat(ko); scopeLeague(); }
 async function reloadProps(){ if(MODE!=="live"||!supa)return; const {data,error}=await supa.from("prop_answers").select("*"); if(error)return; ALL.pans=(data||[]).map(a=>({id:a.id,user:a.user_id,league:a.league_id,prop:a.prop_id,answer:a.answer})); scopeLeague(); }
 async function lockPick(matchId, hp, ap, banker){
-  if(!LG){ toast("Join a league first"); return; }
+  if(!LG){ toast("Join a league first"); return false; }
   // Refuse to save if the round has already locked.
-  const m=DB.matches.find(x=>x.id===matchId); if(m && pickLocked(m)){ toast("⏱ Locked — pick frozen"); return; }
+  const m=DB.matches.find(x=>x.id===matchId); if(m && pickLocked(m)){ toast("⏱ Locked — pick frozen"); return false; }
   const pr={id:`${ME.id}-${LG}-${matchId}`,user:ME.id,league:LG,match:matchId,hp,ap,banker:!!banker};
   // Replace any existing pick locally (round-open model — picks are editable until the deadline).
   ALL.pred = ALL.pred.filter(p=>!(p.user===ME.id && p.league===LG && p.match===matchId && !p.advance && !p.ko));
@@ -1568,10 +1568,15 @@ async function lockPick(matchId, hp, ap, banker){
       if(m && isKoMatch(m) && ME.is_admin){
         await sbUpsert("matches",{id:m.id,stage:m.stage,grp:m.grp||null,md:m.md,home:m.home,away:m.away,kickoff:m.kickoff,home_score:m.hs??null,away_score:m.as??null,status:m.status||"scheduled"});
       }
-      await sbUpsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker}); await reloadPredictions();
+      const ok = await sbUpsert("predictions",{id:pr.id,user_id:ME.id,league_id:LG,match_id:matchId,hp,ap,banker:pr.banker});
+      // Only re-pull from the server if the save landed — otherwise the reload would overwrite
+      // the local pick with the server's (missing) copy and the pick would silently vanish.
+      if(ok) await reloadPredictions();
+      else { toast("⚠️ Pick NOT saved to the server — the match may be missing there. Tell the organiser to re-run schema.sql / open the app as admin, then save again."); return false; }
     }catch(e){ console.error(e); }
   }
   delete DRAFT[matchId]; saveLocal();
+  return true;
 }
 // 🔓 Unlock a saved pick so the user can edit it — only allowed before the round deadline.
 async function unlockPick(matchId){
@@ -2225,7 +2230,14 @@ async function adminTogglePaid(profileId){
 }
 
 /* ---- supabase helpers (live mode) ---- */
-async function sbUpsert(table,row){ try{ await supa.from(table).upsert(row); }catch(e){ console.error(e); toast("Sync error"); } }
+// ⚠️ supabase-js does NOT throw on failure — it resolves with {error}. Check it, or FK/RLS
+// rejections (e.g. a pick on a match the server doesn't have yet) disappear without a trace.
+async function sbUpsert(table,row){
+  try{ const {error}=await supa.from(table).upsert(row);
+    if(error){ console.error("sbUpsert",table,error); toast("⚠️ Sync error: "+(error.message||table)); return false; }
+    return true;
+  }catch(e){ console.error(e); toast("Sync error"); return false; }
+}
 
 /* ============================================================================
    🖼️  RENDER
@@ -4328,7 +4340,7 @@ function wire(){
     if(hp==null||ap==null){toast("Enter both scores ⚽");return;}
     const d=draft(id), m=DB.matches.find(x=>x.id===id), useBank=d.banker&&canBankMatch(m);
     // Quick-save model: no confirm modal — you can edit again until the round deadline.
-    await lockPick(id,hp,ap,useBank); toast("💾 Saved · editable until the round locks"); render();
+    const ok=await lockPick(id,hp,ap,useBank); if(ok) toast("💾 Saved · editable until the round locks"); render();
   });
   // 🔓 Unlock a saved pick so you can edit it — only allowed before the round deadline.
   $$("[data-unlock]").forEach(b=>b.onclick=async()=>{ await unlockPick(b.dataset.unlock); render(); });
