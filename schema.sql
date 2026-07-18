@@ -482,7 +482,7 @@ insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,sta
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-sf-1','sf',null,7,'I1','H1','2026-07-14T15:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-sf-2','sf',null,7,'L1','J1','2026-07-15T15:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 
-insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-3p-1','sf',null,7,'I1','L1','2026-07-18T17:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
+insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-3p-1','f',null,8,'I1','L1','2026-07-18T17:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 insert into matches (id,stage,grp,md,home,away,kickoff,home_score,away_score,status) values ('ko-f-1','f',null,8,'H1','J1','2026-07-19T15:00:00-04:00',null,null,'scheduled') on conflict (id) do update set kickoff=excluded.kickoff, md=excluded.md, home=excluded.home, away=excluded.away, stage=excluded.stage;
 
 -- prop bets

@@ -675,7 +675,7 @@ const KO_MD={r32:4, r16:5, qf:6, sf:7, f:8};                   // KO stage → m
 const MD_STAGE={4:'r32', 5:'r16', 6:'qf', 7:'sf', 8:'f'};      // matchday number → KO stage
 const KO_MATCH_LABEL={r32:'Round of 32', r16:'Round of 16', qf:'Quarter-finals', sf:'Semi-finals', f:'Final'};
 function matchStageKey(m){ if(!m) return 'group'; let s=m.stage; if(s==='final') s='f'; return (s && s!=='group' && STAGE_MULT[s]!=null) ? s : 'group'; }
-function matchMult(m){ return STAGE_MULT[matchStageKey(m)] || 1; }
+function matchMult(m){ if(m && m.id==="ko-3p-1") return STAGE_MULT.sf; /* 3rd place: final ROUND, semi WEIGHT */ return STAGE_MULT[matchStageKey(m)] || 1; }
 function mpExact(m){ return Math.round((DB.settings.pts_exact||0) * matchMult(m)); }   // exact-score points for THIS match (stage-weighted)
 function mpResult(m){ return Math.round((DB.settings.pts_result||0) * matchMult(m)); } // right-result points for THIS match (stage-weighted)
 function matchRoundLabel(m){ const sk=matchStageKey(m); return sk==='group' ? ('Round '+m.md) : KO_MATCH_LABEL[sk]; }
@@ -719,8 +719,9 @@ const KO_FIXTURES=[
   // Semi-finals (md 7)
   {id:"ko-sf-1", stage:"sf", home:"I1", away:"H1", kickoff:"2026-07-14T15:00:00-04:00"}, // France v Spain (15:00 ET, AT&T Stadium, Arlington)
   {id:"ko-sf-2", stage:"sf", home:"L1", away:"J1", kickoff:"2026-07-15T15:00:00-04:00"}, // England v Argentina (15:00 ET, Mercedes-Benz Stadium, Atlanta)
-  // Third place & Final (md 7 / md 8)
-  {id:"ko-3p-1", stage:"sf", home:"I1", away:"L1", kickoff:"2026-07-18T17:00:00-04:00"}, // France v England — third place (17:00 ET, Hard Rock Stadium, Miami)
+  // Third place & Final — ONE round (md 8): both show in the Final tab and share a single ⭐ Banker.
+  // The 3p game still scores at the SEMI multiplier (see matchMult) so the Final itself pays the most.
+  {id:"ko-3p-1", stage:"f", home:"I1", away:"L1", kickoff:"2026-07-18T17:00:00-04:00"}, // France v England — third place (17:00 ET, Hard Rock Stadium, Miami)
   {id:"ko-f-1",  stage:"f",  home:"H1", away:"J1", kickoff:"2026-07-19T15:00:00-04:00"}  // Spain v Argentina — FINAL (15:00 ET, MetLife Stadium, NJ)
 ];
 // Merge the decided KO fixtures into DB.matches if the server doesn't already carry them. The admin's
@@ -2939,7 +2940,7 @@ function matchCard(m){
     : base?(pickLocked(m)?'<span class="chip done">🔒 Locked</span>':'<span class="chip" style="background:rgba(92,200,255,.18);color:var(--cyan)">💾 Saved</span>')
     : (pickLocked(m)||isLocked(m))?'<span class="chip">🔒</span>'
     :`<span class="chip open">${m.grp?`Grp ${m.grp} · MD${m.md}`:matchRoundLabel(m)}</span>`;
-  // 🥉 The third-place game lives in the SF round (same md, same Banker pool) but gets its own badge
+  // 🥉 The third-place game lives in the FINAL round (same md, same Banker pool) but gets its own badge
   const thirdTag = m.id==="ko-3p-1" ? '<span class="chip" style="background:rgba(205,127,50,.22);color:#e8a25c">🥉 3rd place</span>' : '';
   return `<div class="match"><div class="meta"><span class="small muted">${fmtKick(m.kickoff)}</span>${thirdTag}${tag}</div>${inner}</div>`;
 }
